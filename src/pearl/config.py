@@ -24,11 +24,27 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_issuer: str = "pearl-api"
     jwt_audience: str = "pearl"
+    jwt_private_key_path: str | None = None
+    jwt_public_key_path: str | None = None
+    jwt_access_token_expire_minutes: int = 60
+    jwt_refresh_token_expire_days: int = 30
+
+    # OIDC
+    oidc_discovery_url: str | None = None
+    oidc_client_id: str | None = None
+
+    # CORS
+    cors_allowed_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
 
     # Server
     host: str = "0.0.0.0"
     port: int = 8080
     log_level: str = "info"
+
+    # Rate limiting
+    rate_limit_enabled: bool = True
+    rate_limit_writes_per_minute: int = 100
+    rate_limit_reads_per_minute: int = 1000
 
     # Slack
     slack_signing_secret: str = ""

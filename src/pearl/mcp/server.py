@@ -86,6 +86,8 @@ class MCPServer:
             "listPolicyTemplates": self._list_policy_templates,
             "getPolicyTemplate": self._get_policy_template,
             "ingestSecurityReview": self._ingest_security_review,
+            "claimTaskPacket": self._claim_task_packet,
+            "completeTaskPacket": self._complete_task_packet,
         }
         return routes.get(tool_name)
 
@@ -332,3 +334,17 @@ class MCPServer:
             "environment": args.get("environment", "dev"),
         }
         return await self._request("POST", f"/projects/{pid}/scans/security-review", body)
+
+    async def _claim_task_packet(self, args: dict) -> dict:
+        packet_id = args["packet_id"]
+        body = {"agent_id": args["agent_id"]}
+        return await self._request("POST", f"/task-packets/{packet_id}/claim", body)
+
+    async def _complete_task_packet(self, args: dict) -> dict:
+        packet_id = args["packet_id"]
+        body = {
+            "status": args["status"],
+            "changes_summary": args.get("changes_summary", ""),
+            "finding_ids_resolved": args.get("finding_ids_resolved", []),
+        }
+        return await self._request("POST", f"/task-packets/{packet_id}/complete", body)

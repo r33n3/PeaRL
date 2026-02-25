@@ -16,3 +16,4 @@ class OrgBaselineRow(Base, TimestampMixin):
     environment_defaults: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     integrity: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     schema_version: Mapped[str] = mapped_column(String(20), nullable=False, default="1.1")
+    org_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)

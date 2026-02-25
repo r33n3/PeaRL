@@ -1,0 +1,57 @@
+version: "3.9"
+
+# Production override — use with:
+#   docker compose -f docker-compose.yaml -f deploy/docker-compose.prod.yaml up
+
+services:
+  pearl-api:
+    image: ghcr.io/your-org/pearl-api:latest
+    build: null
+    volumes: []  # Remove dev volume mounts
+    environment:
+      PEARL_LOG_LEVEL: info
+      PEARL_JWT_ALGORITHM: RS256
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.25
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/pearl.conf:/etc/nginx/conf.d/pearl.conf:ro
+      - /etc/ssl/pearl:/etc/nginx/certs:ro
+      - nginx_cache:/var/cache/nginx
+    depends_on:
+      - pearl-api
+    restart: unless-stopped
+    profiles:
+      - prod
+
+  postgres:
+    volumes:
+      - pgdata_prod:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+    restart: unless-stopped
+
+  redis:
+    volumes:
+      - redisdata:/data
+    restart: unless-stopped
+
+volumes:
+  pgdata_prod:
+  redisdata:
+  nginx_cache:

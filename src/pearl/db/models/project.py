@@ -17,3 +17,4 @@ class ProjectRow(Base, TimestampMixin):
     external_exposure: Mapped[str] = mapped_column(String(50), nullable=False)
     ai_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
     schema_version: Mapped[str] = mapped_column(String(20), nullable=False, default="1.1")
+    org_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)

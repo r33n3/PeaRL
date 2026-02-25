@@ -548,4 +548,35 @@ TOOL_DEFINITIONS = [
             "required": ["project_id", "markdown"],
         },
     },
+    # ─── Remediation Execution Bridge ────────────────
+    {
+        "name": "claimTaskPacket",
+        "description": "Claim a task packet for execution as an agent. Sets the packet status to in_progress and records the agent ID.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "packet_id": {"type": "string", "description": "Task packet ID to claim"},
+                "agent_id": {"type": "string", "description": "Unique identifier for this agent instance"},
+            },
+            "required": ["packet_id", "agent_id"],
+        },
+    },
+    {
+        "name": "completeTaskPacket",
+        "description": "Report the outcome of a task packet execution. Updates finding statuses for resolved findings.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "packet_id": {"type": "string", "description": "Task packet ID to complete"},
+                "status": {"type": "string", "enum": ["success", "failed", "partial"], "description": "Outcome status"},
+                "changes_summary": {"type": "string", "description": "Human-readable summary of changes made"},
+                "finding_ids_resolved": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of finding IDs that were resolved",
+                },
+            },
+            "required": ["packet_id", "status"],
+        },
+    },
 ]

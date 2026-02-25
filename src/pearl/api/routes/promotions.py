@@ -279,3 +279,86 @@ async def update_gate_approval_mode(
     await db.commit()
 
     return {"gate_id": gate_id, "approval_mode": mode}
+
+
+@router.post("/projects/{project_id}/promotions/rollback", status_code=201)
+async def rollback_promotion(
+    project_id: str,
+    body: dict,
+    request=None,
+    db: AsyncSession = Depends(get_db),
+    trace_id: str = Depends(get_trace_id),
+) -> dict:
+    """Roll back a promotion for a project. Requires admin role."""
+    from fastapi import Request
+    from pearl.errors.exceptions import AuthorizationError
+
+    # Require admin role
+    if request:
+        user = getattr(request.state, "user", {})
+        if "admin" not in user.get("roles", []):
+            raise AuthorizationError("Admin role required for rollback")
+
+    from_environment = body.get("from_environment")
+    reason = body.get("reason", "")
+
+    if not from_environment:
+        from pearl.errors.exceptions import ValidationError
+        raise ValidationError("from_environment is required")
+
+    history_id = generate_id("hist_")
+    now = datetime.now(timezone.utc)
+
+    history_repo = PromotionHistoryRepository(db)
+    await history_repo.create(
+        history_id=history_id,
+        project_id=project_id,
+        source_environment=from_environment,
+        target_environment="rollback",
+        evaluation_id="rollback",
+        promoted_by=getattr(getattr(request, "state", None), "user", {}).get("sub", "system") if request else "system",
+        promoted_at=now,
+        details={
+            "type": "rollback",
+            "reason": reason,
+            "trace_id": trace_id,
+        },
+    )
+    await db.commit()
+
+    return {
+        "history_id": history_id,
+        "project_id": project_id,
+        "type": "rollback",
+        "from_environment": from_environment,
+        "reason": reason,
+        "rolled_back_at": now.isoformat(),
+    }
+
+
+@router.get("/projects/{project_id}/policy-history")
+async def get_policy_history(
+    project_id: str,
+    resource_type: str = "org_baseline",
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return policy version history for a project resource."""
+    from pearl.repositories.policy_version_repo import PolicyVersionRepository
+
+    repo = PolicyVersionRepository(db)
+    versions = await repo.list_for_resource(resource_type, project_id)
+
+    return {
+        "project_id": project_id,
+        "resource_type": resource_type,
+        "versions": [
+            {
+                "version_id": v.version_id,
+                "version_number": v.version_number,
+                "changed_by": v.changed_by,
+                "change_summary": v.change_summary,
+                "created_at": v.created_at.isoformat() if v.created_at else None,
+            }
+            for v in versions
+        ],
+    }

@@ -209,6 +209,50 @@ async def ingest_security_review(
     }
 
 
+@router.post("/projects/{project_id}/scan-targets/{scan_target_id}/scan", status_code=202)
+async def trigger_scan_target(
+    project_id: str,
+    scan_target_id: str,
+    request=None,
+    db: AsyncSession = Depends(get_db),
+    trace_id: str = Depends(get_trace_id),
+) -> dict:
+    """Trigger an on-demand scan for a specific scan target."""
+    from fastapi import Request
+    from pearl.workers.queue import enqueue_job
+
+    await _ensure_project(project_id, db)
+
+    # Verify scan target exists
+    from pearl.repositories.scan_target_repo import ScanTargetRepository
+    target_repo = ScanTargetRepository(db)
+    target = await target_repo.get(scan_target_id)
+    if not target or target.project_id != project_id:
+        from pearl.errors.exceptions import NotFoundError
+        raise NotFoundError("ScanTarget", scan_target_id)
+
+    # Enqueue scan job
+    redis = None
+    if request:
+        redis = getattr(request.app.state, "redis", None)
+
+    job = await enqueue_job(
+        session=db,
+        job_type="scan_source",
+        project_id=project_id,
+        trace_id=trace_id,
+        payload={
+            "project_id": project_id,
+            "scan_target_id": scan_target_id,
+            "environment": (target.environment_scope or ["dev"])[0],
+        },
+        redis=redis,
+    )
+    await db.commit()
+
+    return {"job_id": job.job_id, "status": job.status, "scan_target_id": scan_target_id}
+
+
 @router.get("/scanning/analyzers", status_code=200)
 async def list_analyzers() -> list[dict]:
     """List available scanning analyzers."""

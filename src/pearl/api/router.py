@@ -4,6 +4,7 @@ from fastapi import APIRouter
 from pearl.api.routes import (
     approvals,
     audit,
+    auth,
     compile,
     compliance,
     context,
@@ -24,11 +25,13 @@ from pearl.api.routes import (
     scan_targets,
     scanning,
     slack_interactions,
+    stream,
     task_packets,
 )
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(health.router, tags=["Health"])
+api_router.include_router(auth.router)
 api_router.include_router(projects.router)
 api_router.include_router(project_inputs.router)
 api_router.include_router(jobs.router)
@@ -51,3 +54,4 @@ api_router.include_router(governance_telemetry.router)
 api_router.include_router(integrations.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(slack_interactions.router)
+api_router.include_router(stream.router)

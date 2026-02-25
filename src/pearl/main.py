@@ -1,6 +1,8 @@
 """FastAPI application factory and lifespan management."""
 
+import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -8,6 +10,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from pearl.config import settings
+from pearl.logging_config import configure_logging
+
+# Configure logging at import time
+_json_logs = os.environ.get("PEARL_LOCAL", "0") != "1"
+configure_logging(log_level=settings.log_level, json_output=_json_logs)
 
 logger = logging.getLogger(__name__)
 
@@ -53,10 +60,19 @@ async def lifespan(app: FastAPI):
         logger.warning("Redis not available, some features will be disabled")
         app.state.redis = None
 
+    # Start background scheduler
+    from pearl.workers.scheduler import run_scheduler
+    scheduler_task = asyncio.create_task(run_scheduler(app))
+
     logger.info("PeaRL API started (db=%s)", "sqlite" if "sqlite" in db_url else "postgresql")
     yield
 
     # Shutdown
+    scheduler_task.cancel()
+    try:
+        await scheduler_task
+    except asyncio.CancelledError:
+        pass
     if app.state.redis:
         await app.state.redis.close()
     await engine.dispose()
@@ -75,10 +91,7 @@ def create_app() -> FastAPI:
     # CORS middleware for React frontend
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost:5173",  # Vite dev server
-            "http://localhost:3000",  # Alternative dev port
-        ],
+        allow_origins=settings.cors_allowed_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -93,6 +106,21 @@ def create_app() -> FastAPI:
     # Register error handlers
     from pearl.errors.handlers import register_exception_handlers
     register_exception_handlers(app)
+
+    # Rate limiting
+    from pearl.api.middleware.rate_limit import setup_rate_limiter
+    setup_rate_limiter(app)
+
+    # Prometheus metrics (internal endpoint)
+    try:
+        from prometheus_fastapi_instrumentator import Instrumentator
+        Instrumentator(
+            should_group_status_codes=True,
+            should_respect_env_var=False,
+            excluded_handlers=["/api/v1/health.*", "/metrics"],
+        ).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+    except ImportError:
+        logger.debug("prometheus-fastapi-instrumentator not installed, /metrics disabled")
 
     # Import and mount routers
     from pearl.api.router import api_router

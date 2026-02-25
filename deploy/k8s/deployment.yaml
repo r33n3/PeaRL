@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pearl-api
+  labels:
+    app: pearl-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: pearl-api
+  template:
+    metadata:
+      labels:
+        app: pearl-api
+    spec:
+      containers:
+        - name: pearl-api
+          image: ghcr.io/your-org/pearl-api:latest
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: pearl-config
+            - secretRef:
+                name: pearl-secrets
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health/ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health/live
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
