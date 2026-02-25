@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pearl.local/schemas/events/webhook-envelope.schema.json",
+  "title": "WebhookEnvelope",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "$ref": "../common/common-defs.schema.json#/$defs/schema_version"
+    },
+    "event_type": {
+      "type": "string"
+    },
+    "event_id": {
+      "type": "string"
+    },
+    "occurred_at": {
+      "$ref": "../common/common-defs.schema.json#/$defs/timestamp"
+    },
+    "source_system": {
+      "type": "string"
+    },
+    "signature": {
+      "type": "string"
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "event_type",
+    "event_id",
+    "occurred_at",
+    "source_system",
+    "payload"
+  ]
+}

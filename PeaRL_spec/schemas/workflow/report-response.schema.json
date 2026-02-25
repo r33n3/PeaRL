@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pearl.local/schemas/workflow/report-response.schema.json",
+  "title": "ReportResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "$ref": "../common/common-defs.schema.json#/$defs/schema_version"
+    },
+    "report_id": {
+      "type": "string",
+      "pattern": "^rpt_[A-Za-z0-9_-]+$"
+    },
+    "report_type": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "ready",
+        "queued",
+        "running",
+        "failed"
+      ]
+    },
+    "format": {
+      "type": "string",
+      "enum": [
+        "json",
+        "markdown"
+      ]
+    },
+    "content": {
+      "type": [
+        "object",
+        "string",
+        "null"
+      ]
+    },
+    "artifact_ref": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "trace_id": {
+      "$ref": "../common/common-defs.schema.json#/$defs/trace_id"
+    },
+    "generated_at": {
+      "$ref": "../common/common-defs.schema.json#/$defs/timestamp"
+    }
+  },
+  "required": [
+    "schema_version",
+    "report_id",
+    "report_type",
+    "status",
+    "format",
+    "trace_id"
+  ]
+}

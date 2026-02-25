@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pearl.local/schemas/project/environment-profile.schema.json",
+  "title": "EnvironmentProfile",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "$ref": "../common/common-defs.schema.json#/$defs/schema_version"
+    },
+    "profile_id": {
+      "type": "string",
+      "pattern": "^envp_[A-Za-z0-9_-]+$"
+    },
+    "environment": {
+      "$ref": "../common/common-defs.schema.json#/$defs/environment"
+    },
+    "delivery_stage": {
+      "$ref": "../common/common-defs.schema.json#/$defs/delivery_stage"
+    },
+    "risk_level": {
+      "$ref": "../common/common-defs.schema.json#/$defs/risk_level"
+    },
+    "autonomy_mode": {
+      "$ref": "../common/common-defs.schema.json#/$defs/autonomy_mode"
+    },
+    "allowed_capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "blocked_capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "approval_level": {
+      "type": "string",
+      "enum": [
+        "minimal",
+        "standard",
+        "elevated",
+        "high",
+        "strict"
+      ]
+    },
+    "integrity": {
+      "$ref": "../common/common-defs.schema.json#/$defs/integrity"
+    }
+  },
+  "required": [
+    "schema_version",
+    "profile_id",
+    "environment",
+    "delivery_stage",
+    "risk_level",
+    "autonomy_mode"
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "schema_version": "1.1",
+  "kind": "PearlApplicationSpec",
+  "application": {
+    "app_id": "customer-support-ai-assistant",
+    "owner_team": "digital-platform-ai",
+    "business_criticality": "high",
+    "external_exposure": "customer_facing",
+    "ai_enabled": true
+  },
+  "architecture": {
+    "components": [
+      {
+        "id": "web-frontend",
+        "type": "ui",
+        "criticality": "moderate"
+      },
+      {
+        "id": "api-service",
+        "type": "service",
+        "criticality": "high"
+      },
+      {
+        "id": "llm-gateway",
+        "type": "ai_gateway",
+        "criticality": "high"
+      },
+      {
+        "id": "vector-store",
+        "type": "data_store",
+        "criticality": "high"
+      }
+    ],
+    "trust_boundaries": [
+      {
+        "id": "internet_to_frontend",
+        "from": "internet",
+        "to": "web-frontend"
+      },
+      {
+        "id": "frontend_to_api",
+        "from": "web-frontend",
+        "to": "api-service"
+      },
+      {
+        "id": "api_to_llm_gateway",
+        "from": "api-service",
+        "to": "llm-gateway"
+      }
+    ]
+  },
+  "data": {
+    "classifications": [
+      {
+        "name": "customer_support_content",
+        "sensitivity": "internal"
+      },
+      {
+        "name": "account_identifiers",
+        "sensitivity": "confidential"
+      }
+    ],
+    "prohibited_in_model_context": [
+      "full_ssn",
+      "payment_card_data"
+    ]
+  },
+  "integrity": {
+    "signed": false
+  }
+}

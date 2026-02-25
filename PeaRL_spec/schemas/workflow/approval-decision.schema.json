@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pearl.local/schemas/workflow/approval-decision.schema.json",
+  "title": "ApprovalDecision",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "$ref": "../common/common-defs.schema.json#/$defs/schema_version"
+    },
+    "approval_request_id": {
+      "type": "string",
+      "pattern": "^appr_[A-Za-z0-9_-]+$"
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "approve",
+        "reject"
+      ]
+    },
+    "decided_by": {
+      "type": "string"
+    },
+    "decider_role": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "conditions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "decided_at": {
+      "$ref": "../common/common-defs.schema.json#/$defs/timestamp"
+    },
+    "trace_id": {
+      "$ref": "../common/common-defs.schema.json#/$defs/trace_id"
+    }
+  },
+  "required": [
+    "schema_version",
+    "approval_request_id",
+    "decision",
+    "decided_by",
+    "decider_role",
+    "decided_at",
+    "trace_id"
+  ]
+}

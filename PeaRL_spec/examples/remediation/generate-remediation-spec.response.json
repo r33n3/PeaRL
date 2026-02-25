@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.1",
+  "remediation_spec_id": "rs_preprod_egress_fix_001",
+  "project_id": "proj_customer_support_ai",
+  "environment": "preprod",
+  "finding_refs": [
+    "find_cspm_001"
+  ],
+  "risk_summary": {
+    "risk_level": "high",
+    "business_impact": "high",
+    "confidence": "high"
+  },
+  "eligibility": "auto_allowed_with_approval",
+  "required_outcome": "Remove undeclared public egress and constrain outbound traffic to declared allowlist destinations.",
+  "implementation_constraints": [
+    "Do not broaden egress during remediation",
+    "Preserve telemetry.internal and llm-gateway.internal connectivity"
+  ],
+  "required_tests": [
+    "network_policy_regression_test",
+    "egress_allowlist_validation_test"
+  ],
+  "evidence_required": [
+    "before_after_network_policy_diff",
+    "test_results",
+    "approval_records"
+  ],
+  "approval_required": true,
+  "approval_triggers": [
+    "network_policy_changes"
+  ],
+  "trace_id": "trc_rem_001",
+  "generated_at": "2026-02-21T10:30:00-06:00",
+  "integrity": {
+    "signed": false,
+    "hash": "27f1a8e4ee0ccba9cc1a00f2228fcbaf",
+    "hash_alg": "sha256",
+    "compiled_at": "2026-02-21T10:30:00-06:00"
+  },
+  "references": [
+    {
+      "ref_id": "find_cspm_001",
+      "kind": "finding",
+      "summary": "Source finding"
+    }
+  ]
+}

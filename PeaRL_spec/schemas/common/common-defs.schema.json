@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pearl.local/schemas/common/common-defs.schema.json",
+  "title": "PeaRL Common Definitions",
+  "type": "object",
+  "$defs": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+(\\.\\d+)?$"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "trace_id": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128
+    },
+    "environment": {
+      "type": "string",
+      "enum": [
+        "sandbox",
+        "dev",
+        "pilot",
+        "preprod",
+        "prod"
+      ]
+    },
+    "delivery_stage": {
+      "type": "string",
+      "enum": [
+        "bootstrap",
+        "prototype",
+        "pilot",
+        "hardening",
+        "preprod",
+        "prod"
+      ]
+    },
+    "risk_level": {
+      "type": "string",
+      "enum": [
+        "low",
+        "moderate",
+        "high",
+        "critical"
+      ]
+    },
+    "autonomy_mode": {
+      "type": "string",
+      "enum": [
+        "assistive",
+        "supervised_autonomous",
+        "delegated_autonomous",
+        "read_only"
+      ]
+    },
+    "trust_label": {
+      "type": "string",
+      "enum": [
+        "trusted_internal",
+        "trusted_external_registered",
+        "untrusted_external",
+        "manual_unverified"
+      ]
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "signed": {
+          "type": "boolean"
+        },
+        "hash": {
+          "type": "string",
+          "minLength": 16
+        },
+        "hash_alg": {
+          "type": "string",
+          "enum": [
+            "sha256",
+            "sha512"
+          ]
+        },
+        "signer": {
+          "type": "string"
+        },
+        "signature_ref": {
+          "type": "string"
+        },
+        "compiled_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "signed"
+      ]
+    },
+    "traceability_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "trace_id": {
+          "$ref": "#/$defs/trace_id"
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "trace_id"
+      ]
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ref_id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "api",
+            "schema",
+            "artifact",
+            "finding",
+            "approval",
+            "exception",
+            "report",
+            "doc"
+          ]
+        },
+        "summary": {
+          "type": "string"
+        },
+        "uri": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref_id",
+        "kind"
+      ]
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": [
+            "object",
+            "array",
+            "string",
+            "null"
+          ]
+        },
+        "trace_id": {
+          "$ref": "#/$defs/trace_id"
+        },
+        "timestamp": {
+          "$ref": "#/$defs/timestamp"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "trace_id",
+        "timestamp"
+      ]
+    }
+  }
+}

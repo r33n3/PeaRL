@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.1",
+  "batch_id": "batch_cspm_20260221_001",
+  "accepted_count": 1,
+  "quarantined_count": 0,
+  "normalized_count": 1,
+  "job_id": "job_normalize_001",
+  "trace_id": "trc_ingest_001",
+  "timestamp": "2026-02-21T10:30:00-06:00"
+}

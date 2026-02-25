@@ -1,0 +1,69 @@
+services:
+  pearl-api:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://pearl:pearl@postgres:5432/pearl
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_BUCKET: pearl-artifacts
+      JWT_SECRET: dev-secret-change-in-production
+      JWT_ALGORITHM: HS256
+      JWT_ISSUER: pearl-api
+      JWT_AUDIENCE: pearl
+      HOST: "0.0.0.0"
+      PORT: "8080"
+      LOG_LEVEL: info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+      - ./PeaRL_spec:/app/PeaRL_spec
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: pearl
+      POSTGRES_PASSWORD: pearl
+      POSTGRES_DB: pearl
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pearl"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - miniodata:/data
+
+volumes:
+  pgdata:
+  miniodata:

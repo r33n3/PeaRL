@@ -1,0 +1,23 @@
+# Example Payload Index
+
+- `examples/approvals/create-approval.request.json`
+- `examples/approvals/decision.request.json`
+- `examples/approvals/decision.response.json`
+- `examples/compile/compile-context.accepted.response.json`
+- `examples/compile/compile-context.request.json`
+- `examples/compile/compiled-package.response.json`
+- `examples/errors/validation-error.response.json`
+- `examples/exceptions/create-exception.request.json`
+- `examples/findings/findings-ingest.request.json`
+- `examples/findings/findings-ingest.response.json`
+- `examples/project/app-spec.request.json`
+- `examples/project/create-project.request.json`
+- `examples/project/create-project.response.json`
+- `examples/project/environment-profile.request.json`
+- `examples/project/org-baseline.request.json`
+- `examples/remediation/generate-remediation-spec.request.json`
+- `examples/remediation/generate-remediation-spec.response.json`
+- `examples/reports/generate-report.request.json`
+- `examples/reports/generate-report.response.json`
+- `examples/task-packets/generate-task-packet.request.json`
+- `examples/task-packets/generate-task-packet.response.json`

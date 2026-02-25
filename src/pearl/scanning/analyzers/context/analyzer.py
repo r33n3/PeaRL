@@ -1,0 +1,539 @@
+"""Context file analyzer.
+
+Analyzes AI context files for security risks and policy violations.
+"""
+
+import logging
+import re
+from dataclasses import dataclass, field
+from enum import Enum
+from pathlib import Path
+from typing import Any, Iterator
+
+from pearl.scanning.types import AttackCategory, ComponentType, ScanSeverity
+from pearl.scanning.analyzers.context.patterns import (
+    RiskPattern,
+    RiskCategory,
+    RISK_PATTERNS,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class ContextFileType(str, Enum):
+    """Types of context files."""
+    CLAUDE_MD = "claude_md"
+    CURSOR_RULES = "cursor_rules"
+    SYSTEM_PROMPT = "system_prompt"
+    INSTRUCTIONS = "instructions"
+    RULES = "rules"
+    CONFIG = "config"
+    UNKNOWN = "unknown"
+
+
+# File patterns for context file detection
+CONTEXT_FILE_PATTERNS = {
+    ContextFileType.CLAUDE_MD: [
+        r"CLAUDE\.md$",
+        r"\.claude/.*\.md$",
+    ],
+    ContextFileType.CURSOR_RULES: [
+        r"\.cursorrules$",
+        r"\.cursor/rules$",
+    ],
+    ContextFileType.SYSTEM_PROMPT: [
+        r"system[_-]?prompt\.(txt|md)$",
+        r"prompt\.(txt|md)$",
+    ],
+    ContextFileType.INSTRUCTIONS: [
+        r"instructions?\.(txt|md)$",
+        r"INSTRUCTIONS?\.md$",
+    ],
+    ContextFileType.RULES: [
+        r"rules\.(txt|md|yaml|json)$",
+        r"RULES\.md$",
+    ],
+}
+
+
+@dataclass
+class ContextFinding:
+    """A security finding in a context file."""
+    pattern_name: str
+    category: RiskCategory
+    severity: ScanSeverity
+    title: str
+    description: str
+    file_path: Path
+    line_number: int | None = None
+    line_content: str | None = None
+    match_text: str | None = None
+    code_context: str | None = None
+    evidence: dict[str, Any] = field(default_factory=dict)
+    remediation: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "pattern_name": self.pattern_name,
+            "category": self.category.value,
+            "severity": self.severity.value,
+            "title": self.title,
+            "description": self.description,
+            "file_path": str(self.file_path),
+            "line_number": self.line_number,
+            "line_content": self.line_content,
+            "match_text": self.match_text,
+            "code_context": self.code_context,
+            "evidence": self.evidence,
+            "remediation": self.remediation,
+        }
+
+
+@dataclass
+class ContextAnalysisResult:
+    """Result of context file analysis."""
+    file_path: Path
+    file_type: ContextFileType
+    findings: list[ContextFinding] = field(default_factory=list)
+    lines_scanned: int = 0
+    errors: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def is_safe(self) -> bool:
+        """Check if no security issues were found."""
+        return len(self.findings) == 0
+
+    @property
+    def critical_count(self) -> int:
+        """Count of critical findings."""
+        return sum(1 for f in self.findings if f.severity == ScanSeverity.CRITICAL)
+
+    @property
+    def high_count(self) -> int:
+        """Count of high severity findings."""
+        return sum(1 for f in self.findings if f.severity == ScanSeverity.HIGH)
+
+    def findings_by_category(self, category: RiskCategory) -> list[ContextFinding]:
+        """Get findings filtered by category."""
+        return [f for f in self.findings if f.category == category]
+
+
+class ContextAnalyzer:
+    """Analyzes AI context files for security risks.
+
+    Scans files like CLAUDE.md, .cursorrules, system prompts for:
+    - Jailbreak attempts
+    - Prompt injection
+    - Data exfiltration instructions
+    - Unsafe execution patterns
+    - Policy violations
+    """
+
+    def __init__(
+        self,
+        patterns: list[RiskPattern] | None = None,
+        min_severity: ScanSeverity = ScanSeverity.LOW,
+        custom_patterns: list[RiskPattern] | None = None,
+    ):
+        """Initialize context analyzer.
+
+        Args:
+            patterns: Risk patterns to use. Defaults to all patterns.
+            min_severity: Minimum severity to report.
+            custom_patterns: Additional custom patterns.
+        """
+        self.patterns = patterns or RISK_PATTERNS.copy()
+        self.min_severity = min_severity
+
+        if custom_patterns:
+            self.patterns.extend(custom_patterns)
+
+        # Severity ordering for filtering
+        self._severity_order = {
+            ScanSeverity.LOW: 0,
+            ScanSeverity.MEDIUM: 1,
+            ScanSeverity.HIGH: 2,
+            ScanSeverity.CRITICAL: 3,
+        }
+
+    def detect_file_type(self, file_path: Path) -> ContextFileType:
+        """Detect the type of context file.
+
+        Args:
+            file_path: Path to the file.
+
+        Returns:
+            Detected file type.
+        """
+        path_str = str(file_path)
+
+        for file_type, patterns in CONTEXT_FILE_PATTERNS.items():
+            for pattern in patterns:
+                if re.search(pattern, path_str, re.IGNORECASE):
+                    return file_type
+
+        return ContextFileType.UNKNOWN
+
+    def analyze_file(self, file_path: Path | str) -> ContextAnalysisResult:
+        """Analyze a context file for security risks.
+
+        Args:
+            file_path: Path to the context file.
+
+        Returns:
+            Analysis result with findings.
+        """
+        file_path = Path(file_path)
+
+        if not file_path.exists():
+            return ContextAnalysisResult(
+                file_path=file_path,
+                file_type=ContextFileType.UNKNOWN,
+                errors=[f"File not found: {file_path}"],
+            )
+
+        file_type = self.detect_file_type(file_path)
+
+        try:
+            content = file_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            try:
+                content = file_path.read_text(encoding="latin-1")
+            except Exception as e:
+                return ContextAnalysisResult(
+                    file_path=file_path,
+                    file_type=file_type,
+                    errors=[f"Could not read file: {e}"],
+                )
+        except Exception as e:
+            return ContextAnalysisResult(
+                file_path=file_path,
+                file_type=file_type,
+                errors=[f"Error reading file: {e}"],
+            )
+
+        return self.analyze_content(content, file_path, file_type)
+
+    def analyze_content(
+        self,
+        content: str,
+        file_path: Path | None = None,
+        file_type: ContextFileType = ContextFileType.UNKNOWN,
+    ) -> ContextAnalysisResult:
+        """Analyze content for security risks.
+
+        Args:
+            content: Content to analyze.
+            file_path: Optional file path for context.
+            file_type: Type of context file.
+
+        Returns:
+            Analysis result with findings.
+        """
+        file_path = file_path or Path("<string>")
+        lines = content.splitlines()
+
+        result = ContextAnalysisResult(
+            file_path=file_path,
+            file_type=file_type,
+            lines_scanned=len(lines),
+        )
+
+        # Collect all matches first, then deduplicate by location.
+        # Multiple patterns often match the same line (e.g. a DAN jailbreak
+        # prompt also matches no_sandbox). Reporting one finding per line
+        # with the best match is more useful than N overlapping findings.
+        all_matches: list[ContextFinding] = []
+        seen_pattern_line: set[tuple[str, int]] = set()
+
+        for pattern in self.patterns:
+            # Skip patterns below minimum severity
+            if self._severity_order.get(pattern.severity, 0) < self._severity_order.get(self.min_severity, 0):
+                continue
+
+            for finding in self._find_pattern_matches(
+                content, pattern, lines, file_path
+            ):
+                # Skip same pattern on same line
+                key = (pattern.name, finding.line_number or 0)
+                if key not in seen_pattern_line:
+                    seen_pattern_line.add(key)
+                    all_matches.append(finding)
+
+        # Deduplicate by (file, line): keep only the highest-severity match.
+        best_per_line: dict[tuple, ContextFinding] = {}
+        for finding in all_matches:
+            line_key = (str(finding.file_path), finding.line_number or 0)
+            existing = best_per_line.get(line_key)
+            if existing is None:
+                best_per_line[line_key] = finding
+            else:
+                existing_rank = self._severity_order.get(existing.severity, 0)
+                finding_rank = self._severity_order.get(finding.severity, 0)
+                if finding_rank > existing_rank:
+                    best_per_line[line_key] = finding
+
+        result.findings = list(best_per_line.values())
+        return result
+
+    def _find_pattern_matches(
+        self,
+        content: str,
+        pattern: RiskPattern,
+        lines: list[str],
+        file_path: Path,
+    ) -> Iterator[ContextFinding]:
+        """Find matches for a pattern.
+
+        Args:
+            content: Content to search.
+            pattern: Pattern to match.
+            lines: Content split into lines.
+            file_path: File path for context.
+
+        Yields:
+            Context findings.
+        """
+        compiled = pattern.compiled_pattern
+
+        for match in compiled.finditer(content):
+            # Find line number
+            line_num = content[:match.start()].count("\n") + 1
+            line_content = lines[line_num - 1] if 0 < line_num <= len(lines) else ""
+
+            # Check for false positives
+            if self._is_false_positive(match.group(0), pattern, line_content, file_path):
+                continue
+
+            # Capture surrounding code context (3 lines before/after)
+            ctx_start = max(0, line_num - 4)
+            ctx_end = min(len(lines), line_num + 3)
+            context_lines = []
+            for i in range(ctx_start, ctx_end):
+                marker = ">>> " if i == line_num - 1 else "    "
+                context_lines.append(f"{i + 1:4d} {marker}{lines[i]}")
+            code_context = "\n".join(context_lines)
+
+            yield ContextFinding(
+                pattern_name=pattern.name,
+                category=pattern.category,
+                severity=pattern.severity,
+                title=f"{pattern.category.value.replace('_', ' ').title()}: {pattern.name}",
+                description=pattern.description,
+                file_path=file_path,
+                line_number=line_num,
+                line_content=line_content.strip(),
+                match_text=match.group(0),
+                code_context=code_context,
+                remediation=pattern.remediation,
+            )
+
+    # Regex for lines that define patterns / regex strings (the match is
+    # inside a string literal used for detection, not an actual instruction).
+    _PATTERN_DEFINITION_RE = re.compile(
+        r"""(?:"""
+        r"""pattern\s*[=:]\s*r?["']|"""       # pattern = r"..." or pattern: "..."
+        r"""re\.compile\s*\(|"""               # re.compile(...)
+        r"""_PATTERNS?\s*[=\[]|"""             # _PATTERNS = [ or _PATTERN = ...
+        r"""RISK_PATTERNS|"""                  # RISK_PATTERNS reference
+        r"""examples?\s*[=:\[]|"""             # examples = [ or example: [
+        r"""test_(?:prompt|payload|input)|"""  # test_prompt / test_payload
+        r"""description\s*[=:]\s*["']"""       # description = "..." / description: "..."
+        r""")""",
+        re.IGNORECASE,
+    )
+
+    # File paths that indicate security tooling / detection code.
+    _SECURITY_TOOL_PATH_RE = re.compile(
+        r"(?:analyzer|detector|scanner|probe|checker|validator|"
+        r"security|jailbreak|injection|adversarial|"
+        r"test_|tests/|spec/|__test__|"
+        r"examples?/|samples?/|fixtures?/)",
+        re.IGNORECASE,
+    )
+
+    def _is_false_positive(
+        self,
+        match_text: str,
+        pattern: RiskPattern,
+        line_content: str,
+        file_path: Path | None = None,
+    ) -> bool:
+        """Check if match is a false positive.
+
+        Args:
+            match_text: Matched text.
+            pattern: Pattern that matched.
+            line_content: Full line content.
+            file_path: Optional file path for context-aware filtering.
+
+        Returns:
+            True if likely a false positive.
+        """
+        # Check pattern-specific hints
+        for hint in pattern.false_positive_hints:
+            if hint.lower() in line_content.lower():
+                return True
+
+        line_lower = line_content.lower()
+
+        # Common false positive indicators
+        false_positive_contexts = [
+            "example of what not to do",
+            "don't do this",
+            "avoid doing",
+            "never do",
+            "bad example",
+            "anti-pattern",
+            "prohibited example",
+        ]
+
+        for fp_context in false_positive_contexts:
+            if fp_context in line_lower:
+                return True
+
+        # The match appears inside a pattern definition, regex, or test fixture.
+        # Security tools define jailbreak patterns for detection -- not as
+        # actual instructions.
+        if self._PATTERN_DEFINITION_RE.search(line_content):
+            return True
+
+        # Lines that are Python/YAML comments or docstrings describing
+        # security patterns rather than executing them.
+        stripped = line_content.strip()
+        if stripped.startswith(("#", "//", "*", "- #")):
+            # Comment line -- check if it's describing detection logic
+            detection_words = {"detect", "check", "analyze", "scan", "pattern", "match", "filter"}
+            if any(w in line_lower for w in detection_words):
+                return True
+
+        # File path indicates this is security tooling / test code that
+        # contains patterns as reference data (the "scanning the scanner" problem).
+        if file_path and self._SECURITY_TOOL_PATH_RE.search(str(file_path)):
+            # For files in security tool paths, only flag CRITICAL findings
+            # that are NOT in jailbreak or prompt_injection categories
+            # (those are almost always reference data in security tools).
+            if pattern.category in (RiskCategory.JAILBREAK, RiskCategory.PROMPT_INJECTION):
+                return True
+
+        return False
+
+    def analyze_directory(
+        self,
+        directory: Path | str,
+        recursive: bool = True,
+    ) -> list[ContextAnalysisResult]:
+        """Analyze all context files in a directory.
+
+        Args:
+            directory: Directory to scan.
+            recursive: Scan subdirectories.
+
+        Returns:
+            List of analysis results.
+        """
+        directory = Path(directory)
+        results = []
+
+        pattern = "**/*" if recursive else "*"
+        for file_path in directory.glob(pattern):
+            if file_path.is_file() and self._is_context_file(file_path):
+                result = self.analyze_file(file_path)
+                results.append(result)
+
+        return results
+
+    def _is_context_file(self, file_path: Path) -> bool:
+        """Check if file is a context file.
+
+        Args:
+            file_path: Path to check.
+
+        Returns:
+            True if file is a context file.
+        """
+        # Check known patterns
+        if self.detect_file_type(file_path) != ContextFileType.UNKNOWN:
+            return True
+
+        # Check common extensions and names
+        name_lower = file_path.name.lower()
+        if name_lower.endswith((".md", ".txt")):
+            keywords = ["prompt", "rule", "instruction", "system", "context", "claude"]
+            return any(kw in name_lower for kw in keywords)
+
+        return False
+
+    def get_summary(self, results: list[ContextAnalysisResult]) -> dict[str, Any]:
+        """Get summary of multiple analysis results.
+
+        Args:
+            results: List of analysis results.
+
+        Returns:
+            Summary dictionary.
+        """
+        total_findings = sum(len(r.findings) for r in results)
+        total_critical = sum(r.critical_count for r in results)
+        total_high = sum(r.high_count for r in results)
+
+        by_category: dict[str, int] = {}
+        for result in results:
+            for finding in result.findings:
+                cat = finding.category.value
+                by_category[cat] = by_category.get(cat, 0) + 1
+
+        return {
+            "files_scanned": len(results),
+            "total_findings": total_findings,
+            "critical_count": total_critical,
+            "high_count": total_high,
+            "by_category": by_category,
+            "files_with_issues": [
+                str(r.file_path) for r in results if not r.is_safe
+            ],
+        }
+
+    def to_analyzer_result(self, results: list[ContextAnalysisResult]):
+        """Convert context analysis results to standard AnalyzerResult.
+
+        Args:
+            results: List of context analysis results.
+
+        Returns:
+            Standard AnalyzerResult with mapped findings.
+        """
+        from pearl.scanning.analyzers.base import AnalyzerFinding, AnalyzerResult as AR
+
+        findings = []
+        for result in results:
+            for f in result.findings:
+                # Map RiskCategory to AttackCategory
+                cat_map = {
+                    RiskCategory.JAILBREAK: AttackCategory.JAILBREAK,
+                    RiskCategory.PROMPT_INJECTION: AttackCategory.PROMPT_INJECTION,
+                    RiskCategory.DATA_EXFILTRATION: AttackCategory.DATA_LEAKAGE,
+                    RiskCategory.PRIVILEGE_ESCALATION: AttackCategory.PRIVILEGE_ESCALATION,
+                    RiskCategory.UNSAFE_EXECUTION: AttackCategory.EXCESSIVE_AGENCY,
+                    RiskCategory.INFORMATION_DISCLOSURE: AttackCategory.SYSTEM_PROMPT_LEAKAGE,
+                    RiskCategory.DECEPTIVE_BEHAVIOR: AttackCategory.IMPROPER_OUTPUT,
+                    RiskCategory.POLICY_VIOLATION: AttackCategory.JAILBREAK,
+                    RiskCategory.RESOURCE_ABUSE: AttackCategory.UNBOUNDED_CONSUMPTION,
+                }
+                findings.append(AnalyzerFinding(
+                    title=f.title,
+                    description=f.description,
+                    severity=f.severity,
+                    category=cat_map.get(f.category, AttackCategory.PROMPT_INJECTION),
+                    component_type=ComponentType.CONTEXT,
+                    component_name=str(f.file_path),
+                    file_path=str(f.file_path),
+                    line_number=f.line_number,
+                    evidence=[{"type": "code", "content": f.code_context or "", "source_file": str(f.file_path), "source_line": f.line_number}] if f.code_context else [],
+                    remediation_summary=f.remediation,
+                    confidence=0.8,
+                    tags=[f.category.value, f.pattern_name],
+                ))
+        return AR(analyzer_name="context", findings=findings)

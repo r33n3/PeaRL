@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pearl.local/schemas/workflow/report-request.schema.json",
+  "title": "ReportRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "$ref": "../common/common-defs.schema.json#/$defs/schema_version"
+    },
+    "report_type": {
+      "type": "string",
+      "enum": [
+        "release_readiness",
+        "residual_risk",
+        "control_coverage",
+        "findings_trend",
+        "rai_posture",
+        "environment_posture"
+      ]
+    },
+    "format": {
+      "type": "string",
+      "enum": [
+        "json",
+        "markdown"
+      ]
+    },
+    "filters": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "include_references": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema_version",
+    "report_type",
+    "format"
+  ]
+}

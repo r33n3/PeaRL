@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pearl.local/schemas/findings/remediation-spec.schema.json",
+  "title": "RemediationSpec",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "$ref": "../common/common-defs.schema.json#/$defs/schema_version"
+    },
+    "remediation_spec_id": {
+      "type": "string",
+      "pattern": "^rs_[A-Za-z0-9_-]+$"
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "environment": {
+      "$ref": "../common/common-defs.schema.json#/$defs/environment"
+    },
+    "finding_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "risk_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "risk_level": {
+          "$ref": "../common/common-defs.schema.json#/$defs/risk_level"
+        },
+        "business_impact": {
+          "type": "string",
+          "enum": [
+            "low",
+            "moderate",
+            "high",
+            "critical"
+          ]
+        },
+        "confidence": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        }
+      },
+      "required": [
+        "risk_level",
+        "confidence"
+      ]
+    },
+    "eligibility": {
+      "type": "string",
+      "enum": [
+        "auto_allowed",
+        "auto_allowed_with_approval",
+        "human_required",
+        "not_autonomous"
+      ]
+    },
+    "required_outcome": {
+      "type": "string"
+    },
+    "implementation_constraints": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "required_tests": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidence_required": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "approval_required": {
+      "type": "boolean"
+    },
+    "approval_triggers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "trace_id": {
+      "$ref": "../common/common-defs.schema.json#/$defs/trace_id"
+    },
+    "generated_at": {
+      "$ref": "../common/common-defs.schema.json#/$defs/timestamp"
+    },
+    "integrity": {
+      "$ref": "../common/common-defs.schema.json#/$defs/integrity"
+    },
+    "references": {
+      "type": "array",
+      "items": {
+        "$ref": "../common/common-defs.schema.json#/$defs/reference"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "remediation_spec_id",
+    "project_id",
+    "environment",
+    "finding_refs",
+    "risk_summary",
+    "eligibility",
+    "required_outcome",
+    "trace_id",
+    "generated_at"
+  ]
+}

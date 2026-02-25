@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pearl.local/schemas/context/task-packet.schema.json",
+  "title": "TaskPacket",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "$ref": "../common/common-defs.schema.json#/$defs/schema_version"
+    },
+    "task_packet_id": {
+      "type": "string",
+      "pattern": "^tp_[A-Za-z0-9_-]+$"
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "environment": {
+      "$ref": "../common/common-defs.schema.json#/$defs/environment"
+    },
+    "task_type": {
+      "type": "string",
+      "enum": [
+        "feature",
+        "fix",
+        "remediation",
+        "refactor",
+        "config",
+        "policy"
+      ]
+    },
+    "task_summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 3000
+    },
+    "affected_components": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "relevant_controls": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "relevant_rai_requirements": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "allowed_actions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "blocked_actions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "required_tests": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "approval_triggers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidence_required": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "reassessment_triggers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "references": {
+      "type": "array",
+      "items": {
+        "$ref": "../common/common-defs.schema.json#/$defs/reference"
+      }
+    },
+    "trace_id": {
+      "$ref": "../common/common-defs.schema.json#/$defs/trace_id"
+    },
+    "generated_at": {
+      "$ref": "../common/common-defs.schema.json#/$defs/timestamp"
+    },
+    "context_budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_tokens_hint": {
+          "type": "integer",
+          "minimum": 256
+        },
+        "deep_fetch_required": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "task_packet_id",
+    "project_id",
+    "environment",
+    "task_type",
+    "task_summary",
+    "allowed_actions",
+    "blocked_actions",
+    "trace_id",
+    "generated_at"
+  ]
+}

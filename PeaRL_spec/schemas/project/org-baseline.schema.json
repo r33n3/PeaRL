@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pearl.local/schemas/project/org-baseline.schema.json",
+  "title": "OrgBaseline",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "$ref": "../common/common-defs.schema.json#/$defs/schema_version"
+    },
+    "kind": {
+      "const": "PearlOrgBaseline"
+    },
+    "baseline_id": {
+      "type": "string",
+      "pattern": "^orgb_[A-Za-z0-9_-]+$"
+    },
+    "org_name": {
+      "type": "string"
+    },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "coding": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "secure_coding_standard_required": {
+              "type": "boolean"
+            },
+            "secret_hardcoding_forbidden": {
+              "type": "boolean"
+            },
+            "dependency_pinning_required": {
+              "type": "boolean"
+            }
+          }
+        },
+        "logging": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "structured_logging_required": {
+              "type": "boolean"
+            },
+            "pii_in_logs_forbidden_by_default": {
+              "type": "boolean"
+            },
+            "security_events_minimum": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "iam": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "least_privilege_required": {
+              "type": "boolean"
+            },
+            "wildcard_permissions_forbidden_by_default": {
+              "type": "boolean"
+            }
+          }
+        },
+        "network": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "outbound_connectivity_must_be_declared": {
+              "type": "boolean"
+            },
+            "deny_by_default_preferred": {
+              "type": "boolean"
+            }
+          }
+        },
+        "responsible_ai": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ai_use_disclosure_required_for_user_facing": {
+              "type": "boolean"
+            },
+            "model_provenance_logging_required": {
+              "type": "boolean"
+            },
+            "human_oversight_required_for_high_impact_actions": {
+              "type": "boolean"
+            },
+            "fairness_review_required_when_user_impact_is_material": {
+              "type": "boolean"
+            }
+          }
+        },
+        "testing": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "unit_tests_required": {
+              "type": "boolean"
+            },
+            "security_tests_baseline_required": {
+              "type": "boolean"
+            },
+            "rai_evals_required_for_ai_enabled_apps": {
+              "type": "boolean"
+            }
+          }
+        }
+      },
+      "required": [
+        "coding",
+        "iam",
+        "network",
+        "testing"
+      ]
+    },
+    "environment_defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^(sandbox|dev|pilot|preprod|prod)$": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "created_at": {
+      "$ref": "../common/common-defs.schema.json#/$defs/timestamp"
+    },
+    "updated_at": {
+      "$ref": "../common/common-defs.schema.json#/$defs/timestamp"
+    },
+    "integrity": {
+      "$ref": "../common/common-defs.schema.json#/$defs/integrity"
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "baseline_id",
+    "org_name",
+    "defaults"
+  ]
+}

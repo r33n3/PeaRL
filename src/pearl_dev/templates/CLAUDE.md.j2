@@ -1,0 +1,15 @@
+<!-- PEARL:GOVERNANCE:BEGIN -->
+## PeaRL Governance — {{ project_id }} | {{ environment }} | {{ autonomy_mode }}
+
+- Call `pearl_check_action` before risky operations
+- Call `pearl_check_diff` before committing code
+- Blocked: {{ blocked_actions | join(', ') }}
+{% if promotion %}
+- **Promotion {{ promotion.current_env }} → {{ promotion.next_env }}**: {{ promotion.passed }}/{{ promotion.total }} passing ({{ promotion.progress_pct }}%)
+{% for rule in promotion.blocking_rules[:3] %}
+  - Blocker: {{ rule.rule_type }} — {{ rule.message }}
+{% endfor %}
+{% endif %}
+- Full governance policy: `.pearl/GOVERNANCE.md`
+- Check promotion readiness: call `pearl_check_promotion`
+<!-- PEARL:GOVERNANCE:END -->

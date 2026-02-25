@@ -1,0 +1,198 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Pearl Archive Theme ── */
+
+@layer base {
+  * {
+    border-color: theme("colors.slate-border");
+  }
+
+  body {
+    @apply bg-vault-black text-bone font-body antialiased;
+    position: relative;
+  }
+
+  /* Faint concrete grain texture overlay */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.03;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 256px 256px;
+  }
+
+  #root {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-vault-black;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-wet-stone rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-bone-dim;
+  }
+}
+
+@layer components {
+  /* Vault card — the primary container component */
+  .vault-card {
+    @apply bg-charcoal border border-slate-border rounded-lg shadow-vault;
+    @apply transition-all duration-200 ease-out;
+  }
+
+  .vault-card:hover {
+    @apply border-bone-dim shadow-teal-glow;
+  }
+
+  .vault-card-interactive {
+    @apply vault-card cursor-pointer;
+  }
+
+  .vault-card-interactive:hover {
+    @apply bg-charcoal-light border-cold-teal/30;
+  }
+
+  /* Vault heading */
+  .vault-heading {
+    @apply font-heading font-semibold uppercase tracking-wider text-bone;
+  }
+
+  /* Mono data display */
+  .mono-data {
+    @apply font-mono text-sm text-bone-muted;
+  }
+
+  /* Severity badges */
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-medium;
+  }
+
+  .badge-critical {
+    @apply badge bg-dried-blood/20 text-dried-blood-bright border border-dried-blood/40;
+  }
+
+  .badge-high {
+    @apply badge bg-orange-900/20 text-orange-400 border border-orange-800/40;
+  }
+
+  .badge-moderate {
+    @apply badge bg-bone-dim/20 text-bone-muted border border-bone-dim/40;
+  }
+
+  .badge-low {
+    @apply badge bg-cold-teal/10 text-cold-teal border border-cold-teal/20;
+  }
+
+  .badge-info {
+    @apply badge bg-clinical-cyan/10 text-clinical-cyan border border-clinical-cyan/20;
+  }
+
+  /* Status badges */
+  .badge-pending {
+    @apply badge bg-cold-teal/10 text-cold-teal border border-cold-teal/20 animate-pulse-slow;
+  }
+
+  .badge-approved {
+    @apply badge bg-cold-teal/20 text-cold-teal border border-cold-teal/30;
+  }
+
+  .badge-rejected {
+    @apply badge bg-dried-blood/20 text-dried-blood-bright border border-dried-blood/40;
+  }
+
+  .badge-needs-info {
+    @apply badge bg-clinical-cyan/10 text-clinical-cyan border border-clinical-cyan/20;
+  }
+
+  /* Environment badges */
+  .env-badge {
+    @apply badge uppercase tracking-widest text-[10px];
+  }
+
+  .env-dev {
+    @apply env-badge bg-cold-teal/10 text-cold-teal border border-cold-teal/20;
+  }
+
+  .env-preprod {
+    @apply env-badge bg-clinical-cyan/10 text-clinical-cyan border border-clinical-cyan/20;
+  }
+
+  .env-prod {
+    @apply env-badge bg-bone-dim/20 text-bone border border-bone-dim/40;
+  }
+
+  .env-sandbox {
+    @apply env-badge bg-wet-stone text-bone-muted border border-slate-border;
+  }
+
+  .env-pilot {
+    @apply env-badge bg-cold-teal/5 text-cold-teal-dim border border-cold-teal/10;
+  }
+
+  /* Button styles */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-heading font-semibold uppercase tracking-wide;
+    @apply transition-all duration-150 ease-out;
+    @apply disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+
+  .btn-teal {
+    @apply btn bg-cold-teal/15 text-cold-teal border border-cold-teal/30;
+    @apply hover:bg-cold-teal/25 hover:shadow-teal-glow;
+  }
+
+  .btn-cyan {
+    @apply btn bg-clinical-cyan/15 text-clinical-cyan border border-clinical-cyan/30;
+    @apply hover:bg-clinical-cyan/25 hover:shadow-cyan-glow;
+  }
+
+  .btn-danger {
+    @apply btn bg-dried-blood/15 text-dried-blood-bright border border-dried-blood/30;
+    @apply hover:bg-dried-blood/25 hover:shadow-blood-glow;
+  }
+
+  .btn-ghost {
+    @apply btn bg-transparent text-bone-muted border border-transparent;
+    @apply hover:bg-wet-stone hover:text-bone;
+  }
+
+  /* Input styles */
+  .input-vault {
+    @apply w-full bg-wet-stone border border-slate-border rounded-md px-3 py-2;
+    @apply text-bone font-body text-sm placeholder-bone-dim;
+    @apply focus:outline-none focus:border-cold-teal/50 focus:shadow-teal-glow;
+    @apply transition-all duration-150;
+  }
+
+  /* Progress bar */
+  .progress-vault {
+    @apply h-1.5 bg-wet-stone rounded-full overflow-hidden;
+  }
+
+  .progress-vault-fill {
+    @apply h-full bg-cold-teal rounded-full transition-all duration-500 ease-out;
+  }
+
+  /* Staggered fade-in for lists */
+  .stagger-item {
+    @apply opacity-0 animate-fade-in;
+  }
+}

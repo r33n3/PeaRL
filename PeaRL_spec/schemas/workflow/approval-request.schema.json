@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pearl.local/schemas/workflow/approval-request.schema.json",
+  "title": "ApprovalRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "$ref": "../common/common-defs.schema.json#/$defs/schema_version"
+    },
+    "approval_request_id": {
+      "type": "string",
+      "pattern": "^appr_[A-Za-z0-9_-]+$"
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "environment": {
+      "$ref": "../common/common-defs.schema.json#/$defs/environment"
+    },
+    "request_type": {
+      "type": "string",
+      "enum": [
+        "deployment_gate",
+        "auth_flow_change",
+        "network_policy_change",
+        "exception",
+        "remediation_execution"
+      ]
+    },
+    "trigger": {
+      "type": "string"
+    },
+    "requested_by": {
+      "type": "string"
+    },
+    "required_roles": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "artifact_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "approved",
+        "rejected",
+        "expired"
+      ]
+    },
+    "created_at": {
+      "$ref": "../common/common-defs.schema.json#/$defs/timestamp"
+    },
+    "expires_at": {
+      "$ref": "../common/common-defs.schema.json#/$defs/timestamp"
+    },
+    "trace_id": {
+      "$ref": "../common/common-defs.schema.json#/$defs/trace_id"
+    }
+  },
+  "required": [
+    "schema_version",
+    "approval_request_id",
+    "project_id",
+    "environment",
+    "request_type",
+    "trigger",
+    "requested_by",
+    "status",
+    "created_at",
+    "trace_id"
+  ]
+}

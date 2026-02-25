@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pearl.local/schemas/project/application-spec.schema.json",
+  "title": "ApplicationSpec",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "$ref": "../common/common-defs.schema.json#/$defs/schema_version"
+    },
+    "kind": {
+      "const": "PearlApplicationSpec"
+    },
+    "application": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "app_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]{2,100}$"
+        },
+        "owner_team": {
+          "type": "string"
+        },
+        "business_criticality": {
+          "type": "string",
+          "enum": [
+            "low",
+            "moderate",
+            "high",
+            "mission_critical"
+          ]
+        },
+        "external_exposure": {
+          "type": "string",
+          "enum": [
+            "internal_only",
+            "partner",
+            "customer_facing",
+            "public"
+          ]
+        },
+        "ai_enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "app_id",
+        "owner_team",
+        "business_criticality",
+        "external_exposure",
+        "ai_enabled"
+      ]
+    },
+    "architecture": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "components": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "criticality": {
+                "$ref": "../common/common-defs.schema.json#/$defs/risk_level"
+              }
+            },
+            "required": [
+              "id",
+              "type"
+            ]
+          }
+        },
+        "trust_boundaries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          }
+        }
+      },
+      "required": [
+        "components"
+      ]
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "classifications": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "sensitivity": {
+                "type": "string",
+                "enum": [
+                  "public",
+                  "internal",
+                  "confidential",
+                  "restricted"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "sensitivity"
+            ]
+          }
+        },
+        "prohibited_in_model_context": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "iam": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "responsible_ai": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "autonomous_coding": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "controls": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "tests": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "approvals": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "integrity": {
+      "$ref": "../common/common-defs.schema.json#/$defs/integrity"
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "application",
+    "architecture"
+  ]
+}

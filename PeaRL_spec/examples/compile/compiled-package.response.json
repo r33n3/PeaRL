@@ -1,0 +1,170 @@
+{
+  "schema_version": "1.1",
+  "kind": "PearlCompiledContextPackage",
+  "package_metadata": {
+    "package_id": "pkg_customer_support_ai_preprod_001",
+    "compiled_from": {
+      "org_baseline_id": "orgb_secure_autonomous_v1",
+      "app_spec_id": "customer-support-ai-assistant",
+      "environment_profile_id": "envp_preprod_supervised_high",
+      "remediation_overlay_id": null
+    },
+    "integrity": {
+      "signed": false,
+      "hash": "4f0f8d20f7abcc9988d914e6b8a1243f",
+      "hash_alg": "sha256",
+      "compiled_at": "2026-02-21T10:30:00-06:00"
+    },
+    "compiler_version": "1.1.0",
+    "merge_precedence_version": "1.1"
+  },
+  "project_identity": {
+    "project_id": "proj_customer_support_ai",
+    "app_id": "customer-support-ai-assistant",
+    "environment": "preprod",
+    "delivery_stage": "preprod",
+    "ai_enabled": true
+  },
+  "environment_profile": {
+    "risk_level": "high",
+    "approval_level": "high"
+  },
+  "autonomy_policy": {
+    "mode": "supervised_autonomous",
+    "allowed_actions": [
+      "code_edit",
+      "test_create",
+      "test_run",
+      "config_edit_nonprod"
+    ],
+    "blocked_actions": [
+      "prod_deploy",
+      "privileged_iam_changes"
+    ],
+    "approval_required_for": [
+      "auth_flow_changes",
+      "network_policy_changes",
+      "data_retention_changes"
+    ]
+  },
+  "security_requirements": {
+    "required_controls": [
+      "authz_checks",
+      "input_validation",
+      "tool_call_allowlisting",
+      "audit_logging",
+      "output_filtering"
+    ],
+    "prohibited_patterns": [
+      "hardcoded_secrets",
+      "wildcard_iam_permissions",
+      "undeclared_external_egress"
+    ]
+  },
+  "responsible_ai_requirements": {
+    "transparency": {
+      "ai_disclosure_required": true,
+      "model_provenance_logging_required": true,
+      "explanation_metadata_required": "basic"
+    },
+    "fairness": {
+      "review_required": true,
+      "monitoring_required": true
+    },
+    "oversight": {
+      "human_review_required_for": [
+        "customer-impacting recommendations"
+      ]
+    }
+  },
+  "iam_requirements": {
+    "least_privilege_required": true
+  },
+  "network_requirements": {
+    "outbound_allowlist": [
+      "llm-gateway.internal",
+      "telemetry.internal"
+    ],
+    "public_egress_forbidden": true
+  },
+  "data_handling_requirements": {
+    "prohibited_in_model_context": [
+      "full_ssn",
+      "payment_card_data"
+    ]
+  },
+  "tool_and_model_constraints": {
+    "allowed_tool_classes": [
+      "repo_edit",
+      "tests",
+      "static_analysis"
+    ],
+    "forbidden_tool_classes": [
+      "prod_admin"
+    ]
+  },
+  "required_tests": {
+    "security": [
+      "authz_negative_tests",
+      "prompt_injection_guardrail_tests",
+      "sensitive_data_leakage_tests"
+    ],
+    "rai": [
+      "ai_disclosure_presence_test",
+      "explanation_metadata_presence_test"
+    ],
+    "functional": [
+      "critical-path-smoke-test"
+    ]
+  },
+  "approval_checkpoints": [
+    {
+      "checkpoint_id": "cp_auth_flow_change",
+      "trigger": "auth_flow_change",
+      "required_roles": [
+        "security_review",
+        "platform_owner"
+      ],
+      "environment": "preprod"
+    }
+  ],
+  "evidence_requirements": [
+    "decision_trace",
+    "test_results",
+    "approval_records",
+    "artifact_versions"
+  ],
+  "change_reassessment_triggers": {
+    "architecture_delta": [
+      "new_external_integration",
+      "new_trust_boundary",
+      "data_classification_change",
+      "auth_flow_change"
+    ]
+  },
+  "autonomous_remediation_eligibility": {
+    "default": "human_required",
+    "rules": [
+      {
+        "match": "dependency_pin_update_nonprod",
+        "eligibility": "auto_allowed"
+      }
+    ]
+  },
+  "exceptions": [],
+  "traceability": {
+    "trace_id": "trc_compile_001",
+    "source_refs": [
+      "orgb_secure_autonomous_v1",
+      "app_spec:customer-support-ai-assistant",
+      "envp_preprod_supervised_high"
+    ]
+  },
+  "references": [
+    {
+      "ref_id": "api:/projects/proj_customer_support_ai/compiled-package",
+      "kind": "api",
+      "summary": "Compiled package record"
+    }
+  ]
+}

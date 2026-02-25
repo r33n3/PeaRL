@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pearl.local/schemas/workflow/exception-record.schema.json",
+  "title": "ExceptionRecord",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "$ref": "../common/common-defs.schema.json#/$defs/schema_version"
+    },
+    "exception_id": {
+      "type": "string",
+      "pattern": "^exc_[A-Za-z0-9_-]+$"
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "environment": {
+          "$ref": "../common/common-defs.schema.json#/$defs/environment"
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "controls": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "requested_by": {
+      "type": "string"
+    },
+    "rationale": {
+      "type": "string"
+    },
+    "compensating_controls": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "approved_by": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "active",
+        "expired",
+        "revoked",
+        "rejected"
+      ]
+    },
+    "start_at": {
+      "$ref": "../common/common-defs.schema.json#/$defs/timestamp"
+    },
+    "expires_at": {
+      "$ref": "../common/common-defs.schema.json#/$defs/timestamp"
+    },
+    "review_cadence_days": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "trace_id": {
+      "$ref": "../common/common-defs.schema.json#/$defs/trace_id"
+    }
+  },
+  "required": [
+    "schema_version",
+    "exception_id",
+    "project_id",
+    "requested_by",
+    "rationale",
+    "status",
+    "trace_id"
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "schema_version": "1.1",
+  "kind": "PearlOrgBaseline",
+  "baseline_id": "orgb_secure_autonomous_v1",
+  "org_name": "Example Enterprise",
+  "defaults": {
+    "coding": {
+      "secure_coding_standard_required": true,
+      "secret_hardcoding_forbidden": true,
+      "dependency_pinning_required": true
+    },
+    "logging": {
+      "structured_logging_required": true,
+      "pii_in_logs_forbidden_by_default": true,
+      "security_events_minimum": [
+        "authn",
+        "authz_denied",
+        "admin_action",
+        "config_change"
+      ]
+    },
+    "iam": {
+      "least_privilege_required": true,
+      "wildcard_permissions_forbidden_by_default": true
+    },
+    "network": {
+      "outbound_connectivity_must_be_declared": true,
+      "deny_by_default_preferred": true
+    },
+    "responsible_ai": {
+      "ai_use_disclosure_required_for_user_facing": true,
+      "model_provenance_logging_required": true,
+      "human_oversight_required_for_high_impact_actions": true,
+      "fairness_review_required_when_user_impact_is_material": true
+    },
+    "testing": {
+      "unit_tests_required": true,
+      "security_tests_baseline_required": true,
+      "rai_evals_required_for_ai_enabled_apps": true
+    }
+  },
+  "environment_defaults": {
+    "sandbox": {
+      "production_data_allowed": false,
+      "approval_level": "minimal"
+    },
+    "dev": {
+      "production_data_allowed": false,
+      "approval_level": "standard"
+    },
+    "preprod": {
+      "production_like_controls_required": true,
+      "approval_level": "high"
+    },
+    "prod": {
+      "approval_level": "strict",
+      "autonomous_actions_default": "limited"
+    }
+  },
+  "integrity": {
+    "signed": false
+  }
+}

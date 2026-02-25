@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pearl.local/schemas/findings/finding.schema.json",
+  "title": "Finding",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "$ref": "../common/common-defs.schema.json#/$defs/schema_version"
+    },
+    "finding_id": {
+      "type": "string",
+      "pattern": "^find_[A-Za-z0-9_-]+$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tool_name": {
+          "type": "string"
+        },
+        "tool_type": {
+          "type": "string",
+          "enum": [
+            "sast",
+            "dast",
+            "sca",
+            "cspm",
+            "cnapp",
+            "ciem",
+            "api_security",
+            "runtime",
+            "governance",
+            "threat_model",
+            "rai_monitor",
+            "manual"
+          ]
+        },
+        "connector_id": {
+          "type": "string"
+        },
+        "trust_label": {
+          "$ref": "../common/common-defs.schema.json#/$defs/trust_label"
+        },
+        "raw_record_ref": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool_name",
+        "tool_type",
+        "trust_label"
+      ]
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "environment": {
+      "$ref": "../common/common-defs.schema.json#/$defs/environment"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "security",
+        "responsible_ai",
+        "governance",
+        "architecture_drift"
+      ]
+    },
+    "severity": {
+      "$ref": "../common/common-defs.schema.json#/$defs/risk_level"
+    },
+    "confidence": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
+    },
+    "title": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "affected_components": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "control_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "exploitability": {
+      "type": "string",
+      "enum": [
+        "unknown",
+        "low",
+        "medium",
+        "high"
+      ]
+    },
+    "detected_at": {
+      "$ref": "../common/common-defs.schema.json#/$defs/timestamp"
+    },
+    "normalized": {
+      "type": "boolean"
+    },
+    "traceability": {
+      "$ref": "../common/common-defs.schema.json#/$defs/traceability_ref"
+    }
+  },
+  "required": [
+    "schema_version",
+    "finding_id",
+    "source",
+    "project_id",
+    "environment",
+    "category",
+    "severity",
+    "title",
+    "detected_at"
+  ]
+}
