@@ -36,57 +36,33 @@ SANDBOX_TO_DEV = {
     ],
 }
 
-# ─── dev → pilot (13 rules) ───────────────────────────────────
+# ─── dev → preprod (merged from dev→pilot + pilot→preprod) ───────
 
-DEV_TO_PILOT = {
-    "gate_id": "gate_dev_to_pilot",
+DEV_TO_PREPROD = {
+    "gate_id": "gate_dev_to_preprod",
     "source_environment": "dev",
-    "target_environment": "pilot",
+    "target_environment": "preprod",
     "rules": [
-        # Carry forward from sandbox → dev
+        # Core rules
         _rule(GateRuleType.PROJECT_REGISTERED, "Project must be registered in PeaRL"),
         _rule(GateRuleType.ORG_BASELINE_ATTACHED, "Organization security baseline must be attached"),
         _rule(GateRuleType.APP_SPEC_DEFINED, "Application specification must be defined"),
         _rule(GateRuleType.NO_HARDCODED_SECRETS, "No hardcoded secrets in codebase"),
         _rule(GateRuleType.UNIT_TESTS_EXIST, "Unit tests must exist"),
-        # New for dev → pilot
         _rule(GateRuleType.SECURITY_BASELINE_TESTS, "Security baseline tests must pass"),
         _rule(GateRuleType.CRITICAL_FINDINGS_ZERO, "Zero critical-severity findings"),
         _rule(GateRuleType.DATA_CLASSIFICATIONS_DOCUMENTED, "Data classifications must be documented"),
         _rule(GateRuleType.IAM_ROLES_DEFINED, "IAM roles and permissions must be defined"),
+        _rule(GateRuleType.HIGH_FINDINGS_ZERO, "Zero high-severity findings"),
+        _rule(GateRuleType.NETWORK_BOUNDARIES_DECLARED, "Network boundaries declared"),
+        _rule(GateRuleType.INTEGRATION_TEST_COVERAGE, "Integration test coverage >= 60%", threshold=60),
+        _rule(GateRuleType.SECURITY_REVIEW_APPROVAL, "Security review approval required"),
         # AI-specific
         _rule(GateRuleType.FAIRNESS_CASE_DEFINED, "Fairness case must be defined", ai_only=True),
         _rule(GateRuleType.MASS_SCAN_COMPLETED, "MASS security scan must be completed", ai_only=True),
         _rule(GateRuleType.NO_PROMPT_INJECTION, "Zero prompt injection findings", ai_only=True),
         _rule(GateRuleType.REQUIRED_ANALYZERS_COMPLETED, "Required AI analyzers must have run", ai_only=True),
         _rule(GateRuleType.FAIRNESS_REQUIREMENTS_MET, "Fairness requirements must be met", ai_only=True),
-    ],
-}
-
-# ─── pilot → preprod (19 rules) ───────────────────────────────
-
-PILOT_TO_PREPROD = {
-    "gate_id": "gate_pilot_to_preprod",
-    "source_environment": "pilot",
-    "target_environment": "preprod",
-    "rules": [
-        # Core rules
-        _rule(GateRuleType.PROJECT_REGISTERED, "Project must be registered"),
-        _rule(GateRuleType.ORG_BASELINE_ATTACHED, "Org baseline must be attached"),
-        _rule(GateRuleType.APP_SPEC_DEFINED, "App spec must be defined"),
-        _rule(GateRuleType.NO_HARDCODED_SECRETS, "No hardcoded secrets"),
-        _rule(GateRuleType.UNIT_TESTS_EXIST, "Unit tests must exist"),
-        _rule(GateRuleType.SECURITY_BASELINE_TESTS, "Security baseline tests must pass"),
-        _rule(GateRuleType.CRITICAL_FINDINGS_ZERO, "Zero critical findings"),
-        _rule(GateRuleType.DATA_CLASSIFICATIONS_DOCUMENTED, "Data classifications documented"),
-        _rule(GateRuleType.IAM_ROLES_DEFINED, "IAM roles defined"),
-        # New for pilot → preprod
-        _rule(GateRuleType.HIGH_FINDINGS_ZERO, "Zero high-severity findings"),
-        _rule(GateRuleType.NETWORK_BOUNDARIES_DECLARED, "Network boundaries declared"),
-        _rule(GateRuleType.INTEGRATION_TEST_COVERAGE, "Integration test coverage >= 60%", threshold=60),
-        _rule(GateRuleType.SECURITY_REVIEW_APPROVAL, "Security review approval required"),
-        # AI-specific
-        _rule(GateRuleType.MASS_SCAN_COMPLETED, "MASS scan completed", ai_only=True),
         _rule(GateRuleType.GUARDRAILS_VERIFIED, "Guardrails verified (0 findings)", ai_only=True),
         _rule(GateRuleType.NO_PII_LEAKAGE, "Zero PII leakage findings", ai_only=True),
         _rule(GateRuleType.FAIRNESS_ATTESTATION_SIGNED, "Fairness attestation signed", ai_only=True),
@@ -141,23 +117,38 @@ PREPROD_TO_PROD = {
 }
 
 
-DEFAULT_GATES = [SANDBOX_TO_DEV, DEV_TO_PILOT, PILOT_TO_PREPROD, PREPROD_TO_PROD]
+DEFAULT_GATES = [SANDBOX_TO_DEV, DEV_TO_PREPROD, PREPROD_TO_PROD]
+
+# Default promotion pipeline matching the 3-gate chain above
+DEFAULT_PIPELINE = {
+    "pipeline_id": "pipe_default",
+    "name": "Default Chain",
+    "description": "Standard 4-stage promotion chain: sandbox → dev → preprod → prod",
+    "is_default": True,
+    "stages": [
+        {"key": "sandbox", "label": "Sandbox", "description": "Initial sandbox environment", "order": 0},
+        {"key": "dev", "label": "Dev", "description": "Active development environment", "order": 1},
+        {"key": "preprod", "label": "Preprod", "description": "Pre-production staging environment", "order": 2},
+        {"key": "prod", "label": "Prod", "description": "Live production environment", "order": 3},
+    ],
+}
 
 
 async def seed_default_gates(session) -> int:
-    """Seed default promotion gates (idempotent).
+    """Seed default promotion gates and pipeline (idempotent).
 
     Returns the number of gates created (0 if already exist).
     """
+    from pearl.repositories.pipeline_repo import PromotionPipelineRepository
     from pearl.repositories.promotion_repo import PromotionGateRepository
 
-    repo = PromotionGateRepository(session)
+    gate_repo = PromotionGateRepository(session)
     created = 0
 
     for gate_def in DEFAULT_GATES:
-        existing = await repo.get(gate_def["gate_id"])
+        existing = await gate_repo.get(gate_def["gate_id"])
         if not existing:
-            await repo.create(
+            await gate_repo.create(
                 gate_id=gate_def["gate_id"],
                 source_environment=gate_def["source_environment"],
                 target_environment=gate_def["target_environment"],
@@ -165,5 +156,18 @@ async def seed_default_gates(session) -> int:
                 rules=gate_def["rules"],
             )
             created += 1
+
+    # Seed the default pipeline
+    pipeline_repo = PromotionPipelineRepository(session)
+    existing_pipeline = await pipeline_repo.get("pipe_default")
+    if not existing_pipeline:
+        await pipeline_repo.create(
+            pipeline_id=DEFAULT_PIPELINE["pipeline_id"],
+            name=DEFAULT_PIPELINE["name"],
+            description=DEFAULT_PIPELINE["description"],
+            is_default=DEFAULT_PIPELINE["is_default"],
+            stages=DEFAULT_PIPELINE["stages"],
+            project_id=None,
+        )
 
     return created

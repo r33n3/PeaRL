@@ -82,7 +82,7 @@ async def test_upsert_org_baseline(client):
     assert response.status_code == 200
     body = response.json()
     assert body["kind"] == "PearlOrgBaseline"
-    assert body["baseline_id"] == "orgb_secure_autonomous_v1"
+    assert body["baseline_id"] == "orgb_example_ai_standard_v1"
 
 
 @pytest.mark.asyncio

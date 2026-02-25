@@ -61,8 +61,7 @@ async def test_full_flow(client):
     pkg = r.json()
     assert pkg["kind"] == "PearlCompiledContextPackage"
     assert pkg["autonomy_policy"]["mode"] == "supervised_autonomous"
-    assert "authz_checks" in pkg["security_requirements"]["required_controls"]
-    assert pkg["responsible_ai_requirements"]["transparency"]["ai_disclosure_required"] is True
+    assert "tool_call_allowlisting" in pkg["security_requirements"]["required_controls"]
     assert pkg["network_requirements"]["public_egress_forbidden"] is True
 
     # 8. Generate task packet

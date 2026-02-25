@@ -95,8 +95,8 @@ async def request_promotion(
             status=ApprovalStatus.APPROVED,
             request_data={
                 "evaluation_id": evaluation.evaluation_id,
-                "source_environment": evaluation.source_environment.value,
-                "target_environment": evaluation.target_environment.value,
+                "source_environment": evaluation.source_environment,
+                "target_environment": evaluation.target_environment,
                 "progress_pct": evaluation.progress_pct,
             },
             trace_id=trace_id,
@@ -119,8 +119,8 @@ async def request_promotion(
         await history_repo.create(
             history_id=generate_id("promhist_"),
             project_id=project_id,
-            source_environment=evaluation.source_environment.value,
-            target_environment=evaluation.target_environment.value,
+            source_environment=evaluation.source_environment,
+            target_environment=evaluation.target_environment,
             evaluation_id=evaluation.evaluation_id,
             promoted_by="pearl-auto-approval",
             promoted_at=datetime.now(timezone.utc),
@@ -152,8 +152,8 @@ async def request_promotion(
         status=ApprovalStatus.PENDING,
         request_data={
             "evaluation_id": evaluation.evaluation_id,
-            "source_environment": evaluation.source_environment.value,
-            "target_environment": evaluation.target_environment.value,
+            "source_environment": evaluation.source_environment,
+            "target_environment": evaluation.target_environment,
             "progress_pct": evaluation.progress_pct,
         },
         trace_id=trace_id,
@@ -257,6 +257,20 @@ async def create_or_update_gate(
         )
         await db.commit()
         return {"gate_id": gate_id, "action": "created"}
+
+
+@router.delete("/promotions/gates/{gate_id}", status_code=204)
+async def delete_gate(
+    gate_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Delete a promotion gate."""
+    repo = PromotionGateRepository(db)
+    gate = await repo.get(gate_id)
+    if not gate:
+        raise NotFoundError("Promotion gate", gate_id)
+    await repo.delete(gate_id)
+    await db.commit()
 
 
 @router.post("/promotions/gates/{gate_id}/approval-mode")

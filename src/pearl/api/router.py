@@ -17,6 +17,7 @@ from pearl.api.routes import (
     health,
     integrations,
     jobs,
+    pipelines,
     project_inputs,
     projects,
     promotions,
@@ -43,6 +44,7 @@ api_router.include_router(approvals.router)
 api_router.include_router(exceptions.router)
 api_router.include_router(reports.router)
 api_router.include_router(promotions.router)
+api_router.include_router(pipelines.router)
 api_router.include_router(fairness.router)
 api_router.include_router(context.router)
 api_router.include_router(scan_targets.router)

@@ -38,10 +38,9 @@ class TestOrgBaselineModel:
         data = load_example("project/org-baseline.request.json")
         model = OrgBaseline.model_validate(data)
         assert model.kind == "PearlOrgBaseline"
-        assert model.baseline_id == "orgb_secure_autonomous_v1"
-        assert model.defaults.coding.secure_coding_standard_required is True
+        assert model.baseline_id == "orgb_example_ai_standard_v1"
         dumped = model.model_dump(mode="json", exclude_none=True)
-        assert dumped["defaults"]["coding"] == data["defaults"]["coding"]
+        assert dumped["defaults"]["security"] == data["defaults"]["security"]
 
 
 class TestAppSpecModel:

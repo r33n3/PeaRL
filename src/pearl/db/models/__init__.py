@@ -18,6 +18,7 @@ from pearl.db.models.promotion import (
     PromotionGateRow,
     PromotionEvaluationRow,
     PromotionHistoryRow,
+    PromotionPipelineRow,
 )
 from pearl.db.models.scan_target import ScanTargetRow
 from pearl.db.models.fairness import (
@@ -64,6 +65,7 @@ __all__ = [
     "PromotionGateRow",
     "PromotionEvaluationRow",
     "PromotionHistoryRow",
+    "PromotionPipelineRow",
     "FairnessCaseRow",
     "FairnessRequirementsSpecRow",
     "EvidencePackageRow",

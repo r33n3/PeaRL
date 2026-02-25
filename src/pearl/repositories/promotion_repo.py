@@ -52,6 +52,13 @@ class PromotionGateRepository(BaseRepository):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def delete(self, gate_id: str) -> None:
+        """Delete a gate by ID."""
+        gate = await self.get(gate_id)
+        if gate:
+            await self.session.delete(gate)
+            await self.session.flush()
+
 
 class PromotionEvaluationRepository(BaseRepository):
     def __init__(self, session: AsyncSession):

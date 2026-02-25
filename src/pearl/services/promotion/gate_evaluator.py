@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pearl.db.models.finding import FindingRow
 from pearl.errors.exceptions import ValidationError
 from pearl.models.enums import (
-    Environment,
     GateEvaluationStatus,
     GateRuleResult,
     GateRuleType,
@@ -34,6 +33,7 @@ from pearl.repositories.fairness_repo import (
 from pearl.repositories.finding_repo import FindingRepository
 from pearl.repositories.org_baseline_repo import OrgBaselineRepository
 from pearl.repositories.project_repo import ProjectRepository
+from pearl.repositories.pipeline_repo import PromotionPipelineRepository
 from pearl.repositories.promotion_repo import (
     PromotionEvaluationRepository,
     PromotionGateRepository,
@@ -41,23 +41,17 @@ from pearl.repositories.promotion_repo import (
 from pearl.repositories.report_repo import ReportRepository
 from pearl.services.id_generator import generate_id
 
-# Environment progression order
-ENV_ORDER = [
-    Environment.SANDBOX,
-    Environment.DEV,
-    Environment.PILOT,
-    Environment.PREPROD,
-    Environment.PROD,
-]
 
-
-def next_environment(current: str) -> str | None:
-    """Get the next environment in the promotion chain."""
-    try:
-        idx = ENV_ORDER.index(Environment(current))
-        if idx < len(ENV_ORDER) - 1:
-            return ENV_ORDER[idx + 1].value
+async def next_environment(current: str, session: AsyncSession) -> str | None:
+    """Get the next environment in the promotion chain from the default pipeline."""
+    pipeline = await PromotionPipelineRepository(session).get_default()
+    if not pipeline:
         return None
+    stages = sorted(pipeline.stages, key=lambda s: s["order"])
+    keys = [s["key"] for s in stages]
+    try:
+        idx = keys.index(current)
+        return keys[idx + 1] if idx < len(keys) - 1 else None
     except ValueError:
         return None
 
@@ -90,7 +84,7 @@ async def evaluate_promotion(
 
     # Determine target
     if not target_environment:
-        target_environment = next_environment(current_env)
+        target_environment = await next_environment(current_env, session)
     if not target_environment:
         raise ValidationError(f"No promotion target from '{current_env}'")
 
@@ -131,8 +125,8 @@ async def evaluate_promotion(
         evaluation_id=generate_id("eval_"),
         project_id=project_id,
         gate_id=gate.gate_id,
-        source_environment=Environment(current_env),
-        target_environment=Environment(target_environment),
+        source_environment=current_env,
+        target_environment=target_environment,
         status=status,
         rule_results=rule_results,
         passed_count=passed,
@@ -207,6 +201,8 @@ class _EvalContext:
         self.security_review_findings: list = []
         self.compliance_score: float | None = None
         self.compliance_assessment = None
+        # AIUC-1 baseline defaults (category → sub-control → bool | None)
+        self.baseline_defaults = {}
 
 
 async def _build_eval_context(
@@ -220,6 +216,7 @@ async def _build_eval_context(
     baseline_repo = OrgBaselineRepository(session)
     baseline = await baseline_repo.get_by_project(project_id)
     ctx.has_baseline = baseline is not None
+    ctx.baseline_defaults = (baseline.defaults or {}) if baseline else {}
 
     # Check app spec
     app_spec_repo = AppSpecRepository(session)
@@ -714,6 +711,44 @@ def _eval_security_review_clear(rule, ctx):
     return passed, f"All {total} security review findings addressed" if passed else f"{len(open_reviews)} of {total} security review findings still open", {"open": len(open_reviews), "total": total}
 
 
+def _eval_aiuc1_control_required(rule, ctx):
+    """Check that a specific AIUC-1 sub-control is set to True in the org baseline.
+
+    Rule parameters:
+        category (str): AIUC-1 domain key (e.g. "security", "data_privacy")
+        control  (str): Sub-control field key (e.g. "b001_1_adversarial_testing_report")
+    """
+    params = rule.parameters or {}
+    category = params.get("category")
+    control = params.get("control")
+
+    if not category or not control:
+        return False, "Rule misconfigured: missing 'category' or 'control' parameter", None
+
+    control_ref = f"{category}.{control}"
+
+    if not ctx.has_baseline:
+        return False, f"No org baseline attached — cannot verify AIUC-1 control: {control_ref}", {
+            "category": category, "control": control,
+        }
+
+    category_data = ctx.baseline_defaults.get(category, {})
+    value = category_data.get(control)
+
+    if value is True:
+        return True, f"AIUC-1 control satisfied: {control_ref}", {
+            "category": category, "control": control, "value": True,
+        }
+    if value is False:
+        return False, f"AIUC-1 control not enabled: {control_ref} is set to False — enable it in the org baseline", {
+            "category": category, "control": control, "value": False,
+        }
+    # None / missing
+    return False, f"AIUC-1 control not assessed: {control_ref} has no value in the org baseline", {
+        "category": category, "control": control, "value": None,
+    }
+
+
 # ──────────────────────────────────────────────
 # Rule evaluator registry
 # ──────────────────────────────────────────────
@@ -764,4 +799,6 @@ RULE_EVALUATORS = {
     GateRuleType.REQUIRED_ANALYZERS_COMPLETED: _eval_required_analyzers_completed,
     GateRuleType.GUARDRAIL_COVERAGE: _eval_guardrail_coverage,
     GateRuleType.SECURITY_REVIEW_CLEAR: _eval_security_review_clear,
+    # AIUC-1 baseline control compliance
+    GateRuleType.AIUC1_CONTROL_REQUIRED: _eval_aiuc1_control_required,
 }
