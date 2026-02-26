@@ -21,6 +21,14 @@ services:
           memory: 256M
     restart: unless-stopped
 
+  frontend:
+    build:
+      context: ./frontend
+      target: prod
+    ports:
+      - "80:80"
+    restart: unless-stopped
+
   nginx:
     image: nginx:1.25
     ports:

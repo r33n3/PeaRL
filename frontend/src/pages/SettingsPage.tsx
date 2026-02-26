@@ -422,6 +422,158 @@ interface LocalGateState {
   dirty: boolean;
 }
 
+/** AIUC-1 sub-control keys grouped by domain category (matches org-baseline schema) */
+const AIUC1_CONTROLS: Record<string, string[]> = {
+  data_privacy: [
+    "a001_1_policy_documentation",
+    "a001_2_data_retention_implementation",
+    "a001_3_data_subject_right_processes",
+    "a002_1_output_usage_ownership_policy",
+    "a003_1_data_collection_scoping",
+    "a003_2_alerting_for_auth_failures",
+    "a003_3_authorization_system_integration",
+    "a004_1_user_guidance_on_confidential_info",
+    "a004_2_foundational_model_ip_protections",
+    "a004_3_ip_detection_implementation",
+    "a004_4_ip_disclosure_monitoring",
+    "a005_1_consent_for_combined_data",
+    "a005_2_customer_data_isolation",
+    "a005_3_privacy_enhancing_controls",
+    "a006_1_pii_detection_filtering",
+    "a006_2_pii_access_controls",
+    "a006_3_dlp_system_integration",
+    "a007_1_model_provider_ip_protections",
+    "a007_2_ip_infringement_filtering",
+    "a007_3_user_facing_ip_notices",
+  ],
+  security: [
+    "b001_1_adversarial_testing_report",
+    "b001_2_security_program_integration",
+    "b002_1_adversarial_input_detection_alerting",
+    "b002_2_adversarial_incident_response",
+    "b002_3_detection_config_updates",
+    "b002_4_preprocessing_adversarial_detection",
+    "b002_5_ai_security_alerts",
+    "b003_1_technical_disclosure_guidelines",
+    "b003_2_public_disclosure_approval_records",
+    "b004_1_anomalous_usage_detection",
+    "b004_2_rate_limits",
+    "b004_3_external_pentest_ai_endpoints",
+    "b004_4_vulnerability_remediation",
+    "b005_1_input_filtering",
+    "b005_2_input_moderation_approach",
+    "b005_3_warning_for_blocked_inputs",
+    "b005_4_input_filtering_logs",
+    "b005_5_input_filter_performance",
+    "b006_1_agent_service_access_restrictions",
+    "b006_2_agent_security_monitoring_alerting",
+    "b007_1_user_access_controls",
+    "b007_2_access_reviews",
+    "b008_1_model_access_controls",
+    "b008_2_api_deployment_security",
+    "b008_3_model_hosting_security",
+    "b008_4_model_integrity_verification",
+    "b009_1_output_volume_limits",
+    "b009_2_user_output_notices",
+    "b009_3_output_precision_controls",
+  ],
+  safety: [
+    "c001_1_risk_taxonomy",
+    "c001_2_risk_taxonomy_reviews",
+    "c002_1_pre_deployment_test_approval",
+    "c002_2_sdlc_integration",
+    "c002_3_vulnerability_scan_results",
+    "c003_1_harmful_output_filtering",
+    "c003_2_guardrails_for_high_risk_advice",
+    "c003_3_guardrails_for_biased_outputs",
+    "c003_4_filtering_performance_benchmarks",
+    "c004_1_out_of_scope_guardrails",
+    "c004_2_out_of_scope_attempt_logs",
+    "c004_3_user_guidance_on_scope",
+    "c005_1_risk_detection_response",
+    "c005_2_human_review_workflows",
+    "c005_3_automated_response_mechanisms",
+    "c006_1_output_sanitization",
+    "c006_2_warning_labels_untrusted_content",
+    "c006_3_adversarial_output_detection",
+    "c007_1_high_risk_criteria_definition",
+    "c007_2_high_risk_detection_mechanisms",
+    "c007_3_human_review_for_high_risk",
+    "c008_1_risk_monitoring_logs",
+    "c008_2_monitoring_findings_documentation",
+    "c008_4_security_tooling_integration",
+    "c009_1_user_intervention_mechanisms",
+    "c009_2_feedback_intervention_reviews",
+    "c010_1_harmful_output_testing_report",
+    "c011_1_outofscope_output_testing_report",
+    "c012_1_customer_risk_testing_report",
+  ],
+  reliability: [
+    "d001_1_groundedness_filter",
+    "d001_2_user_citations_source_attribution",
+    "d001_3_user_uncertainty_labels",
+    "d002_1_hallucination_testing_report",
+    "d003_1_tool_authorization_validation",
+    "d003_2_rate_limits_for_tools",
+    "d003_3_tool_call_log",
+    "d003_4_human_approval_workflows",
+    "d003_5_tool_call_log_reviews",
+    "d004_1_tool_call_testing_report",
+  ],
+  accountability: [
+    "e001_1_security_breach_failure_plan",
+    "e002_1_harmful_output_failure_plan",
+    "e002_2_harmful_output_failure_procedures",
+    "e003_1_hallucination_failure_plan",
+    "e003_2_hallucination_failure_procedures",
+    "e004_1_change_approval_policy_records",
+    "e004_2_code_signing_implementation",
+    "e005_1_deployment_decisions",
+    "e006_1_vendor_due_diligence",
+    "e008_1_internal_review_documentation",
+    "e008_2_external_feedback_integration",
+    "e009_1_third_party_access_monitoring",
+    "e010_1_acceptable_use_policy",
+    "e010_2_aup_violation_detection",
+    "e010_3_user_notification_for_aup_breaches",
+    "e010_4_guardrails_enforcing_acceptable_use",
+    "e011_1_ai_processing_locations",
+    "e011_2_data_transfer_compliance",
+    "e012_1_regulatory_compliance_reviews",
+    "e013_1_quality_objectives_risk_management",
+    "e013_2_change_management_procedures",
+    "e013_3_issue_tracking_monitoring",
+    "e013_4_data_management_procedures",
+    "e013_5_stakeholder_communication_procedures",
+    "e015_1_logging_implementation",
+    "e015_2_log_storage",
+    "e015_3_log_integrity_protection",
+    "e016_1_text_ai_disclosure",
+    "e016_2_voice_ai_disclosure",
+    "e016_3_labelling_ai_generated_content",
+    "e016_4_automation_ai_disclosure",
+    "e016_5_system_response_to_ai_inquiry",
+    "e017_1_transparency_policy",
+    "e017_2_model_cards_system_documentation",
+    "e017_3_transparency_report_sharing_policy",
+  ],
+  society: [
+    "f001_1_foundation_model_cyber_capabilities",
+    "f001_2_cyber_use_detection",
+    "f002_1_foundation_model_cbrn_capabilities",
+    "f002_2_catastrophic_misuse_monitoring",
+  ],
+};
+
+const AIUC1_CATEGORY_LABELS: Record<string, string> = {
+  data_privacy: "A. Data & Privacy",
+  security: "B. Security",
+  safety: "C. Safety",
+  reliability: "D. Reliability",
+  accountability: "E. Accountability",
+  society: "F. Society",
+};
+
 /** Add Rule inline picker */
 function AddRulePanel({
   onAdd,
@@ -497,23 +649,32 @@ function AddRulePanel({
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <label className="text-xs font-mono text-bone-muted w-24">Category</label>
-            <input
-              type="text"
+            <select
               className="input-vault text-xs flex-1"
-              placeholder="e.g. security"
               value={category}
-              onChange={(e) => setCategory(e.target.value)}
-            />
+              onChange={(e) => { setCategory(e.target.value); setControl(""); }}
+            >
+              <option value="">Select category…</option>
+              {Object.keys(AIUC1_CONTROLS).map((cat) => (
+                <option key={cat} value={cat}>
+                  {AIUC1_CATEGORY_LABELS[cat] ?? cat}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="flex items-center gap-2">
             <label className="text-xs font-mono text-bone-muted w-24">Control</label>
-            <input
-              type="text"
+            <select
               className="input-vault text-xs flex-1"
-              placeholder="e.g. b001_1_adversarial_testing_report"
               value={control}
               onChange={(e) => setControl(e.target.value)}
-            />
+              disabled={!category}
+            >
+              <option value="">Select control…</option>
+              {(AIUC1_CONTROLS[category] ?? []).map((k) => (
+                <option key={k} value={k}>{fieldKeyToAiuc1Label(k)}</option>
+              ))}
+            </select>
           </div>
         </div>
       )}
@@ -534,7 +695,7 @@ function AddRulePanel({
         <button className="btn-ghost text-xs" onClick={onCancel}>Cancel</button>
         <button
           className="btn-teal text-xs flex items-center gap-1"
-          disabled={!selectedType}
+          disabled={!selectedType || (meta?.hasParams ? !category || !control : false)}
           onClick={handleAdd}
         >
           <Plus size={12} /> Add Rule

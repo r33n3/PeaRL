@@ -64,6 +64,22 @@ services:
     volumes:
       - miniodata:/data
 
+  frontend:
+    build:
+      context: ./frontend
+      target: dev
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+      - ./frontend/index.html:/app/index.html
+    environment:
+      - VITE_API_BASE_URL=http://pearl-api:8080
+    depends_on:
+      pearl-api:
+        condition: service_started
+
 volumes:
   pgdata:
   miniodata:
