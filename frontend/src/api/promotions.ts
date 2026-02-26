@@ -108,7 +108,24 @@ export function useDeleteGate() {
   return useMutation({
     mutationFn: ({ gateId }: { gateId: string }) =>
       apiFetch(`/promotions/gates/${gateId}`, { method: "DELETE" }),
-    onSuccess: () => {
+    // Optimistically remove the gate immediately so the UI updates without
+    // waiting for the server round-trip or query invalidation.
+    onMutate: async ({ gateId }) => {
+      await qc.cancelQueries({ queryKey: ["promotions", "gates"] });
+      const previous = qc.getQueryData<GateData[]>(["promotions", "gates"]);
+      qc.setQueryData<GateData[]>(["promotions", "gates"], (old) =>
+        old ? old.filter((g) => g.gate_id !== gateId) : old
+      );
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      // Roll back the optimistic removal if the server rejected the delete.
+      if (context?.previous) {
+        qc.setQueryData(["promotions", "gates"], context.previous);
+      }
+    },
+    onSettled: () => {
+      // Always sync with the server state after success or error.
       qc.invalidateQueries({ queryKey: ["promotions", "gates"] });
     },
   });
