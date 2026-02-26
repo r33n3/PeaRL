@@ -115,6 +115,7 @@ async def list_pending_approvals(
             "environment": a.environment,
             "request_type": a.request_type,
             "status": a.status,
+            "request_data": a.request_data,
             "created_at": a.created_at.isoformat() if a.created_at else None,
             "expires_at": a.expires_at.isoformat() if a.expires_at else None,
         }
