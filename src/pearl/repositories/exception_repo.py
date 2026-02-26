@@ -21,3 +21,10 @@ class ExceptionRepository(BaseRepository):
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def list_by_project(self, project_id: str) -> list[ExceptionRecordRow]:
+        stmt = select(ExceptionRecordRow).where(
+            ExceptionRecordRow.project_id == project_id,
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())

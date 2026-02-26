@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import { useApprovalThread } from "@/api/dashboard";
 import { useDecideApproval, useAddComment } from "@/api/approvals";
 import { VaultCard } from "@/components/shared/VaultCard";
@@ -8,6 +8,81 @@ import { MonoText } from "@/components/shared/MonoText";
 import { formatTimestamp } from "@/lib/utils";
 import { CheckCircle, XCircle, HelpCircle, Send } from "lucide-react";
 import type { ApprovalStatus } from "@/lib/types";
+
+const CONTEST_TYPE_LABELS: Record<string, string> = {
+  false_positive: "False Positive",
+  risk_acceptance: "Risk Acceptance",
+  needs_more_time: "Needs More Time",
+};
+
+function ExceptionContextPanel({
+  requestData,
+  projectId,
+}: {
+  requestData: Record<string, unknown>;
+  projectId: string;
+}) {
+  const findingIds = (requestData.finding_ids as string[] | undefined) ?? [];
+  const compensatingControls = (requestData.compensating_controls as string[] | undefined) ?? [];
+  return (
+    <VaultCard className="mb-6 border-clinical-cyan/20">
+      <h2 className="vault-heading text-xs mb-3 text-clinical-cyan">Exception Request</h2>
+      <div className="grid grid-cols-2 gap-x-6 gap-y-2 mb-3">
+        <div>
+          <p className="text-[10px] font-heading uppercase text-bone-dim mb-0.5">Contested Rule</p>
+          <MonoText className="text-xs text-dried-blood-bright">
+            {((requestData.rule_type as string) ?? "—").replace(/_/g, " ")}
+          </MonoText>
+        </div>
+        <div>
+          <p className="text-[10px] font-heading uppercase text-bone-dim mb-0.5">Contest Type</p>
+          <span className="text-xs font-mono text-bone">
+            {CONTEST_TYPE_LABELS[requestData.contest_type as string] ?? ((requestData.contest_type as string) ?? "—")}
+          </span>
+        </div>
+        <div>
+          <p className="text-[10px] font-heading uppercase text-bone-dim mb-0.5">Evaluation</p>
+          <MonoText className="text-xs">{(requestData.evaluation_id as string) ?? "—"}</MonoText>
+        </div>
+        {findingIds.length > 0 && (
+          <div>
+            <p className="text-[10px] font-heading uppercase text-bone-dim mb-0.5">Finding IDs</p>
+            <div className="flex flex-wrap gap-1">
+              {findingIds.map((fid) => (
+                <Link
+                  key={fid}
+                  to={`/projects/${projectId}/findings?highlight=${fid}`}
+                  className="text-[10px] font-mono text-clinical-cyan hover:underline"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {fid}
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+      {!!requestData.rationale && (
+        <div>
+          <p className="text-[10px] font-heading uppercase text-bone-dim mb-1">Developer Rationale</p>
+          <p className="text-xs font-mono text-bone-muted leading-relaxed bg-vault-black/40 rounded px-3 py-2">
+            {requestData.rationale as string}
+          </p>
+        </div>
+      )}
+      {compensatingControls.length > 0 && (
+        <div className="mt-2">
+          <p className="text-[10px] font-heading uppercase text-bone-dim mb-1">Compensating Controls</p>
+          <ul className="space-y-0.5">
+            {compensatingControls.map((c, i) => (
+              <li key={i} className="text-xs font-mono text-bone-muted">{"\u2022"} {c}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </VaultCard>
+  );
+}
 
 export function ApprovalDetailPage() {
   const { approvalId } = useParams<{ approvalId: string }>();
@@ -91,8 +166,13 @@ export function ApprovalDetailPage() {
         <StatusBadge status={approval.status as ApprovalStatus} />
       </div>
 
-      {/* Evidence / request data */}
-      {approval.request_data && (
+      {/* Exception context panel */}
+      {approval.request_type === "exception" && approval.request_data && (
+        <ExceptionContextPanel requestData={approval.request_data as Record<string, unknown>} projectId={approval.project_id} />
+      )}
+
+      {/* Evidence / request data (non-exception types) */}
+      {approval.request_type !== "exception" && approval.request_data && (
         <VaultCard className="mb-6">
           <h2 className="vault-heading text-xs mb-3">Evidence Record</h2>
           <pre className="font-mono text-xs text-bone-muted whitespace-pre-wrap overflow-x-auto max-h-60">

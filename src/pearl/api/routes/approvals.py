@@ -11,6 +11,7 @@ from pearl.errors.exceptions import ConflictError, NotFoundError
 from pearl.models.approval import ApprovalCommentCreate, ApprovalDecision, ApprovalRequest
 from pearl.repositories.approval_comment_repo import ApprovalCommentRepository
 from pearl.repositories.approval_repo import ApprovalDecisionRepository, ApprovalRequestRepository
+from pearl.repositories.exception_repo import ExceptionRepository
 from pearl.services.id_generator import generate_id
 
 logger = logging.getLogger(__name__)
@@ -76,6 +77,22 @@ async def decide_approval(
         decided_at=decision.decided_at,
         trace_id=decision.trace_id,
     )
+
+    # If approving an exception request, activate the linked exception record
+    if decision.decision == "approve" and approval.request_type == "exception":
+        exc_id = (approval.request_data or {}).get("exception_id")
+        if exc_id:
+            exc_repo = ExceptionRepository(db)
+            exc = await exc_repo.get(exc_id)
+            if exc:
+                now = datetime.now(timezone.utc)
+                await exc_repo.update(
+                    exc,
+                    status="active",
+                    start_at=now,
+                    approved_by=[decision.decided_by],
+                )
+
     await db.commit()
 
     return decision.model_dump(mode="json", exclude_none=True)

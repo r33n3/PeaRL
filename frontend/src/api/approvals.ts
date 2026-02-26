@@ -1,5 +1,6 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./client";
+import type { ApprovalRequest } from "@/lib/types";
 
 export function useDecideApproval() {
   const qc = useQueryClient();
@@ -70,4 +71,22 @@ export function useAddComment() {
       });
     },
   });
+}
+
+export function usePendingApprovals(projectId?: string) {
+  const params = projectId ? `?project_id=${projectId}` : "";
+  return useQuery({
+    queryKey: ["approvals", "pending", projectId],
+    queryFn: () => apiFetch<ApprovalRequest[]>(`/approvals/pending${params}`),
+  });
+}
+
+export function usePendingApprovalsByType(requestType?: string, projectId?: string) {
+  const query = usePendingApprovals(projectId);
+  return {
+    ...query,
+    data: requestType
+      ? (query.data ?? []).filter((a) => a.request_type === requestType)
+      : query.data,
+  };
 }

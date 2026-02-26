@@ -7,8 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from pearl.dependencies import get_db, get_trace_id
 from pearl.errors.exceptions import NotFoundError
+from pearl.errors.exceptions import ValidationError
 from pearl.models.enums import ApprovalDecisionValue, ApprovalRequestType, ApprovalStatus, PromotionRequestStatus
 from pearl.repositories.approval_repo import ApprovalDecisionRepository, ApprovalRequestRepository
+from pearl.repositories.exception_repo import ExceptionRepository
 from pearl.repositories.promotion_repo import (
     PromotionEvaluationRepository,
     PromotionGateRepository,
@@ -293,6 +295,87 @@ async def update_gate_approval_mode(
     await db.commit()
 
     return {"gate_id": gate_id, "approval_mode": mode}
+
+
+@router.post("/projects/{project_id}/promotions/contest-rule", status_code=201)
+async def contest_gate_rule(
+    project_id: str,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    trace_id: str = Depends(get_trace_id),
+) -> dict:
+    """Contest a failing gate rule by creating an exception + approval request."""
+    evaluation_id = body.get("evaluation_id")
+    rule_type = body.get("rule_type")
+    contest_type = body.get("contest_type")
+    rationale = body.get("rationale", "")
+
+    if not evaluation_id or not rule_type or not contest_type:
+        raise ValidationError("evaluation_id, rule_type, and contest_type are required")
+    if contest_type not in ("false_positive", "risk_acceptance", "needs_more_time"):
+        raise ValidationError("contest_type must be one of: false_positive, risk_acceptance, needs_more_time")
+
+    eval_repo = PromotionEvaluationRepository(db)
+    evaluation = await eval_repo.get(evaluation_id)
+    if not evaluation or evaluation.project_id != project_id:
+        raise NotFoundError("Promotion evaluation", evaluation_id)
+
+    finding_ids = body.get("finding_ids") or []
+    compensating_controls = body.get("compensating_controls") or []
+    expires_days = body.get("expires_days")
+
+    now = datetime.now(timezone.utc)
+    expires_at = None
+    if expires_days:
+        from datetime import timedelta
+        expires_at = now + timedelta(days=int(expires_days))
+
+    # Create exception record (pending until approved)
+    exc_repo = ExceptionRepository(db)
+    exception_id = generate_id("exc_")
+    await exc_repo.create(
+        exception_id=exception_id,
+        project_id=project_id,
+        scope={"controls": [rule_type], "environment": evaluation.source_environment},
+        status="pending",
+        requested_by="dashboard-user",
+        rationale=rationale,
+        compensating_controls=compensating_controls or None,
+        approved_by=None,
+        start_at=None,
+        expires_at=expires_at,
+        review_cadence_days=None,
+        trace_id=trace_id,
+    )
+
+    # Create approval request for the exception
+    approval_repo = ApprovalRequestRepository(db)
+    approval_id = generate_id("appr_")
+    await approval_repo.create(
+        approval_request_id=approval_id,
+        project_id=project_id,
+        request_type=ApprovalRequestType.EXCEPTION,
+        environment=evaluation.source_environment,
+        status=ApprovalStatus.PENDING,
+        request_data={
+            "exception_id": exception_id,
+            "evaluation_id": evaluation_id,
+            "rule_type": rule_type,
+            "contest_type": contest_type,
+            "finding_ids": finding_ids,
+            "rationale": rationale,
+            "compensating_controls": compensating_controls,
+        },
+        trace_id=trace_id,
+    )
+
+    await db.commit()
+
+    return {
+        "exception_id": exception_id,
+        "approval_request_id": approval_id,
+        "status": "pending",
+    }
 
 
 @router.post("/projects/{project_id}/promotions/rollback", status_code=201)

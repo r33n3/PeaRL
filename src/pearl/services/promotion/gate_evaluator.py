@@ -404,6 +404,23 @@ def _evaluate_rule(rule: GateRuleDefinition, ctx: _EvalContext) -> RuleEvaluatio
 
     try:
         passed, message, details = evaluator(rule, ctx)
+        if not passed:
+            # Check if an active exception covers this rule
+            covering = next(
+                (
+                    e for e in ctx.active_exceptions
+                    if rule.rule_type in ((getattr(e, "scope", None) or {}).get("controls") or [])
+                ),
+                None,
+            )
+            if covering:
+                return RuleEvaluationResult(
+                    rule_id=rule.rule_id,
+                    rule_type=rule.rule_type,
+                    result=GateRuleResult.EXCEPTION,
+                    message=f"Covered by active exception {covering.exception_id}: {message}",
+                    exception_id=covering.exception_id,
+                )
         return RuleEvaluationResult(
             rule_id=rule.rule_id,
             rule_type=rule.rule_type,
@@ -749,6 +766,263 @@ def _eval_aiuc1_control_required(rule, ctx):
     }
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Unified framework_control_required evaluator
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _check_findings_clear(ctx: _EvalContext, keywords: list[str], label: str):
+    """Return pass if no open findings match any keyword in category or title."""
+    matches = [
+        f for f in ctx.open_findings
+        if any(kw in (f.category or "").lower() or kw in (f.title or "").lower() for kw in keywords)
+    ]
+    passed = len(matches) == 0
+    return passed, f"{label}: clear (0 findings)" if passed else f"{label}: {len(matches)} finding(s) open", {"count": len(matches)} if not passed else None
+
+
+def _check_findings_by_tool(ctx: _EvalContext, tool_type: str, label: str):
+    """Return pass if at least one finding from the given tool type exists (scan ran)."""
+    hits = [f for f in ctx.open_findings if (f.source or {}).get("tool_type") == tool_type]
+    all_hits = ctx.findings_by_source.get(tool_type, [])
+    ran = len(all_hits) > 0
+    return ran, f"{label}: scan completed ({len(all_hits)} finding(s) processed)" if ran else f"{label}: no {tool_type} scan results found", None
+
+
+def _baseline_attestation(ctx: _EvalContext, framework: str, category: str, control: str, label: str):
+    """Check framework-namespaced attestation in org baseline: baseline_defaults[framework][category][control]."""
+    fw_data = ctx.baseline_defaults.get(framework, {})
+    cat_data = fw_data.get(category, {}) if isinstance(fw_data, dict) else {}
+    value = cat_data.get(control) if isinstance(cat_data, dict) else None
+    ref = f"{framework}/{category}/{control}"
+    if value is True:
+        return True, f"{label}: attested in org baseline", {"ref": ref, "source": "attestation"}
+    if value is False:
+        return False, f"{label}: marked non-compliant in org baseline", {"ref": ref, "source": "attestation"}
+    if not ctx.has_baseline:
+        return False, f"{label}: no org baseline attached", {"ref": ref}
+    return False, f"{label}: not yet attested — update org baseline or run automated scan", {"ref": ref, "source": "missing"}
+
+
+# ── Per-framework dispatchers ──────────────────────────────────────────────────
+
+def _eval_fw_aiuc1(category: str, control: str, ctx: _EvalContext):
+    """AIUC-1: check baseline_defaults[category][control] (flat, backward-compat structure)."""
+    control_ref = f"{category}.{control}"
+    if not ctx.has_baseline:
+        return False, f"No org baseline — cannot verify AIUC-1 {control_ref}", {}
+    category_data = ctx.baseline_defaults.get(category, {})
+    value = category_data.get(control)
+    if value is True:
+        return True, f"AIUC-1 control satisfied: {control_ref}", {"value": True}
+    if value is False:
+        return False, f"AIUC-1 control not enabled: {control_ref}", {"value": False}
+    return False, f"AIUC-1 control not assessed: {control_ref}", {"value": None}
+
+
+def _eval_fw_owasp_llm(category: str, control: str, ctx: _EvalContext):
+    """OWASP LLM Top 10: scan-finding checks with attestation fallback."""
+    _CHECKS = {
+        "llm01_prompt_injection": lambda c: _check_findings_clear(c, ["prompt_injection"], "LLM01 Prompt Injection"),
+        "llm02_insecure_output_handling": lambda c: _check_findings_clear(c, ["insecure_output", "output_handling"], "LLM02 Insecure Output Handling"),
+        "llm03_training_data_poisoning": lambda c: _check_findings_clear(c, ["training_data_poisoning", "data_poisoning"], "LLM03 Training Data Poisoning"),
+        "llm04_model_denial_of_service": lambda c: _check_findings_clear(c, ["model_dos", "denial_of_service", "resource_exhaustion"], "LLM04 Model DoS"),
+        "llm05_supply_chain_vulnerabilities": lambda c: (
+            any(e.evidence_type in ("sbom", "provenance") for e in c.evidence_packages),
+            "LLM05 Supply Chain: provenance/SBOM evidence on file" if any(e.evidence_type in ("sbom", "provenance") for e in c.evidence_packages) else "LLM05 Supply Chain: no provenance or SBOM evidence",
+            None,
+        ),
+        "llm06_sensitive_info_disclosure": lambda c: _check_findings_clear(c, ["pii", "data_leakage", "sensitive_info", "sensitive_information"], "LLM06 Sensitive Info Disclosure"),
+        "llm07_insecure_plugin_design": lambda c: _check_findings_clear(c, ["insecure_plugin", "plugin_security", "tool_security"], "LLM07 Insecure Plugin Design"),
+        "llm08_excessive_agency": lambda c: (
+            c.has_env_profile,
+            "LLM08 Excessive Agency: autonomy mode defined in environment profile" if c.has_env_profile else "LLM08 Excessive Agency: no environment profile — autonomy level not bounded",
+            None,
+        ),
+        "llm09_overreliance": lambda c: (
+            any(e.evidence_type == "model_card" for e in c.evidence_packages),
+            "LLM09 Overreliance: model card documents limitations" if any(e.evidence_type == "model_card" for e in c.evidence_packages) else "LLM09 Overreliance: no model card documenting AI limitations",
+            None,
+        ),
+        "llm10_model_theft": lambda c: _check_findings_clear(c, ["model_theft", "model_extraction", "model_inversion"], "LLM10 Model Theft"),
+    }
+    if category == "llm_top10" and control in _CHECKS:
+        return _CHECKS[control](ctx)
+    return False, f"Unknown OWASP LLM control: {category}/{control}", None
+
+
+def _eval_fw_owasp_web(category: str, control: str, ctx: _EvalContext):
+    """OWASP Web Top 10: finding-category checks + attestation fallback."""
+    _CHECKS = {
+        "a01_broken_access_control": lambda c: _check_findings_clear(c, ["access_control", "broken_access", "privilege_escalation", "idor"], "A01 Broken Access Control"),
+        "a02_cryptographic_failures": lambda c: _check_findings_clear(c, ["crypto", "tls", "encryption", "certificate"], "A02 Cryptographic Failures"),
+        "a03_injection": lambda c: _check_findings_clear(c, ["injection", "sql_injection", "xss", "command_injection", "ldap_injection"], "A03 Injection"),
+        "a04_insecure_design": lambda c: (
+            c.has_app_spec and c.has_compiled_package,
+            "A04 Insecure Design: app spec and compiled context package present" if c.has_app_spec and c.has_compiled_package else "A04 Insecure Design: missing app spec or security context package",
+            None,
+        ),
+        "a05_security_misconfiguration": lambda c: _check_findings_clear(c, ["misconfiguration", "security_misconfiguration", "default_credentials", "unnecessary_feature"], "A05 Security Misconfiguration"),
+        "a06_vulnerable_components": lambda c: _check_findings_by_tool(c, "sca", "A06 Vulnerable Components SCA scan"),
+        "a07_auth_failures": lambda c: _check_findings_clear(c, ["auth_failure", "authentication_failure", "broken_auth", "session_fixation"], "A07 Auth Failures"),
+        "a08_software_integrity_failures": lambda c: (
+            any(e.evidence_type in ("sbom", "provenance") for e in c.evidence_packages),
+            "A08 Software Integrity: signing/provenance evidence on file" if any(e.evidence_type in ("sbom", "provenance") for e in c.evidence_packages) else "A08 Software Integrity: no signing or provenance evidence",
+            None,
+        ),
+        "a09_logging_monitoring_failures": lambda c: (
+            bool(c.scan_targets),
+            "A09 Logging & Monitoring: scan targets registered (monitoring active)" if c.scan_targets else "A09 Logging & Monitoring: no scan targets — monitoring not confirmed",
+            None,
+        ),
+        "a10_ssrf": lambda c: _check_findings_clear(c, ["ssrf", "server_side_request_forgery", "out_of_band"], "A10 SSRF"),
+    }
+    if category == "web_top10" and control in _CHECKS:
+        return _CHECKS[control](ctx)
+    return False, f"Unknown OWASP Web control: {category}/{control}", None
+
+
+def _eval_fw_mitre_atlas(category: str, control: str, ctx: _EvalContext):
+    """MITRE ATLAS: finding-category checks with attestation fallback for process controls."""
+    _CHECKS = {
+        ("reconnaissance", "aml_t0000_phishing_for_ml_info"): lambda c: _baseline_attestation(c, "mitre_atlas", category, control, "AML.T0000 Phishing for ML Info"),
+        ("reconnaissance", "aml_t0001_discover_ml_artifacts"): lambda c: _check_findings_clear(c, ["ml_artifact_exposure", "model_exposure"], "AML.T0001 Discover ML Artifacts"),
+        ("ml_attack_staging", "aml_t0016_obtain_capabilities"): lambda c: _baseline_attestation(c, "mitre_atlas", category, control, "AML.T0016 Obtain Capabilities"),
+        ("ml_attack_staging", "aml_t0051_supply_chain_compromise"): lambda c: (
+            any(e.evidence_type in ("sbom", "provenance") for e in c.evidence_packages),
+            "AML.T0051 Supply Chain: SBOM/provenance evidence on file" if any(e.evidence_type in ("sbom", "provenance") for e in c.evidence_packages) else "AML.T0051 Supply Chain: no supply-chain integrity evidence",
+            None,
+        ),
+        ("initial_access", "aml_t0012_valid_accounts"): lambda c: _check_findings_clear(c, ["credential_abuse", "account_compromise", "valid_account"], "AML.T0012 Valid Accounts"),
+        ("ml_model_access", "aml_t0040_inference_api_access"): lambda c: (
+            bool(c.scan_targets),
+            "AML.T0040 Inference API: scan target registered — API monitored" if c.scan_targets else "AML.T0040 Inference API: no scan target registered for API",
+            None,
+        ),
+        ("ml_model_access", "aml_t0043_craft_adversarial_data"): lambda c: (
+            any(e.evidence_type in ("bias_benchmark", "red_team_report") for e in c.evidence_packages),
+            "AML.T0043 Adversarial Data: adversarial/red-team testing evidence on file" if any(e.evidence_type in ("bias_benchmark", "red_team_report") for e in c.evidence_packages) else "AML.T0043 Adversarial Data: no adversarial testing evidence",
+            None,
+        ),
+        ("exfiltration", "aml_t0057_llm_prompt_injection"): lambda c: _check_findings_clear(c, ["prompt_injection"], "AML.T0057 LLM Prompt Injection"),
+        ("exfiltration", "aml_t0024_exfiltration_via_ml_inference"): lambda c: _check_findings_clear(c, ["data_exfiltration", "model_inversion", "membership_inference"], "AML.T0024 Exfiltration via ML Inference"),
+        ("impact", "aml_t0029_denial_of_ml_service"): lambda c: _check_findings_clear(c, ["model_dos", "denial_of_service", "resource_exhaustion"], "AML.T0029 Denial of ML Service"),
+        ("impact", "aml_t0031_erode_model_integrity"): lambda c: _baseline_attestation(c, "mitre_atlas", category, control, "AML.T0031 Erode Model Integrity"),
+    }
+    fn = _CHECKS.get((category, control))
+    if fn:
+        return fn(ctx)
+    return False, f"Unknown MITRE ATLAS control: {category}/{control}", None
+
+
+def _eval_fw_slsa(category: str, control: str, ctx: _EvalContext):
+    """SLSA: evidence artifact checks."""
+    has_provenance = any(e.evidence_type == "provenance" for e in ctx.evidence_packages)
+    has_sbom = any(e.evidence_type == "sbom" for e in ctx.evidence_packages)
+    has_signed = ctx.has_report.get("artifact_signed", False) or any(e.evidence_type == "artifact_signed" for e in ctx.evidence_packages)
+    has_sca = len(ctx.findings_by_source.get("sca", [])) > 0 or any(st.tool_type == "sca" for st in ctx.scan_targets)
+    critical_sca = [f for f in ctx.findings_by_source.get("sca", []) if f.severity == "critical"]
+    has_license = ctx.has_report.get("license_compliance", False)
+
+    _CHECKS = {
+        ("provenance", "level_1"): (has_provenance, "SLSA L1: provenance artifact present" if has_provenance else "SLSA L1: no provenance artifact — attach via evidence package", None),
+        ("provenance", "level_2"): (has_provenance, "SLSA L2: hosted build provenance present" if has_provenance else "SLSA L2: no hosted-build provenance evidence", None),
+        ("provenance", "level_3"): (has_provenance, "SLSA L3: hardened build provenance present" if has_provenance else "SLSA L3: no hardened-build provenance evidence", None),
+        ("artifacts", "sbom_generated"): (has_sbom, "SLSA SBOM: Software Bill of Materials on file" if has_sbom else "SLSA SBOM: no SBOM evidence package attached", None),
+        ("artifacts", "artifact_signed"): (has_signed, "SLSA Signing: signed artifact evidence on file" if has_signed else "SLSA Signing: no signed artifact evidence", None),
+        ("dependencies", "dependency_review"): (has_sca, "SLSA Dependency Review: SCA scan completed" if has_sca else "SLSA Dependency Review: no SCA scan results found", None),
+        ("dependencies", "no_critical_cves"): (len(critical_sca) == 0, "SLSA CVEs: no critical CVEs in dependencies" if not critical_sca else f"SLSA CVEs: {len(critical_sca)} critical CVE(s) in dependencies", {"count": len(critical_sca)} if critical_sca else None),
+        ("dependencies", "license_cleared"): (has_license, "SLSA Licenses: license compliance report on file" if has_license else "SLSA Licenses: no license compliance report", None),
+    }
+    result = _CHECKS.get((category, control))
+    if result:
+        return result
+    return False, f"Unknown SLSA control: {category}/{control}", None
+
+
+def _eval_fw_nist_rmf(category: str, control: str, ctx: _EvalContext):
+    """NIST AI RMF: process/governance checks."""
+    _CHECKS = {
+        ("govern", "policy_defined"): lambda c: (c.has_baseline, "RMF Govern: org baseline (policy) attached" if c.has_baseline else "RMF Govern: no org baseline — AI risk policy not documented", None),
+        ("govern", "roles_defined"): lambda c: _eval_iam_roles_defined(None, c),
+        ("govern", "oversight_mechanism"): lambda c: (c.has_approval.get("promotion_gate", False) or c.has_approval.get("deployment_gate", False), "RMF Govern: approval/oversight records on file" if c.has_approval.get("promotion_gate") or c.has_approval.get("deployment_gate") else "RMF Govern: no oversight approval records found", None),
+        ("map", "risk_categorized"): lambda c: (c.has_baseline and bool(c.baseline_defaults), "RMF Map: risk categorized via org baseline" if c.has_baseline else "RMF Map: org baseline not attached — risk not categorized", None),
+        ("map", "threat_assessment"): lambda c: (c.has_compiled_package or len(c.security_review_findings) > 0, "RMF Map: threat assessment evidence present" if c.has_compiled_package or c.security_review_findings else "RMF Map: no compiled context or security review findings", None),
+        ("map", "context_established"): lambda c: (c.has_app_spec, "RMF Map: deployment context established via app spec" if c.has_app_spec else "RMF Map: no app spec — deployment context not documented", None),
+        ("measure", "metrics_defined"): lambda c: (c.has_report.get("environment_posture", False) or c.has_report.get("rai_posture", False), "RMF Measure: metrics report on file" if c.has_report.get("environment_posture") or c.has_report.get("rai_posture") else "RMF Measure: no posture or metrics report found", None),
+        ("measure", "monitoring_plan"): lambda c: (bool(c.scan_targets), f"RMF Measure: {len(c.scan_targets)} scan target(s) active (monitoring configured)" if c.scan_targets else "RMF Measure: no scan targets — monitoring plan not configured", None),
+        ("measure", "bias_evaluated"): lambda c: (any(e.evidence_type in ("bias_benchmark", "fairness_audit") for e in c.evidence_packages), "RMF Measure: bias/fairness evaluation evidence on file" if any(e.evidence_type in ("bias_benchmark", "fairness_audit") for e in c.evidence_packages) else "RMF Measure: no bias evaluation evidence", None),
+        ("manage", "incident_plan"): lambda c: (c.has_report.get("residual_risk", False), "RMF Manage: residual risk/incident plan report on file" if c.has_report.get("residual_risk") else "RMF Manage: no residual risk report — incident plan not documented", None),
+        ("manage", "risk_treatment"): lambda c: (c.has_compiled_package, "RMF Manage: compiled context package present (risk treatment documented)" if c.has_compiled_package else "RMF Manage: no compiled context package — risk treatment not documented", None),
+        ("manage", "rollback_plan"): lambda c: (c.has_approval.get("promotion_gate", False), "RMF Manage: rollback plan evidenced by promotion approval record" if c.has_approval.get("promotion_gate") else "RMF Manage: no promotion approval record — rollback plan not on file", None),
+    }
+    fn = _CHECKS.get((category, control))
+    if fn:
+        return fn(ctx)
+    return False, f"Unknown NIST AI RMF control: {category}/{control}", None
+
+
+def _eval_fw_ssdf(category: str, control: str, ctx: _EvalContext):
+    """NIST SSDF: secure software development practice checks."""
+    _CHECKS = {
+        ("prepare", "po1_security_requirements"): lambda c: (c.has_app_spec, "SSDF PO.1: security requirements in app spec" if c.has_app_spec else "SSDF PO.1: no app spec — security requirements not documented", None),
+        ("prepare", "po2_roles_responsibilities"): lambda c: _eval_iam_roles_defined(None, c),
+        ("prepare", "po3_third_party_management"): lambda c: (len(c.findings_by_source.get("sca", [])) > 0 or any(st.tool_type == "sca" for st in c.scan_targets), "SSDF PO.3: SCA scan active — third-party components managed" if len(c.findings_by_source.get("sca", [])) > 0 or any(st.tool_type == "sca" for st in c.scan_targets) else "SSDF PO.3: no SCA scan — third-party management not confirmed", None),
+        ("produce", "pw1_security_design"): lambda c: (c.has_app_spec, "SSDF PW.1: security design in app spec" if c.has_app_spec else "SSDF PW.1: no app spec — security design not documented", None),
+        ("produce", "pw2_threat_modeling"): lambda c: (any(e.evidence_type in ("model_card", "red_team_report") for e in c.evidence_packages) or c.has_compiled_package, "SSDF PW.2: threat model evidence present" if any(e.evidence_type in ("model_card", "red_team_report") for e in c.evidence_packages) or c.has_compiled_package else "SSDF PW.2: no threat model evidence", None),
+        ("produce", "pw4_reusable_components"): lambda c: (c.has_compiled_package, "SSDF PW.4: compiled package confirms reusable component use" if c.has_compiled_package else "SSDF PW.4: no compiled context package", None),
+        ("produce", "pw5_secure_defaults"): lambda c: _check_findings_clear(c, ["misconfiguration", "default_credentials", "insecure_default"], "SSDF PW.5 Secure Defaults"),
+        ("produce", "pw6_code_review"): lambda c: _eval_security_review_clear(None, c),
+        ("produce", "pw7_security_testing"): lambda c: (bool(c.scan_targets) or len(c.pearl_scan_findings) > 0, "SSDF PW.7: security testing scan results present" if c.scan_targets or c.pearl_scan_findings else "SSDF PW.7: no security testing evidence", None),
+        ("produce", "pw8_vulnerability_scanning"): lambda c: _eval_scan_target_registered(None, c),
+        ("respond", "rv1_disclosure_process"): lambda c: (c.has_report.get("control_coverage", False) or c.has_approval.get("deployment_gate", False), "SSDF RV.1: disclosure process evidenced by report/approval" if c.has_report.get("control_coverage") or c.has_approval.get("deployment_gate") else "SSDF RV.1: no disclosure process evidence", None),
+        ("respond", "rv2_root_cause_analysis"): lambda c: (c.has_compiled_package, "SSDF RV.2: compiled context package includes remediation analysis" if c.has_compiled_package else "SSDF RV.2: no compiled context — root cause analysis not documented", None),
+        ("respond", "rv3_remediation"): lambda c: (c.has_compiled_package and len(c.findings_by_severity.get("critical", [])) == 0, "SSDF RV.3: no critical open findings — remediation current" if c.has_compiled_package and not c.findings_by_severity.get("critical") else "SSDF RV.3: critical findings open or no compiled context", None),
+    }
+    fn = _CHECKS.get((category, control))
+    if fn:
+        return fn(ctx)
+    return False, f"Unknown NIST SSDF control: {category}/{control}", None
+
+
+# ── Dispatcher registry ────────────────────────────────────────────────────────
+
+_FRAMEWORK_HANDLERS = {
+    "aiuc1": _eval_fw_aiuc1,
+    "owasp_llm": _eval_fw_owasp_llm,
+    "owasp_web": _eval_fw_owasp_web,
+    "mitre_atlas": _eval_fw_mitre_atlas,
+    "slsa": _eval_fw_slsa,
+    "nist_rmf": _eval_fw_nist_rmf,
+    "ssdf": _eval_fw_ssdf,
+}
+
+
+def _eval_framework_control_required(rule, ctx):
+    """Evaluate a specific control from any supported compliance framework.
+
+    Parameters:
+        framework: Framework key (aiuc1, owasp_llm, owasp_web, mitre_atlas, slsa, nist_rmf, ssdf)
+        category:  Framework-specific category/group key
+        control:   Specific control identifier within the category
+    """
+    params = rule.parameters or {}
+    framework = params.get("framework")
+    category = params.get("category")
+    control = params.get("control")
+
+    if not framework or not category or not control:
+        return False, "Rule misconfigured: missing 'framework', 'category', or 'control' parameter", None
+
+    handler = _FRAMEWORK_HANDLERS.get(framework)
+    if handler is None:
+        return False, f"Unsupported framework: '{framework}'", {"supported": list(_FRAMEWORK_HANDLERS)}
+
+    passed, message, details = handler(category, control, ctx)
+    base_details = {"framework": framework, "category": category, "control": control, **(details or {})}
+    return passed, message, base_details
+
+
 # ──────────────────────────────────────────────
 # Rule evaluator registry
 # ──────────────────────────────────────────────
@@ -799,6 +1073,8 @@ RULE_EVALUATORS = {
     GateRuleType.REQUIRED_ANALYZERS_COMPLETED: _eval_required_analyzers_completed,
     GateRuleType.GUARDRAIL_COVERAGE: _eval_guardrail_coverage,
     GateRuleType.SECURITY_REVIEW_CLEAR: _eval_security_review_clear,
-    # AIUC-1 baseline control compliance
+    # AIUC-1 baseline control compliance (legacy — prefer FRAMEWORK_CONTROL_REQUIRED)
     GateRuleType.AIUC1_CONTROL_REQUIRED: _eval_aiuc1_control_required,
+    # Unified multi-framework control evaluation
+    GateRuleType.FRAMEWORK_CONTROL_REQUIRED: _eval_framework_control_required,
 }

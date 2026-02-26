@@ -140,6 +140,8 @@ export const GATE_RULE_TYPES: {
   aiOnly: boolean;
   hasParams: boolean;
 }[] = [
+  // Framework (unified multi-framework control — preferred over legacy per-control types)
+  { value: "framework_control_required", label: "Framework Control Required", group: "Framework", hasThreshold: false, aiOnly: false, hasParams: true },
   // Core
   { value: "project_registered", label: "Project Registered", group: "Core", hasThreshold: false, aiOnly: false, hasParams: false },
   { value: "org_baseline_attached", label: "Org Baseline Attached", group: "Core", hasThreshold: false, aiOnly: false, hasParams: false },
@@ -164,10 +166,6 @@ export const GATE_RULE_TYPES: {
   { value: "security_review_clear", label: "Security Review Clear", group: "Security", hasThreshold: false, aiOnly: false, hasParams: false },
   // AI / MASS
   { value: "mass_scan_completed", label: "MASS Scan Completed", group: "AI", hasThreshold: false, aiOnly: true, hasParams: false },
-  { value: "no_prompt_injection", label: "No Prompt Injection", group: "AI", hasThreshold: false, aiOnly: true, hasParams: false },
-  { value: "guardrails_verified", label: "Guardrails Verified", group: "AI", hasThreshold: false, aiOnly: true, hasParams: false },
-  { value: "no_pii_leakage", label: "No PII Leakage", group: "AI", hasThreshold: false, aiOnly: true, hasParams: false },
-  { value: "owasp_llm_top10_clear", label: "OWASP LLM Top 10 Clear", group: "AI", hasThreshold: false, aiOnly: true, hasParams: false },
   { value: "mass_risk_acceptable", label: "MASS Risk Acceptable", group: "AI", hasThreshold: true, aiOnly: true, hasParams: false },
   { value: "comprehensive_mass_scan", label: "Comprehensive MASS Scan", group: "AI", hasThreshold: false, aiOnly: true, hasParams: false },
   { value: "rai_eval_completed", label: "RAI Evaluation Completed", group: "AI", hasThreshold: false, aiOnly: true, hasParams: false },
@@ -185,9 +183,38 @@ export const GATE_RULE_TYPES: {
   { value: "fairness_context_receipt_valid", label: "Fairness Context Receipt Valid", group: "Fairness", hasThreshold: false, aiOnly: true, hasParams: false },
   { value: "fairness_exceptions_controlled", label: "Fairness Exceptions Controlled", group: "Fairness", hasThreshold: false, aiOnly: true, hasParams: false },
   { value: "fairness_policy_deployed", label: "Fairness Policy Deployed", group: "Fairness", hasThreshold: false, aiOnly: true, hasParams: false },
-  // AIUC-1
-  { value: "aiuc1_control_required", label: "AIUC-1 Control Required", group: "AIUC-1", hasThreshold: false, aiOnly: false, hasParams: true },
+  // Legacy — superseded by framework_control_required; kept for backward compatibility with existing gates
+  { value: "no_prompt_injection", label: "No Prompt Injection (use OWASP LLM01)", group: "Legacy", hasThreshold: false, aiOnly: true, hasParams: false },
+  { value: "guardrails_verified", label: "Guardrails Verified (use AIUC-1 C003)", group: "Legacy", hasThreshold: false, aiOnly: true, hasParams: false },
+  { value: "no_pii_leakage", label: "No PII Leakage (use OWASP LLM06)", group: "Legacy", hasThreshold: false, aiOnly: true, hasParams: false },
+  { value: "owasp_llm_top10_clear", label: "OWASP LLM Top 10 Clear (use per-control)", group: "Legacy", hasThreshold: false, aiOnly: true, hasParams: false },
+  { value: "aiuc1_control_required", label: "AIUC-1 Control Required (use Framework)", group: "Legacy", hasThreshold: false, aiOnly: false, hasParams: true },
 ];
+
+export interface ContestRuleBody {
+  evaluation_id: string;
+  rule_type: string;
+  contest_type: "false_positive" | "risk_acceptance" | "needs_more_time";
+  rationale: string;
+  finding_ids?: string[];
+  compensating_controls?: string[];
+  expires_days?: number;
+}
+
+export function useContestRule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, body }: { projectId: string; body: ContestRuleBody }) =>
+      apiFetch(`/projects/${projectId}/promotions/contest-rule`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["approvals"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
 
 export function useUpdateGateApprovalMode() {
   const qc = useQueryClient();
