@@ -54,7 +54,7 @@ async def decide_approval(
     if not approval:
         raise NotFoundError("Approval request", approval_request_id)
 
-    if approval.status != "pending":
+    if approval.status not in ("pending", "needs_info"):
         raise ConflictError(f"Approval request is already '{approval.status}'")
 
     # Update approval status
