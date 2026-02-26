@@ -1239,17 +1239,14 @@ function BaselineTab() {
   const [editedDefaults, setEditedDefaults] = useState<
     Record<string, Record<string, unknown>> | null
   >(null);
-  const [editedRequirements, setEditedRequirements] =
-    useState<Record<string, string[]> | null>(null);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set()
   );
   const [reqExpanded, setReqExpanded] = useState(false);
   const [activeReqEnv, setActiveReqEnv] = useState<string>("prod");
-  // Per-env, per-category expand state for requirements edit panel
-  const [reqCatExpanded, setReqCatExpanded] = useState<Set<string>>(new Set());
 
   const { data: pipeline } = useDefaultPipeline();
+  const { data: gates } = useGates();
   // Ordered stage keys from the pipeline, falling back to the static list
   const promotionEnvs = useMemo(() => {
     if (pipeline?.stages && pipeline.stages.length > 0) {
@@ -1260,6 +1257,26 @@ function BaselineTab() {
     return FALLBACK_ENVS;
   }, [pipeline]);
 
+  // Derive AIUC-1 requirements per target env from aiuc1_control_required gate rules.
+  // This is the single source of truth — no separate environment_requirements needed.
+  const requirementsByEnv = useMemo(() => {
+    const map: Record<string, { category: string; control: string; gateLabel: string }[]> = {};
+    for (const gate of gates ?? []) {
+      const tgt = gate.target_environment;
+      for (const rule of gate.rules ?? []) {
+        if (rule.rule_type === "aiuc1_control_required" && rule.parameters) {
+          const cat = rule.parameters["category"] as string | undefined;
+          const ctrl = rule.parameters["control"] as string | undefined;
+          if (cat && ctrl) {
+            if (!map[tgt]) map[tgt] = [];
+            map[tgt].push({ category: cat, control: ctrl, gateLabel: `${gate.source_environment} → ${tgt}` });
+          }
+        }
+      }
+    }
+    return map;
+  }, [gates]);
+
   const { data: baseline, isLoading, isError } = useOrgBaseline(projectId);
   const saveMut = useSaveOrgBaseline();
 
@@ -1267,7 +1284,6 @@ function BaselineTab() {
   useEffect(() => {
     setEditMode(false);
     setEditedDefaults(null);
-    setEditedRequirements(null);
   }, [projectId, baseline]);
 
   const toggleSection = (cat: string) => {
@@ -1279,15 +1295,6 @@ function BaselineTab() {
     });
   };
 
-  const toggleReqCat = (key: string) => {
-    setReqCatExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-
   const enterEditMode = () => {
     if (!baseline) return;
     setEditedDefaults(
@@ -1295,15 +1302,6 @@ function BaselineTab() {
         string,
         Record<string, unknown>
       >
-    );
-    const emptyReqs: Record<string, string[]> = {};
-    for (const key of promotionEnvs) emptyReqs[key] = [];
-    setEditedRequirements(
-      baseline.environment_requirements
-        ? (JSON.parse(
-            JSON.stringify(baseline.environment_requirements)
-          ) as Record<string, string[]>)
-        : emptyReqs
     );
     setEditMode(true);
   };
@@ -1319,21 +1317,8 @@ function BaselineTab() {
     });
   };
 
-  const handleToggleRequirement = (env: string, controlRef: string) => {
-    setEditedRequirements((prev) => {
-      if (!prev) return prev;
-      const current = prev[env] ?? [];
-      const next = current.includes(controlRef)
-        ? current.filter((r) => r !== controlRef)
-        : [...current, controlRef].sort();
-      return { ...prev, [env]: next };
-    });
-  };
-
   const handleSave = () => {
     if (!baseline || !editedDefaults) return;
-    const requirementsPayload =
-      editedRequirements ?? baseline.environment_requirements;
     saveMut.mutate(
       {
         projectId,
@@ -1343,16 +1328,12 @@ function BaselineTab() {
           baseline_id: baseline.baseline_id,
           org_name: baseline.org_name,
           defaults: editedDefaults,
-          ...(requirementsPayload
-            ? { environment_requirements: requirementsPayload }
-            : {}),
         },
       },
       {
         onSuccess: () => {
           setEditMode(false);
           setEditedDefaults(null);
-          setEditedRequirements(null);
         },
       }
     );
@@ -1360,10 +1341,6 @@ function BaselineTab() {
 
   const currentDefaults =
     editMode && editedDefaults ? editedDefaults : baseline?.defaults;
-  const currentRequirements =
-    editMode && editedRequirements
-      ? editedRequirements
-      : baseline?.environment_requirements;
 
   const categories = useMemo(() => {
     if (!currentDefaults) return [];
@@ -1404,7 +1381,6 @@ function BaselineTab() {
               onClick={() => {
                 setEditMode(false);
                 setEditedDefaults(null);
-                setEditedRequirements(null);
               }}
             >
               Cancel
@@ -1523,7 +1499,7 @@ function BaselineTab() {
             );
           })}
 
-          {/* ---- Promotion Requirements ---- */}
+          {/* ---- Promotion Requirements (derived from gate rules) ---- */}
           <VaultCard>
             <div
               className="flex items-center gap-2 cursor-pointer select-none"
@@ -1537,17 +1513,15 @@ function BaselineTab() {
               <div className="flex-1">
                 <h3 className="vault-heading text-xs">Promotion Requirements</h3>
                 <p className="text-[10px] text-bone-muted font-mono mt-0.5">
-                  AIUC-1 sub-controls required to be enabled before promotion to
-                  each environment
+                  AIUC-1 controls enforced by gate rules — manage in Gate Rules tab
                 </p>
               </div>
               <span className="text-[10px] text-bone-dim font-mono shrink-0">
                 {promotionEnvs.map((e) => {
-                  const count = currentRequirements?.[e]?.length ?? 0;
+                  const count = requirementsByEnv[e]?.length ?? 0;
                   return count > 0 ? (
                     <span key={e} className="ml-2">
-                      <span className="text-clinical-cyan">{e}</span>:{" "}
-                      {count}
+                      <span className="text-clinical-cyan">{e}</span>: {count}
                     </span>
                   ) : null;
                 })}
@@ -1559,7 +1533,7 @@ function BaselineTab() {
                 {/* Env selector tabs */}
                 <div className="flex gap-0 border-b border-slate-border/50 flex-wrap">
                   {promotionEnvs.map((env) => {
-                    const count = currentRequirements?.[env]?.length ?? 0;
+                    const count = requirementsByEnv[env]?.length ?? 0;
                     return (
                       <button
                         key={env}
@@ -1581,123 +1555,51 @@ function BaselineTab() {
                   })}
                 </div>
 
-                {/* Requirements for active env */}
-                {editMode ? (
-                  /* Edit mode: full checkbox tree grouped by category */
-                  <div className="space-y-2">
-                    {categories.map((cat) => {
-                      const catKey = `${activeReqEnv}-${cat}`;
-                      const isCatOpen = reqCatExpanded.has(catKey);
-                      const catFields = currentDefaults?.[cat] ?? {};
-                      const catReqCount = Object.keys(catFields).filter((fk) =>
-                        editedRequirements?.[activeReqEnv]?.includes(
-                          `${cat}.${fk}`
-                        )
-                      ).length;
-                      return (
-                        <div
-                          key={cat}
-                          className="border border-slate-border/30 rounded"
-                        >
-                          <button
-                            className="w-full flex items-center gap-2 px-3 py-2 hover:bg-vault-black/30 transition-colors"
-                            onClick={() => toggleReqCat(catKey)}
-                          >
-                            {isCatOpen ? (
-                              <ChevronDown
-                                size={12}
-                                className="text-bone-dim shrink-0"
-                              />
-                            ) : (
-                              <ChevronRight
-                                size={12}
-                                className="text-bone-dim shrink-0"
-                              />
-                            )}
-                            <span className="text-xs font-mono text-clinical-cyan font-semibold">
-                              {CATEGORY_META[cat].label}
-                            </span>
-                            {catReqCount > 0 && (
-                              <span className="ml-auto text-[9px] text-cold-teal font-mono bg-charcoal px-1.5 py-0.5 rounded">
-                                {catReqCount} required
-                              </span>
-                            )}
-                          </button>
-                          {isCatOpen && (
-                            <div className="border-t border-slate-border/20 divide-y divide-slate-border/10">
-                              {Object.keys(catFields).map((fieldKey) => {
-                                const controlRef = `${cat}.${fieldKey}`;
-                                const isReq =
-                                  (editedRequirements?.[activeReqEnv] ?? []).includes(controlRef);
-                                return (
-                                  <label
-                                    key={fieldKey}
-                                    className="flex items-center gap-3 px-4 py-2 hover:bg-vault-black/30 cursor-pointer"
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={isReq}
-                                      onChange={() =>
-                                        handleToggleRequirement(activeReqEnv, controlRef)
-                                      }
-                                      className="accent-cold-teal shrink-0"
-                                    />
-                                    <span className="text-xs font-mono text-bone">
-                                      {fieldKeyToAiuc1Label(fieldKey)}
-                                    </span>
-                                  </label>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  /* View mode: compact chips */
-                  <div className="space-y-3">
-                    {(() => {
-                      const reqs = (currentRequirements as Record<string, string[]> | null)?.[activeReqEnv] ?? [];
-                      if (reqs.length === 0) {
-                        return (
-                          <p className="text-xs text-bone-dim font-mono py-4 text-center">
-                            No requirements configured for {activeReqEnv}
-                          </p>
-                        );
-                      }
-                      // Group by category
-                      const grouped: Record<string, string[]> = {};
-                      for (const ref of reqs) {
-                        const dot = ref.indexOf(".");
-                        if (dot === -1) continue;
-                        const c = ref.slice(0, dot);
-                        const fk = ref.slice(dot + 1);
-                        if (!grouped[c]) grouped[c] = [];
-                        grouped[c].push(fk);
-                      }
-                      return Object.entries(grouped).map(([cat, fks]) => (
+                {/* Requirements for active env — read-only, derived from gates */}
+                {(() => {
+                  const reqs = requirementsByEnv[activeReqEnv] ?? [];
+                  if (reqs.length === 0) {
+                    return (
+                      <p className="text-xs text-bone-dim font-mono py-4 text-center">
+                        No AIUC-1 controls required by any gate targeting{" "}
+                        <span className="text-bone">{activeReqEnv}</span>.
+                        Add an{" "}
+                        <span className="text-clinical-cyan font-semibold">
+                          AIUC-1 Control Required
+                        </span>{" "}
+                        rule to a gate in the Gate Rules tab.
+                      </p>
+                    );
+                  }
+                  // Group by category
+                  const grouped: Record<string, typeof reqs> = {};
+                  for (const req of reqs) {
+                    if (!grouped[req.category]) grouped[req.category] = [];
+                    grouped[req.category].push(req);
+                  }
+                  return (
+                    <div className="space-y-3">
+                      {Object.entries(grouped).map(([cat, items]) => (
                         <div key={cat}>
                           <div className="text-[10px] font-mono text-clinical-cyan font-semibold uppercase tracking-wider mb-1.5">
-                            {CATEGORY_META[cat as BaselineCategory]?.label ??
-                              cat}
+                            {CATEGORY_META[cat as BaselineCategory]?.label ?? cat}
                           </div>
                           <div className="flex flex-wrap gap-1.5">
-                            {fks.map((fk) => (
+                            {items.map((item) => (
                               <span
-                                key={fk}
+                                key={item.control}
                                 className="text-[10px] font-mono bg-charcoal border border-slate-border/40 text-bone-muted px-2 py-0.5 rounded"
-                                title={fieldKeyToAiuc1Label(fk)}
+                                title={`${fieldKeyToAiuc1Label(item.control)} — enforced by ${item.gateLabel} gate`}
                               >
-                                {fieldKeyToAiuc1Id(fk)}
+                                {fieldKeyToAiuc1Id(item.control)}
                               </span>
                             ))}
                           </div>
                         </div>
-                      ));
-                    })()}
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </VaultCard>
