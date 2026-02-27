@@ -1,5 +1,5 @@
 // Environment chain
-export type Environment = "sandbox" | "dev" | "pilot" | "preprod" | "prod";
+export type Environment = "sandbox" | "dev" | "preprod" | "prod";
 
 // Severity levels
 export type Severity = "critical" | "high" | "moderate" | "low" | "info";
@@ -140,6 +140,92 @@ export interface IntegrationEndpoint {
   labels?: Record<string, string> | null;
   last_sync_at?: string | null;
   last_sync_status?: string | null;
+}
+
+// Business Units
+export interface BusinessUnit {
+  bu_id: string;
+  name: string;
+  org_id: string;
+  description?: string;
+  framework_selections: string[];
+  additional_guardrails: Record<string, unknown>;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+// Environment Config
+export interface EnvironmentStage {
+  name: string;
+  order: number;
+  risk_level: string;
+  requires_approval: boolean;
+  approval_type: string;
+  use_case_ref_required: boolean;
+}
+
+export interface OrgEnvironmentConfig {
+  config_id: string | null;
+  org_id: string;
+  stages: EnvironmentStage[];
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+// Agent Brief
+export interface AgentRequirement {
+  control_id: string;
+  rule_type?: string;
+  status: "satisfied" | "missing" | "skipped";
+  action?: string | null;
+  evidence_ref?: string | null;
+}
+
+export interface AgentTaskPacket {
+  task_packet_id: string;
+  rule_id?: string | null;
+  rule_type?: string | null;
+  fix_guidance?: string | null;
+  status: string;
+  transition?: string | null;
+  finding_ids?: string[];
+  claimed_at?: string | null;
+  agent_id?: string | null;
+}
+
+export interface AgentBrief {
+  project_id: string;
+  current_stage: string;
+  next_stage: string | null;
+  gate_status: string;
+  ready_to_elevate: boolean;
+  requirements: AgentRequirement[];
+  resolved_requirements: ResolvedRequirement[];
+  open_task_packets: AgentTaskPacket[];
+  blockers_count: number;
+  last_evaluated_at: string | null;
+}
+
+export interface ResolvedRequirement {
+  control_id: string;
+  framework: string;
+  requirement_level: "mandatory" | "recommended";
+  evidence_type: string;
+  source: string;
+  transition: string;
+}
+
+// Timeline
+export interface TimelineEvent {
+  event_id: string;
+  event_type: string;
+  timestamp: string;
+  summary: string;
+  detail: Record<string, unknown>;
+  actor: string;
+  finding_id?: string | null;
+  task_packet_id?: string | null;
+  evaluation_id?: string | null;
 }
 
 // Promotion gate

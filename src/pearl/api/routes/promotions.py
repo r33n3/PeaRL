@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pearl.dependencies import get_db, get_trace_id
@@ -18,6 +18,7 @@ from pearl.repositories.promotion_repo import (
 )
 from pearl.services.id_generator import generate_id
 from pearl.services.promotion.gate_evaluator import evaluate_promotion
+from pearl.api.routes.stream import publish_event
 
 router = APIRouter(tags=["Promotions"])
 
@@ -25,16 +26,34 @@ router = APIRouter(tags=["Promotions"])
 @router.post("/projects/{project_id}/promotions/evaluate", status_code=200)
 async def evaluate_promotion_readiness(
     project_id: str,
+    source_environment: str | None = None,
+    target_environment: str | None = None,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     trace_id: str = Depends(get_trace_id),
 ) -> dict:
     evaluation = await evaluate_promotion(
         project_id=project_id,
+        source_environment=source_environment,
+        target_environment=target_environment,
         trace_id=trace_id,
         session=db,
     )
     await db.commit()
-    return evaluation.model_dump(mode="json", exclude_none=True)
+    result = evaluation.model_dump(mode="json", exclude_none=True)
+    # Publish real-time event so connected clients update without polling
+    if request:
+        redis = getattr(request.app.state, "redis", None)
+        await publish_event(redis, "gate_evaluated", {
+            "project_id": project_id,
+            "evaluation_id": evaluation.evaluation_id,
+            "status": evaluation.status,
+            "passed_count": evaluation.passed_count,
+            "failed_count": evaluation.failed_count,
+            "source_environment": evaluation.source_environment,
+            "target_environment": evaluation.target_environment,
+        })
+    return result
 
 
 @router.get("/projects/{project_id}/promotions/readiness", status_code=200)
@@ -45,7 +64,7 @@ async def get_promotion_readiness(
     repo = PromotionEvaluationRepository(db)
     evaluation = await repo.get_latest_by_project(project_id)
     if not evaluation:
-        return {"status": "no_evaluation", "message": "No promotion evaluation found. Run evaluate first."}
+        return {"status": "not_evaluated", "message": "No promotion evaluation found. Run evaluate first."}
     return {
         "evaluation_id": evaluation.evaluation_id,
         "project_id": evaluation.project_id,
@@ -320,9 +339,18 @@ async def contest_gate_rule(
     if not evaluation or evaluation.project_id != project_id:
         raise NotFoundError("Promotion evaluation", evaluation_id)
 
-    finding_ids = body.get("finding_ids") or []
     compensating_controls = body.get("compensating_controls") or []
     expires_days = body.get("expires_days")
+
+    # Auto-populate finding_ids from the stored rule evidence if not provided
+    finding_ids = body.get("finding_ids") or []
+    if not finding_ids:
+        rule_results = evaluation.rule_results or []
+        for rr in rule_results:
+            rr_dict = rr if isinstance(rr, dict) else (rr.model_dump() if hasattr(rr, "model_dump") else {})
+            if rr_dict.get("rule_type") == rule_type:
+                finding_ids = (rr_dict.get("evidence") or {}).get("finding_ids", [])
+                break
 
     now = datetime.now(timezone.utc)
     expires_at = None

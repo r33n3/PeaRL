@@ -40,6 +40,7 @@ from pearl.repositories.promotion_repo import (
 )
 from pearl.repositories.report_repo import ReportRepository
 from pearl.services.id_generator import generate_id
+from pearl.services.promotion.requirement_resolver import ResolvedRequirement, resolve_requirements
 
 
 async def next_environment(current: str, session: AsyncSession) -> str | None:
@@ -61,6 +62,7 @@ async def evaluate_promotion(
     target_environment: str | None = None,
     trace_id: str | None = None,
     session: AsyncSession | None = None,
+    source_environment: str | None = None,
 ) -> PromotionEvaluation:
     """Evaluate project readiness for promotion to the next environment.
 
@@ -78,9 +80,12 @@ async def evaluate_promotion(
         raise ValidationError(f"Project '{project_id}' not found")
 
     # Determine current environment
-    env_repo = EnvironmentProfileRepository(session)
-    env_profile = await env_repo.get_by_project(project_id)
-    current_env = env_profile.environment if env_profile else "sandbox"
+    if source_environment:
+        current_env = source_environment
+    else:
+        env_repo = EnvironmentProfileRepository(session)
+        env_profile = await env_repo.get_by_project(project_id)
+        current_env = env_profile.environment if env_profile else "sandbox"
 
     # Determine target
     if not target_environment:
@@ -97,11 +102,39 @@ async def evaluate_promotion(
         )
 
     # Build evaluation context: load all needed data
-    ctx = await _build_eval_context(project_id, project, session)
+    ctx = await _build_eval_context(project_id, project, session, current_env, target_environment)
 
-    # Evaluate each rule
+    # Evaluate each rule (static gate rules + dynamically derived BU requirements)
     rule_results = []
-    for rule_def in _parse_rules(gate.rules):
+    static_rules = _parse_rules(gate.rules)
+
+    # Inject FRAMEWORK_CONTROL_REQUIRED rules from BU requirements not already in gate
+    existing_control_ids = {
+        (r.parameters or {}).get("control")
+        for r in static_rules
+        if r.rule_type == GateRuleType.FRAMEWORK_CONTROL_REQUIRED
+    }
+    dynamic_rules = []
+    for req in ctx.bu_requirements:
+        if req.control_id not in existing_control_ids:
+            # Map control_id to category: most BU controls are flat-keyed without category hierarchy
+            # Use a generated rule_id and appropriate parameters
+            dyn_rule = GateRuleDefinition(
+                rule_id=generate_id("rule_"),
+                rule_type=GateRuleType.FRAMEWORK_CONTROL_REQUIRED,
+                description=f"{req.framework.upper()} control: {req.control_id}",
+                ai_only=False,
+                parameters={
+                    "framework": req.framework,
+                    "category": _infer_category(req.framework, req.control_id),
+                    "control": req.control_id,
+                    "requirement_level": req.requirement_level,
+                },
+            )
+            dynamic_rules.append(dyn_rule)
+            existing_control_ids.add(req.control_id)
+
+    for rule_def in static_rules + dynamic_rules:
         result = _evaluate_rule(rule_def, ctx)
         rule_results.append(result)
 
@@ -159,6 +192,35 @@ async def evaluate_promotion(
         evaluated_at=evaluation.evaluated_at,
     )
 
+    # Auto-create TaskPackets for FAIL results (idempotent — skip if one already exists)
+    failed_results = [r for r in rule_results if r.result == GateRuleResult.FAIL]
+    if failed_results:
+        from pearl.repositories.task_packet_repo import TaskPacketRepository
+        tp_repo = TaskPacketRepository(session)
+        for fail_result in failed_results:
+            try:
+                existing = await tp_repo.get_open_for_rule(project_id, fail_result.rule_id)
+                if not existing:
+                    await tp_repo.create(
+                        task_packet_id=generate_id("tp_"),
+                        project_id=project_id,
+                        environment=current_env,
+                        trace_id=trace_id or generate_id("trace_"),
+                        packet_data={
+                            "task_type": "remediate_gate_blocker",
+                            "status": "pending",
+                            "rule_id": fail_result.rule_id,
+                            "rule_type": fail_result.rule_type,
+                            "finding_ids": (fail_result.details or {}).get("finding_ids", []),
+                            "fix_guidance": _fix_guidance_for_rule(fail_result.rule_type),
+                            "transition": f"{current_env}->{target_environment}",
+                            "created_by": "gate_evaluator",
+                            "blocker_message": fail_result.message,
+                        },
+                    )
+            except Exception:
+                pass  # TaskPacket creation is best-effort
+
     return evaluation
 
 
@@ -203,10 +265,16 @@ class _EvalContext:
         self.compliance_assessment = None
         # AIUC-1 baseline defaults (category → sub-control → bool | None)
         self.baseline_defaults = {}
+        # BU-derived framework requirements for this transition
+        self.bu_requirements: list[ResolvedRequirement] = []
 
 
 async def _build_eval_context(
-    project_id: str, project, session: AsyncSession
+    project_id: str,
+    project,
+    session: AsyncSession,
+    source_env: str | None = None,
+    target_env: str | None = None,
 ) -> _EvalContext:
     ctx = _EvalContext()
     ctx.project = project
@@ -372,7 +440,101 @@ async def _build_eval_context(
         except Exception:
             pass
 
+    # Load BU-derived framework requirements for the transition
+    if source_env and target_env:
+        try:
+            ctx.bu_requirements = await resolve_requirements(
+                project_id=project_id,
+                source_env=source_env,
+                target_env=target_env,
+                session=session,
+            )
+        except Exception:
+            ctx.bu_requirements = []
+
     return ctx
+
+
+_FIX_GUIDANCE: dict[str, str] = {
+    "critical_findings_zero": "Resolve all critical-severity open findings. Check /findings?severity=critical.",
+    "high_findings_zero": "Resolve all high-severity open findings. Check /findings?severity=high.",
+    "no_hardcoded_secrets": "Remove hardcoded secrets from source code. Move to environment variables or a secrets manager.",
+    "org_baseline_attached": "Attach an org baseline to this project via POST /org-baseline.",
+    "app_spec_defined": "Define an application spec for this project via POST /projects/{id}/app-spec.",
+    "unit_tests_exist": "Add unit test evidence via a compiled context package or evidence submission.",
+    "scan_target_registered": "Register an active scan target for this project via POST /scan-targets.",
+    "mass_scan_completed": "Complete a MASS scan for this project. Register a MASS scan target and trigger a scan.",
+    "no_prompt_injection": "Resolve prompt injection findings. Implement input validation and prompt hardening.",
+    "guardrails_verified": "Implement and verify AI guardrails. Address open guardrail findings.",
+    "no_pii_leakage": "Fix PII leakage findings. Implement PII detection and filtering.",
+    "framework_control_required": "Satisfy the required framework control. Check the specific control documentation.",
+    "aiuc1_control_required": "Set the required AIUC-1 control to True in the org baseline.",
+    "security_review_clear": "Run /security-review and address all findings.",
+    "compliance_score_threshold": "Improve compliance score by resolving scan findings. Target: 80%+.",
+    "required_analyzers_completed": "Run all required analyzers. Trigger a full scan via POST /scan-targets/{id}/trigger.",
+    "project_registered": "Ensure the project is properly registered in PeaRL.",
+    "residual_risk_report": "Generate a residual risk report via POST /projects/{id}/reports.",
+    "data_classifications_documented": "Add data classifications to the application spec.",
+    "iam_roles_defined": "Define IAM roles and trust boundaries in the application spec.",
+    "network_boundaries_declared": "Declare network boundaries in the application spec or architecture section.",
+    "fairness_case_defined": "Create a fairness case via POST /projects/{id}/fairness-case.",
+    "fairness_requirements_met": "Submit fairness evidence packages to meet requirements.",
+    "model_card_documented": "Submit a model card evidence package.",
+    "owasp_llm_top10_clear": "Resolve OWASP LLM Top 10 findings. Run a security scan focused on LLM risks.",
+}
+
+
+def _fix_guidance_for_rule(rule_type: str) -> str:
+    return _FIX_GUIDANCE.get(rule_type, f"Review and fix the failing gate rule: {rule_type}.")
+
+
+def _infer_category(framework: str, control_id: str) -> str:
+    """Infer the category for a framework control based on known structures."""
+    _AIUC1_CATEGORY_MAP = {
+        "a": "data_privacy", "b": "security", "c": "safety",
+        "d": "reliability", "e": "accountability", "f": "society",
+    }
+    if framework == "aiuc1" and control_id and control_id[0] in _AIUC1_CATEGORY_MAP:
+        return _AIUC1_CATEGORY_MAP[control_id[0]]
+    _OWASP_LLM_CONTROLS = {
+        "llm01_", "llm02_", "llm03_", "llm04_", "llm05_",
+        "llm06_", "llm07_", "llm08_", "llm09_", "llm10_",
+    }
+    if framework == "owasp_llm" and any(control_id.startswith(p) for p in _OWASP_LLM_CONTROLS):
+        return "llm_top10"
+    if framework == "owasp_web" and control_id.startswith("a0"):
+        return "web_top10"
+    if framework == "mitre_atlas":
+        if control_id.startswith("aml_t000"):
+            return "reconnaissance"
+        if control_id.startswith("aml_t001") or control_id.startswith("aml_t005"):
+            return "ml_attack_staging"
+        if control_id.startswith("aml_t0012"):
+            return "initial_access"
+        if control_id.startswith("aml_t004"):
+            return "ml_model_access"
+        if control_id.startswith("aml_t002") and "exfil" in control_id:
+            return "exfiltration"
+        if "aml_t0057" in control_id:
+            return "exfiltration"
+        return "impact"
+    if framework == "slsa":
+        if control_id in ("level_1", "level_2", "level_3"):
+            return "provenance"
+        if control_id in ("sbom_generated", "artifact_signed"):
+            return "artifacts"
+        return "dependencies"
+    if framework == "nist_rmf":
+        for cat in ("govern", "map", "measure", "manage"):
+            pass  # fall through to flat key lookup
+        return "govern"
+    if framework == "ssdf":
+        if control_id.startswith("po"):
+            return "prepare"
+        if control_id.startswith("pw"):
+            return "produce"
+        return "respond"
+    return "general"
 
 
 def _parse_rules(rules_data) -> list[GateRuleDefinition]:
@@ -493,8 +655,14 @@ def _eval_security_baseline_tests(rule, ctx):
 
 
 def _eval_critical_findings_zero(rule, ctx):
-    count = len(ctx.findings_by_severity.get("critical", []))
-    return count == 0, f"0 critical findings" if count == 0 else f"{count} critical finding(s) open", {"count": count}
+    findings = ctx.findings_by_severity.get("critical", [])
+    count = len(findings)
+    finding_ids = [f.finding_id for f in findings]
+    return (
+        count == 0,
+        "0 critical findings" if count == 0 else f"{count} critical finding(s) open",
+        {"count": count, "finding_ids": finding_ids},
+    )
 
 
 def _eval_high_findings_zero(rule, ctx):

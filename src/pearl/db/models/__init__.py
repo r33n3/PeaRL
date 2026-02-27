@@ -44,6 +44,9 @@ from pearl.db.models.integration import (
 from pearl.db.models.user import UserRow, ApiKeyRow
 from pearl.db.models.policy_version import PolicyVersionRow
 from pearl.db.models.org import OrgRow
+from pearl.db.models.business_unit import BusinessUnitRow
+from pearl.db.models.org_env_config import OrgEnvironmentConfigRow
+from pearl.db.models.framework_requirement import FrameworkRequirementRow
 
 __all__ = [
     "ProjectRow",
@@ -85,4 +88,7 @@ __all__ = [
     "ApiKeyRow",
     "PolicyVersionRow",
     "OrgRow",
+    "BusinessUnitRow",
+    "OrgEnvironmentConfigRow",
+    "FrameworkRequirementRow",
 ]

@@ -1,6 +1,6 @@
 """Project table."""
 
-from sqlalchemy import Boolean, String, Text
+from sqlalchemy import Boolean, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pearl.db.base import Base, TimestampMixin
@@ -18,3 +18,6 @@ class ProjectRow(Base, TimestampMixin):
     ai_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
     schema_version: Mapped[str] = mapped_column(String(20), nullable=False, default="1.1")
     org_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    bu_id: Mapped[str | None] = mapped_column(
+        String(128), ForeignKey("business_units.bu_id"), nullable=True, index=True
+    )

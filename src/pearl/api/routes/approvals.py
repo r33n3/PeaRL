@@ -3,7 +3,7 @@
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pearl.dependencies import get_db, get_trace_id
@@ -13,10 +13,37 @@ from pearl.repositories.approval_comment_repo import ApprovalCommentRepository
 from pearl.repositories.approval_repo import ApprovalDecisionRepository, ApprovalRequestRepository
 from pearl.repositories.exception_repo import ExceptionRepository
 from pearl.services.id_generator import generate_id
+from pearl.api.routes.stream import publish_event
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Approvals"])
+
+
+@router.get("/approvals/pending")
+async def list_pending_approvals(
+    project_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    repo = ApprovalRequestRepository(db)
+    if project_id:
+        approvals = await repo.list_by_project(project_id)
+    else:
+        approvals = await repo.list_by_statuses(["pending", "needs_info"])
+    return [
+        {
+            "approval_request_id": a.approval_request_id,
+            "project_id": a.project_id,
+            "environment": a.environment,
+            "request_type": a.request_type,
+            "status": a.status,
+            "request_data": a.request_data,
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+            "expires_at": a.expires_at.isoformat() if a.expires_at else None,
+        }
+        for a in approvals
+        if a.status in ("pending", "needs_info")
+    ]
 
 
 @router.post("/approvals/requests", status_code=201)
@@ -46,6 +73,7 @@ async def create_approval_request(
 async def decide_approval(
     approval_request_id: str,
     decision: ApprovalDecision,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     trace_id: str = Depends(get_trace_id),
 ) -> dict:
@@ -95,33 +123,20 @@ async def decide_approval(
 
     await db.commit()
 
+    # Publish real-time event so dashboard and developer console update
+    if request:
+        redis = getattr(request.app.state, "redis", None)
+        await publish_event(redis, "approval_decided", {
+            "approval_request_id": approval_request_id,
+            "project_id": approval.project_id,
+            "request_type": approval.request_type,
+            "decision": decision.decision,
+            "new_status": new_status,
+            "environment": approval.environment,
+            "rule_type": (approval.request_data or {}).get("rule_type"),
+        })
+
     return decision.model_dump(mode="json", exclude_none=True)
-
-
-@router.get("/approvals/pending")
-async def list_pending_approvals(
-    project_id: str | None = None,
-    db: AsyncSession = Depends(get_db),
-) -> list[dict]:
-    repo = ApprovalRequestRepository(db)
-    if project_id:
-        approvals = await repo.list_by_project(project_id)
-    else:
-        approvals = await repo.list_by_statuses(["pending", "needs_info"])
-    return [
-        {
-            "approval_request_id": a.approval_request_id,
-            "project_id": a.project_id,
-            "environment": a.environment,
-            "request_type": a.request_type,
-            "status": a.status,
-            "request_data": a.request_data,
-            "created_at": a.created_at.isoformat() if a.created_at else None,
-            "expires_at": a.expires_at.isoformat() if a.expires_at else None,
-        }
-        for a in approvals
-        if a.status in ("pending", "needs_info")
-    ]
 
 
 @router.post("/approvals/{approval_request_id}/comments", status_code=201)

@@ -19,6 +19,7 @@ class ApprovalRequestRow(Base, TimestampMixin):
     request_data: Mapped[dict] = mapped_column(JSON, nullable=False)
     trace_id: Mapped[str] = mapped_column(String(128), nullable=False)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    use_case_ref: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
 
 class ApprovalDecisionRow(Base):

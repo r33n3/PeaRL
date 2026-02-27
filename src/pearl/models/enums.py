@@ -6,7 +6,6 @@ from enum import StrEnum
 class Environment(StrEnum):
     SANDBOX = "sandbox"
     DEV = "dev"
-    PILOT = "pilot"
     PREPROD = "preprod"
     PROD = "prod"
 
@@ -249,6 +248,10 @@ class GateRuleType(StrEnum):
     REQUIRED_ANALYZERS_COMPLETED = "required_analyzers_completed"
     GUARDRAIL_COVERAGE = "guardrail_coverage"
     SECURITY_REVIEW_CLEAR = "security_review_clear"
+    # AIUC-1 baseline control rules (legacy — prefer framework_control_required)
+    AIUC1_CONTROL_REQUIRED = "aiuc1_control_required"
+    # Unified framework control rule (AIUC-1, OWASP LLM/Web, MITRE ATLAS, SLSA, NIST RMF/SSDF)
+    FRAMEWORK_CONTROL_REQUIRED = "framework_control_required"
 
 
 class GateEvaluationStatus(StrEnum):

@@ -28,6 +28,7 @@ class ApprovalRequest(BaseModel):
     created_at: datetime
     expires_at: datetime | None = None
     trace_id: str = Field(..., min_length=8, max_length=128)
+    use_case_ref: str | None = None
 
 
 class ApprovalDecision(BaseModel):

@@ -15,7 +15,7 @@ export function DashboardPage() {
 
   return (
     <div>
-      <h1 className="vault-heading text-2xl mb-6">Archive Index</h1>
+      <h1 className="vault-heading text-2xl mb-6">Projects</h1>
 
       {/* Summary stats */}
       <div className="grid grid-cols-3 gap-4 mb-8">

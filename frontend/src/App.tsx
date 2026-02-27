@@ -8,6 +8,7 @@ import { FindingsPage } from "./pages/FindingsPage";
 import { PromotionPage } from "./pages/PromotionPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { ReportsPage } from "./pages/ReportsPage";
+import { AdminBusinessUnitsPage } from "./pages/AdminBusinessUnitsPage";
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
         <Route path="/projects/:projectId/promotions" element={<PromotionPage />} />
         <Route path="/projects/:projectId/reports" element={<ReportsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/admin/business-units" element={<AdminBusinessUnitsPage />} />
       </Routes>
     </AppShell>
   );

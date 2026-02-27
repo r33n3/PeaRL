@@ -51,7 +51,6 @@ export function envClass(env: Environment | string): string {
   const map: Record<string, string> = {
     sandbox: "env-sandbox",
     dev: "env-dev",
-    pilot: "env-pilot",
     preprod: "env-preprod",
     prod: "env-prod",
   };

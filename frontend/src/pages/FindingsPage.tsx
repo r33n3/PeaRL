@@ -73,18 +73,18 @@ function getGateBlockers(finding: Finding): string[] {
   const title = (finding.title || "").toLowerCase();
 
   if (finding.severity === "critical") {
-    blockers.push("pilot→preprod", "preprod→prod");
+    blockers.push("dev→preprod", "preprod→prod");
   } else if (finding.severity === "high") {
     blockers.push("preprod→prod");
   }
   if (title.includes("prompt injection") || title.includes("prompt_injection")) {
-    if (!blockers.includes("dev→pilot")) blockers.push("dev→pilot");
+    if (!blockers.includes("dev→preprod")) blockers.push("dev→preprod");
   }
   if (title.includes("pii") || title.includes("data leakage")) {
-    if (!blockers.includes("pilot→preprod")) blockers.push("pilot→preprod");
+    if (!blockers.includes("dev→preprod")) blockers.push("dev→preprod");
   }
   if (title.includes("guardrail")) {
-    if (!blockers.includes("pilot→preprod")) blockers.push("pilot→preprod");
+    if (!blockers.includes("dev→preprod")) blockers.push("dev→preprod");
   }
   return blockers;
 }

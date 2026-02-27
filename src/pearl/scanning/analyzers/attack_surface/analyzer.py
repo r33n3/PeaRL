@@ -236,9 +236,19 @@ ATTACK_VECTOR_PATTERNS = [
         "name": "Context File Manipulation",
         "vector_type": AttackVectorType.CONTEXT_INJECTION,
         "entry_point": "context_file",
-        "description": "Modified context files can change model behavior",
-        "severity": ScanSeverity.CRITICAL,
+        "description": (
+            "Context files (CLAUDE.md, .cursorrules, etc.) direct model behavior by design. "
+            "This attack surface exists whenever context files are present — the risk is that "
+            "unauthorized modifications could inject malicious instructions."
+        ),
+        "severity": ScanSeverity.INFO,
         "targets": [ComponentType.CONTEXT],
+        "mitigations": [
+            "Scan context file contents for malicious patterns (jailbreaks, prompt injection, data exfiltration)",
+            "Use integrity hashing to detect unauthorized modifications",
+            "Track context file changes via version control with code review",
+            "Apply least-privilege scoping — context files should only grant necessary permissions",
+        ],
     },
     {
         "name": "External API Response Injection",
@@ -394,6 +404,7 @@ class AttackSurfaceAnalyzer:
                     description=pattern["description"],
                     entry_point=pattern["entry_point"],
                     target_components=target_names,
+                    mitigations=pattern.get("mitigations", []),
                 )
 
     def _find_vulnerability_paths(

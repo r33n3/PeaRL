@@ -4,12 +4,16 @@ import {
   ShieldCheck,
   Settings,
   Bell,
+  Building2,
 } from "lucide-react";
 
-const NAV_ITEMS = [
-  { to: "/", icon: LayoutDashboard, label: "Archive Index" },
+const MAIN_NAV = [
+  { to: "/", icon: LayoutDashboard, label: "Projects" },
   { to: "/approvals", icon: ShieldCheck, label: "Clearances" },
-  { to: "/settings", icon: Settings, label: "Configuration" },
+];
+
+const ADMIN_NAV = [
+  { to: "/admin/business-units", icon: Building2, label: "Business Units" },
 ];
 
 export function Sidebar({
@@ -18,6 +22,16 @@ export function Sidebar({
   onNotificationsClick: () => void;
 }) {
   const location = useLocation();
+
+  function navClass(to: string) {
+    const isActive =
+      to === "/" ? location.pathname === "/" : location.pathname.startsWith(to);
+    return `flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-heading font-semibold uppercase tracking-wider transition-all duration-150 ${
+      isActive
+        ? "bg-cold-teal/10 text-cold-teal border border-cold-teal/20"
+        : "text-bone-muted hover:text-bone hover:bg-wet-stone border border-transparent"
+    }`;
+  }
 
   return (
     <aside className="w-60 flex-shrink-0 bg-charcoal border-r border-slate-border flex flex-col">
@@ -32,25 +46,31 @@ export function Sidebar({
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 py-4 px-3 space-y-1">
-        {NAV_ITEMS.map(({ to, icon: Icon, label }) => {
-          const isActive =
-            to === "/" ? location.pathname === "/" : location.pathname.startsWith(to);
-          return (
-            <NavLink
-              key={to}
-              to={to}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-heading font-semibold uppercase tracking-wider transition-all duration-150 ${
-                isActive
-                  ? "bg-cold-teal/10 text-cold-teal border border-cold-teal/20"
-                  : "text-bone-muted hover:text-bone hover:bg-wet-stone border border-transparent"
-              }`}
-            >
+      <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
+        {MAIN_NAV.map(({ to, icon: Icon, label }) => (
+          <NavLink key={to} to={to} className={navClass(to)}>
+            <Icon size={16} />
+            {label}
+          </NavLink>
+        ))}
+
+        {/* Admin section */}
+        <div className="pt-3 pb-1">
+          <p className="text-[9px] font-heading uppercase tracking-widest text-bone-dim px-3 mb-1">
+            Administration
+          </p>
+          {ADMIN_NAV.map(({ to, icon: Icon, label }) => (
+            <NavLink key={to} to={to} className={navClass(to)}>
               <Icon size={16} />
               {label}
             </NavLink>
-          );
-        })}
+          ))}
+        </div>
+
+        <NavLink to="/settings" className={navClass("/settings")}>
+          <Settings size={16} />
+          Configuration
+        </NavLink>
       </nav>
 
       {/* Bottom actions */}

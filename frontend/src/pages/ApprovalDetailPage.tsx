@@ -84,6 +84,8 @@ function ExceptionContextPanel({
   );
 }
 
+const currentUser = { id: "dashboard-user", role: "security_lead" };
+
 export function ApprovalDetailPage() {
   const { approvalId } = useParams<{ approvalId: string }>();
   const { data: thread, isLoading } = useApprovalThread(approvalId!);
@@ -104,8 +106,8 @@ export function ApprovalDetailPage() {
     decideApproval.mutate({
       approvalId: approvalId!,
       decision: "approve",
-      decidedBy: "dashboard-user",
-      deciderRole: "security_lead",
+      decidedBy: currentUser.id,
+      deciderRole: currentUser.role,
       reason: "Approved via dashboard",
     });
   };
@@ -118,8 +120,8 @@ export function ApprovalDetailPage() {
     decideApproval.mutate({
       approvalId: approvalId!,
       decision: "reject",
-      decidedBy: "dashboard-user",
-      deciderRole: "security_lead",
+      decidedBy: currentUser.id,
+      deciderRole: currentUser.role,
       reason: comment || "Rejected via dashboard",
     });
     setConfirmReject(false);
@@ -129,8 +131,8 @@ export function ApprovalDetailPage() {
     if (!comment.trim()) return;
     addComment.mutate({
       approvalId: approvalId!,
-      author: "dashboard-user",
-      authorRole: "security_lead",
+      author: currentUser.id,
+      authorRole: currentUser.role,
       content: comment,
       commentType: "question",
       setNeedsInfo: true,
@@ -142,8 +144,8 @@ export function ApprovalDetailPage() {
     if (!comment.trim()) return;
     addComment.mutate({
       approvalId: approvalId!,
-      author: "dashboard-user",
-      authorRole: "security_lead",
+      author: currentUser.id,
+      authorRole: currentUser.role,
       content: comment,
       commentType: "note",
     });
@@ -160,6 +162,7 @@ export function ApprovalDetailPage() {
           </h1>
           <div className="flex items-center gap-3 mt-1">
             <MonoText className="text-xs">{approval.approval_request_id}</MonoText>
+            <MonoText className="text-xs text-clinical-cyan">{approval.project_id}</MonoText>
             <span className="text-xs text-bone-dim">{approval.environment}</span>
           </div>
         </div>

@@ -630,11 +630,11 @@ class TestGovernanceEvents:
         """_build_notification_body produces correct body for promotion.completed."""
         body = _build_notification_body(
             PROMOTION_COMPLETED,
-            {"project_id": "proj_acme", "source_environment": "dev", "target_environment": "pilot"},
+            {"project_id": "proj_acme", "source_environment": "dev", "target_environment": "preprod"},
         )
         assert "proj_acme" in body
         assert "dev" in body
-        assert "pilot" in body
+        assert "preprod" in body
 
     def test_notification_body_finding_critical(self):
         """_build_notification_body produces correct body for critical findings."""
@@ -809,7 +809,7 @@ class TestAutoApproval:
         gate = PromotionGateRow(
             gate_id="gate_default_mode_test",
             source_environment="dev",
-            target_environment="pilot",
+            target_environment="preprod",
             rules=[{"rule_type": "critical_findings_zero"}],
         )
         db_session.add(gate)
@@ -823,7 +823,7 @@ class TestAutoApproval:
         gate = PromotionGateRow(
             gate_id="gate_auto_mode_test",
             source_environment="dev",
-            target_environment="pilot",
+            target_environment="preprod",
             rules=[],
             approval_mode="auto",
         )
@@ -842,7 +842,7 @@ class TestAutoApproval:
             json={
                 "gate_id": gate_id,
                 "source_environment": "dev",
-                "target_environment": "pilot",
+                "target_environment": "preprod",
                 "rules": [],
             },
         )
@@ -866,8 +866,8 @@ class TestAutoApproval:
             "/api/v1/promotions/gates",
             json={
                 "gate_id": gate_id,
-                "source_environment": "pilot",
-                "target_environment": "preprod",
+                "source_environment": "preprod",
+                "target_environment": "prod",
                 "rules": [],
             },
         )

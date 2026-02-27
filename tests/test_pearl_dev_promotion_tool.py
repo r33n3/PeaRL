@@ -71,7 +71,7 @@ def test_check_promotion_no_cache(promo_tool_project):
     """Returns helpful message when no promotion-readiness.json exists."""
     server = _make_server(promo_tool_project)
     result = server.handle_tool_call("pearl_check_promotion", {})
-    assert result["status"] == "no_evaluation"
+    assert result["status"] == "not_evaluated"
     assert "pearl-dev sync" in result["message"]
 
 
@@ -80,7 +80,7 @@ def test_check_promotion_reads_cache(promo_tool_project):
     # Write cached readiness
     readiness = {
         "source_environment": "dev",
-        "target_environment": "pilot",
+        "target_environment": "preprod",
         "status": "partial",
         "passed_count": 9,
         "failed_count": 4,
@@ -101,7 +101,7 @@ def test_check_promotion_reads_cache(promo_tool_project):
 
     assert result["status"] == "partial"
     assert result["current_env"] == "dev"
-    assert result["next_env"] == "pilot"
+    assert result["next_env"] == "preprod"
     assert result["progress_pct"] == 69.2
     assert result["passed_count"] == 9
     assert result["total_count"] == 13

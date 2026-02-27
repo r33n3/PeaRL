@@ -130,7 +130,7 @@ async def test_get_promotion_readiness_no_evaluation(client):
     r = await client.get("/api/v1/projects/proj_no_eval/promotions/readiness")
     assert r.status_code == 200
     data = r.json()
-    assert data["status"] == "no_evaluation"
+    assert data["status"] == "not_evaluated"
 
 
 @pytest.mark.asyncio
@@ -179,11 +179,10 @@ async def test_list_default_gates(client):
     r = await client.get("/api/v1/promotions/gates")
     assert r.status_code == 200
     gates = r.json()
-    assert len(gates) == 4
+    assert len(gates) == 3
     gate_ids = {g["gate_id"] for g in gates}
     assert "gate_sandbox_to_dev" in gate_ids
-    assert "gate_dev_to_pilot" in gate_ids
-    assert "gate_pilot_to_preprod" in gate_ids
+    assert "gate_dev_to_preprod" in gate_ids
     assert "gate_preprod_to_prod" in gate_ids
 
 
@@ -193,6 +192,5 @@ async def test_default_gate_rule_counts(client):
     r = await client.get("/api/v1/promotions/gates")
     gates = {g["gate_id"]: g for g in r.json()}
     assert gates["gate_sandbox_to_dev"]["rule_count"] == 7
-    assert gates["gate_dev_to_pilot"]["rule_count"] == 14
-    assert gates["gate_pilot_to_preprod"]["rule_count"] == 22
+    assert gates["gate_dev_to_preprod"]["rule_count"] == 26
     assert gates["gate_preprod_to_prod"]["rule_count"] == 29

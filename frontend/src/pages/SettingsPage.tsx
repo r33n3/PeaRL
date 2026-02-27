@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { VaultCard } from "@/components/shared/VaultCard";
 import { EnvBadge } from "@/components/shared/EnvBadge";
 import { MonoText } from "@/components/shared/MonoText";
+import { FRAMEWORK_CONTROLS } from "@/lib/frameworkControls";
 import {
   useGates,
   useUpdateGateRules,
@@ -21,6 +22,7 @@ import { useOrgBaseline, useSaveOrgBaseline } from "@/api/settings";
 import { useDefaultPipeline, useUpdatePipeline } from "@/api/pipelines";
 import type { PipelineStage } from "@/api/pipelines";
 import { useProjects } from "@/api/dashboard";
+import { AdminBusinessUnitsPage } from "./AdminBusinessUnitsPage";
 import type { IntegrationEndpoint } from "@/lib/types";
 import {
   Plug,
@@ -45,13 +47,14 @@ import {
   ArrowRight,
   ChevronUp,
   AlertTriangle,
+  Building2,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
-type Tab = "integrations" | "gates" | "baseline" | "notifications" | "environments";
+type Tab = "integrations" | "gates" | "baseline" | "notifications" | "environments" | "business_units";
 
 const TABS: { key: Tab; icon: typeof Plug; label: string }[] = [
   { key: "integrations", icon: Plug, label: "Integrations" },
@@ -59,6 +62,7 @@ const TABS: { key: Tab; icon: typeof Plug; label: string }[] = [
   { key: "baseline", icon: FileCode, label: "Org Baseline" },
   { key: "notifications", icon: Bell, label: "Notifications" },
   { key: "environments", icon: Layers, label: "Environments" },
+  { key: "business_units", icon: Building2, label: "Business Units" },
 ];
 
 const ADAPTER_TYPES = [
@@ -422,7 +426,8 @@ interface LocalGateState {
   dirty: boolean;
 }
 
-/** AIUC-1 sub-control keys grouped by domain category (matches org-baseline schema) */
+/** @deprecated Use FRAMEWORK_CONTROLS.aiuc1 from frameworkControls.ts instead.
+ *  Kept temporarily so fieldKeyToAiuc1Label calls in BaselineTab still compile. */
 const AIUC1_CONTROLS: Record<string, string[]> = {
   data_privacy: [
     "a001_1_policy_documentation",
@@ -565,16 +570,9 @@ const AIUC1_CONTROLS: Record<string, string[]> = {
   ],
 };
 
-const AIUC1_CATEGORY_LABELS: Record<string, string> = {
-  data_privacy: "A. Data & Privacy",
-  security: "B. Security",
-  safety: "C. Safety",
-  reliability: "D. Reliability",
-  accountability: "E. Accountability",
-  society: "F. Society",
-};
+// AIUC1_CATEGORY_LABELS removed — use FRAMEWORK_CONTROLS.aiuc1.categories[key].label instead.
 
-/** Add Rule inline picker */
+/** Add Rule inline picker — supports framework_control_required (3-level cascade) and legacy aiuc1_control_required. */
 function AddRulePanel({
   onAdd,
   onCancel,
@@ -585,35 +583,58 @@ function AddRulePanel({
   const [selectedType, setSelectedType] = useState("");
   const [threshold, setThreshold] = useState("");
   const [aiOnly, setAiOnly] = useState(false);
-  const [category, setCategory] = useState("");
-  const [control, setControl] = useState("");
+  // framework_control_required cascade
+  const [fwk, setFwk] = useState("");
+  const [fwkCategory, setFwkCategory] = useState("");
+  const [fwkControl, setFwkControl] = useState("");
+  // legacy aiuc1_control_required
+  const [legacyCategory, setLegacyCategory] = useState("");
+  const [legacyControl, setLegacyControl] = useState("");
 
   const meta = GATE_RULE_TYPES.find((r) => r.value === selectedType);
+  const isFwk = selectedType === "framework_control_required";
+  const isLegacyAiuc1 = selectedType === "aiuc1_control_required";
+
+  const fwkDef = fwk ? FRAMEWORK_CONTROLS[fwk] : undefined;
+  const fwkCategoryDef = fwkDef && fwkCategory ? fwkDef.categories[fwkCategory] : undefined;
 
   const handleAdd = () => {
     if (!meta) return;
-    const ruleId = `rule_${selectedType}`;
     const params: Record<string, unknown> = {};
-    if (meta.hasParams) {
-      if (category) params["category"] = category;
-      if (control) params["control"] = control;
+    if (isFwk) {
+      params["framework"] = fwk;
+      params["category"] = fwkCategory;
+      params["control"] = fwkControl;
+    } else if (isLegacyAiuc1) {
+      params["category"] = legacyCategory;
+      params["control"] = legacyControl;
     }
+    const description = isFwk
+      ? `${FRAMEWORK_CONTROLS[fwk]?.label ?? fwk} / ${fwkCategoryDef?.label ?? fwkCategory} / ${fwkCategoryDef?.controls[fwkControl]?.label ?? fwkControl}`
+      : meta.label;
     onAdd({
-      rule_id: ruleId,
+      rule_id: `rule_${selectedType}_${Date.now()}`,
       rule_type: selectedType,
-      description: meta.label,
+      description,
       required: true,
-      ai_only: meta.aiOnly || aiOnly,
+      ai_only: meta.aiOnly || aiOnly || (isFwk && !!(fwkDef?.aiOnly)),
       threshold: meta.hasThreshold && threshold !== "" ? Number(threshold) : null,
       parameters: meta.hasParams ? params : undefined,
     });
   };
+
+  const isAddDisabled =
+    !selectedType ||
+    (isFwk && (!fwk || !fwkCategory || !fwkControl)) ||
+    (isLegacyAiuc1 && (!legacyCategory || !legacyControl));
 
   const groups = [...new Set(GATE_RULE_TYPES.map((r) => r.group))];
 
   return (
     <div className="mt-3 p-3 border border-clinical-cyan/30 rounded bg-vault-black/50 space-y-3">
       <div className="text-xs font-mono text-clinical-cyan font-semibold">Add Rule</div>
+
+      {/* Rule type selector */}
       <select
         className="input-vault text-xs w-full"
         value={selectedType}
@@ -621,6 +642,8 @@ function AddRulePanel({
           setSelectedType(e.target.value);
           const m = GATE_RULE_TYPES.find((r) => r.value === e.target.value);
           if (m) setAiOnly(m.aiOnly);
+          setFwk(""); setFwkCategory(""); setFwkControl("");
+          setLegacyCategory(""); setLegacyControl("");
         }}
       >
         <option value="">Select rule type…</option>
@@ -633,6 +656,7 @@ function AddRulePanel({
         ))}
       </select>
 
+      {/* Threshold input */}
       {meta?.hasThreshold && (
         <div className="flex items-center gap-2">
           <label className="text-xs font-mono text-bone-muted w-24">Threshold</label>
@@ -645,19 +669,80 @@ function AddRulePanel({
         </div>
       )}
 
-      {meta?.hasParams && (
+      {/* Framework / Category / Control cascade for framework_control_required */}
+      {isFwk && (
         <div className="space-y-2">
+          {/* Framework select */}
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-mono text-bone-muted w-24">Framework</label>
+            <select
+              className="input-vault text-xs flex-1"
+              value={fwk}
+              onChange={(e) => { setFwk(e.target.value); setFwkCategory(""); setFwkControl(""); }}
+            >
+              <option value="">Select framework…</option>
+              {Object.entries(FRAMEWORK_CONTROLS).map(([key, def]) => (
+                <option key={key} value={key}>{def.label}</option>
+              ))}
+            </select>
+          </div>
+          {/* Category select */}
           <div className="flex items-center gap-2">
             <label className="text-xs font-mono text-bone-muted w-24">Category</label>
             <select
               className="input-vault text-xs flex-1"
-              value={category}
-              onChange={(e) => { setCategory(e.target.value); setControl(""); }}
+              value={fwkCategory}
+              onChange={(e) => { setFwkCategory(e.target.value); setFwkControl(""); }}
+              disabled={!fwk}
+            >
+              <option value="">Select category…</option>
+              {fwkDef && Object.entries(fwkDef.categories).map(([key, cat]) => (
+                <option key={key} value={key}>{cat.label}</option>
+              ))}
+            </select>
+          </div>
+          {/* Control select */}
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-mono text-bone-muted w-24">Control</label>
+            <select
+              className="input-vault text-xs flex-1"
+              value={fwkControl}
+              onChange={(e) => setFwkControl(e.target.value)}
+              disabled={!fwkCategory}
+            >
+              <option value="">Select control…</option>
+              {fwkCategoryDef && Object.entries(fwkCategoryDef.controls).map(([key, ctrl]) => (
+                <option key={key} value={key}>{ctrl.label}</option>
+              ))}
+            </select>
+          </div>
+          {/* Evidence type hint */}
+          {fwkControl && fwkCategoryDef?.controls[fwkControl] && (
+            <div className="text-xs font-mono text-bone-muted/60 pl-28">
+              Evidence: <span className="text-cold-teal">{fwkCategoryDef.controls[fwkControl].evidenceType}</span>
+              {fwkCategoryDef.controls[fwkControl].description && (
+                <> — {fwkCategoryDef.controls[fwkControl].description}</>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Legacy AIUC-1 cascade (aiuc1_control_required) */}
+      {isLegacyAiuc1 && (
+        <div className="space-y-2">
+          <div className="text-xs font-mono text-amber-400/70">Legacy — use Framework Control Required instead</div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-mono text-bone-muted w-24">Category</label>
+            <select
+              className="input-vault text-xs flex-1"
+              value={legacyCategory}
+              onChange={(e) => { setLegacyCategory(e.target.value); setLegacyControl(""); }}
             >
               <option value="">Select category…</option>
               {Object.keys(AIUC1_CONTROLS).map((cat) => (
                 <option key={cat} value={cat}>
-                  {AIUC1_CATEGORY_LABELS[cat] ?? cat}
+                  {FRAMEWORK_CONTROLS.aiuc1?.categories[cat]?.label ?? cat}
                 </option>
               ))}
             </select>
@@ -666,12 +751,12 @@ function AddRulePanel({
             <label className="text-xs font-mono text-bone-muted w-24">Control</label>
             <select
               className="input-vault text-xs flex-1"
-              value={control}
-              onChange={(e) => setControl(e.target.value)}
-              disabled={!category}
+              value={legacyControl}
+              onChange={(e) => setLegacyControl(e.target.value)}
+              disabled={!legacyCategory}
             >
               <option value="">Select control…</option>
-              {(AIUC1_CONTROLS[category] ?? []).map((k) => (
+              {(AIUC1_CONTROLS[legacyCategory] ?? []).map((k) => (
                 <option key={k} value={k}>{fieldKeyToAiuc1Label(k)}</option>
               ))}
             </select>
@@ -679,7 +764,8 @@ function AddRulePanel({
         </div>
       )}
 
-      {meta && !meta.aiOnly && (
+      {/* AI-only toggle (only for non-ai-only rule types) */}
+      {meta && !meta.aiOnly && !isFwk && (
         <label className="flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"
@@ -695,7 +781,7 @@ function AddRulePanel({
         <button className="btn-ghost text-xs" onClick={onCancel}>Cancel</button>
         <button
           className="btn-teal text-xs flex items-center gap-1"
-          disabled={!selectedType || (meta?.hasParams ? !category || !control : false)}
+          disabled={isAddDisabled}
           onClick={handleAdd}
         >
           <Plus size={12} /> Add Rule
@@ -1575,7 +1661,7 @@ function BaselineTab() {
                   const grouped: Record<string, typeof reqs> = {};
                   for (const req of reqs) {
                     if (!grouped[req.category]) grouped[req.category] = [];
-                    grouped[req.category].push(req);
+                    grouped[req.category]!.push(req);
                   }
                   return (
                     <div className="space-y-3">
@@ -2104,6 +2190,7 @@ export function SettingsPage() {
       {activeTab === "baseline" && <BaselineTab />}
       {activeTab === "notifications" && <NotificationsTab />}
       {activeTab === "environments" && <EnvironmentsTab />}
+      {activeTab === "business_units" && <AdminBusinessUnitsPage />}
     </div>
   );
 }

@@ -37,7 +37,7 @@ class PearlAPIClient:
         r = self._get(f"/projects/{project_id}/promotions/readiness")
         if r and r.status_code == 200:
             data = r.json()
-            if data.get("status") == "no_evaluation":
+            if data.get("status") == "not_evaluated":
                 return None
             return data
         return None

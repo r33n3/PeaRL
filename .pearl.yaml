@@ -1,0 +1,18 @@
+# PeaRL governance configuration
+# This file identifies which PeaRL project governs this repository.
+
+project_id: proj_feu
+api_url: http://localhost:8081/api/v1
+
+# Branch → environment mapping
+environments:
+  sandbox: sandbox
+  dev: dev
+  preprod: preprod
+  main: prod
+
+# Branch protection targets (gates enforced on PRs to these branches)
+protected_branches:
+  - dev
+  - preprod
+  - main

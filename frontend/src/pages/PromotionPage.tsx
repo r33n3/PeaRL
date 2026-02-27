@@ -3,13 +3,16 @@ import { useParams } from "react-router-dom";
 import { usePromotionReadiness, usePromotionHistory, useRequestPromotion, useContestRule } from "@/api/promotions";
 import { usePendingApprovals } from "@/api/approvals";
 import { useProjectOverview } from "@/api/dashboard";
+import { useAgentBrief } from "@/api/agent";
 import { VaultCard } from "@/components/shared/VaultCard";
 import { EnvBadge } from "@/components/shared/EnvBadge";
 import { GateProgress } from "@/components/shared/GateProgress";
 import { MonoText } from "@/components/shared/MonoText";
+import { AgentRemediationCard } from "@/components/shared/AgentRemediationCard";
 import { formatTimestamp } from "@/lib/utils";
-import { ArrowRight, CheckCircle, XCircle, MinusCircle, AlertTriangle, ArrowUpCircle, Clock, X } from "lucide-react";
-import type { Environment, GateRuleResult } from "@/lib/types";
+import { Link } from "react-router-dom";
+import { ArrowRight, CheckCircle, XCircle, MinusCircle, AlertTriangle, ArrowUpCircle, Clock, X, Cpu } from "lucide-react";
+import type { Environment, GateRuleResult, AgentTaskPacket } from "@/lib/types";
 
 const ENV_ORDER: Environment[] = ["sandbox", "dev", "preprod", "prod"];
 
@@ -32,11 +35,13 @@ export function PromotionPage() {
   const { data: overview } = useProjectOverview(projectId!);
   const { data: readiness, isLoading: readinessLoading } = usePromotionReadiness(projectId!);
   const { data: history } = usePromotionHistory(projectId!);
+  const { data: agentBrief } = useAgentBrief(projectId);
   const requestPromotion = useRequestPromotion();
   const contestRule = useContestRule();
   const { data: pendingApprovals } = usePendingApprovals(projectId);
 
   const [contestingRule, setContestingRule] = useState<string | null>(null);
+  const [contestingMessage, setContestingMessage] = useState<string | null>(null);
   const [contestType, setContestType] = useState<"false_positive" | "risk_acceptance" | "needs_more_time">("false_positive");
   const [rationale, setRationale] = useState("");
 
@@ -67,6 +72,7 @@ export function PromotionPage() {
 
   function handleCloseModal() {
     setContestingRule(null);
+    setContestingMessage(null);
     setRationale("");
     setContestType("false_positive");
   }
@@ -131,7 +137,14 @@ export function PromotionPage() {
       {/* Gate readiness */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         <VaultCard className="col-span-2">
-          <h2 className="vault-heading text-xs mb-4">Gate Rules</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="vault-heading text-xs">Gate Rules</h2>
+            {readinessData?.source_environment && readinessData?.target_environment && (
+              <span className="text-[10px] font-mono text-bone-dim uppercase tracking-wider">
+                {readinessData.source_environment as string} → {readinessData.target_environment as string}
+              </span>
+            )}
+          </div>
           {readinessLoading ? (
             <p className="text-bone-muted font-mono text-sm">Evaluating gates...</p>
           ) : ruleResults.length === 0 ? (
@@ -151,7 +164,7 @@ export function PromotionPage() {
                     {rule.result === "fail" && !isPending && evaluationId && (
                       <button
                         className="text-[10px] font-mono text-clinical-cyan hover:underline ml-1"
-                        onClick={() => setContestingRule(rule.rule_type)}
+                        onClick={() => { setContestingRule(rule.rule_type); setContestingMessage(rule.message); }}
                       >
                         Contest
                       </button>
@@ -185,7 +198,17 @@ export function PromotionPage() {
               <h2 className="vault-heading text-xs mb-2 text-dried-blood-bright">Blockers</h2>
               <ul className="space-y-1">
                 {blockers.map((b, i) => (
-                  <li key={i} className="text-xs text-bone-muted font-mono">{"\u2022"} {b}</li>
+                  <li key={i} className="text-xs text-bone-muted font-mono flex items-center gap-1.5">
+                    {"\u2022"} {b}
+                    {/finding|secret|vuln/i.test(b) && (
+                      <Link
+                        to={`/projects/${projectId}/findings`}
+                        className="text-[10px] text-clinical-cyan hover:underline ml-1"
+                      >
+                        view findings →
+                      </Link>
+                    )}
+                  </li>
                 ))}
               </ul>
             </VaultCard>
@@ -203,6 +226,54 @@ export function PromotionPage() {
           </div>
         </div>
       </div>
+
+      {/* Agent remediation evidence */}
+      {agentBrief && (agentBrief.open_task_packets?.length > 0 || agentBrief.ready_to_elevate) && (
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <Cpu size={14} className="text-clinical-cyan" />
+            <h2 className="vault-heading text-sm">
+              {agentBrief.ready_to_elevate ? "Elevation Evidence" : "Agent Remediation"}
+            </h2>
+            {agentBrief.ready_to_elevate && (
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cold-teal/10 border border-cold-teal/30 text-cold-teal">
+                Ready to Elevate
+              </span>
+            )}
+          </div>
+
+          {agentBrief.ready_to_elevate && (
+            <VaultCard className="mb-3 border border-cold-teal/20 bg-cold-teal/5">
+              <div className="flex items-center gap-2">
+                <CheckCircle size={16} className="text-cold-teal" />
+                <div>
+                  <p className="text-sm font-mono text-cold-teal font-semibold">
+                    All gates passed — {agentBrief.current_stage} → {agentBrief.next_stage}
+                  </p>
+                  {agentBrief.last_evaluated_at && (
+                    <p className="text-[10px] font-mono text-bone-dim mt-0.5">
+                      Evaluated {formatTimestamp(agentBrief.last_evaluated_at)}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </VaultCard>
+          )}
+
+          <div className="space-y-2">
+            {(agentBrief.open_task_packets as AgentTaskPacket[])?.map((tp) => (
+              <AgentRemediationCard
+                key={tp.task_packet_id}
+                packet={tp}
+                fixSummary={tp.status === "completed" ? (tp as any).fix_summary : undefined}
+                commitRef={(tp as any).commit_ref}
+                filesChanged={(tp as any).files_changed}
+                gateVerified={agentBrief.ready_to_elevate}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Promotion history */}
       <h2 className="vault-heading text-sm mb-3">History</h2>
@@ -241,6 +312,9 @@ export function PromotionPage() {
               <div>
                 <h2 className="vault-heading text-sm">Contest Rule</h2>
                 <MonoText className="text-xs text-bone-dim">{contestingRule.replace(/_/g, " ")}</MonoText>
+                {contestingMessage && (
+                  <p className="text-[10px] font-mono text-dried-blood-bright mt-0.5">{contestingMessage}</p>
+                )}
               </div>
               <button className="text-bone-dim hover:text-bone" onClick={handleCloseModal}>
                 <X size={16} />

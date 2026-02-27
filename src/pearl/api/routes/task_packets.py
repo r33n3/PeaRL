@@ -19,9 +19,13 @@ class ClaimRequest(BaseModel):
 
 
 class CompleteRequest(BaseModel):
-    status: str  # "success" | "failed" | "partial"
+    status: str  # "completed" | "failed" | "partial"
     changes_summary: str = ""
     finding_ids_resolved: list[str] = []
+    fix_summary: str = ""
+    commit_ref: str = ""
+    files_changed: list[str] = []
+    evidence_notes: str = ""
 
 
 @router.post("/projects/{project_id}/task-packets", status_code=201)
@@ -96,6 +100,7 @@ async def claim_task_packet(
 async def complete_task_packet(
     packet_id: str,
     body: CompleteRequest,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Agent reports the outcome of a task packet execution."""
@@ -112,6 +117,10 @@ async def complete_task_packet(
     packet.outcome = {
         "status": body.status,
         "changes_summary": body.changes_summary,
+        "fix_summary": body.fix_summary,
+        "commit_ref": body.commit_ref,
+        "files_changed": body.files_changed,
+        "evidence_notes": body.evidence_notes,
         "finding_ids_resolved": body.finding_ids_resolved,
         "completed_at": now.isoformat(),
     }
@@ -148,6 +157,8 @@ async def complete_task_packet(
             details={
                 "packet_id": packet_id,
                 "outcome_status": body.status,
+                "fix_summary": body.fix_summary,
+                "commit_ref": body.commit_ref,
                 "findings_resolved": resolved_count,
                 "agent_id": packet.agent_id,
             },
@@ -158,9 +169,124 @@ async def complete_task_packet(
 
     await db.commit()
 
+    # Re-evaluate gate after completion (best-effort)
+    gate_status = None
+    gate_evaluation_id = None
+    try:
+        from pearl.services.promotion.gate_evaluator import evaluate_promotion
+        from pearl.api.routes.stream import publish_event
+
+        transition = (packet.packet_data or {}).get("transition", "")
+        source_env = packet.environment
+        target_env = None
+        if "->" in transition:
+            parts = transition.split("->")
+            source_env = parts[0].strip()
+            target_env = parts[1].strip()
+
+        evaluation = await evaluate_promotion(
+            project_id=packet.project_id,
+            source_environment=source_env,
+            target_environment=target_env,
+            session=db,
+        )
+        await db.commit()
+        gate_status = evaluation.status.value if hasattr(evaluation.status, "value") else str(evaluation.status)
+        gate_evaluation_id = evaluation.evaluation_id
+
+        # Publish SSE event
+        if request:
+            redis = getattr(request.app.state, "redis", None)
+            await publish_event(redis, "gate_updated", {
+                "project_id": packet.project_id,
+                "evaluation_id": evaluation.evaluation_id,
+                "gate_status": gate_status,
+                "triggered_by": "task_packet_complete",
+                "packet_id": packet_id,
+            })
+
+        # Auto-elevation if gate passes and transition doesn't require approval
+        if evaluation.status.value == "passed" if hasattr(evaluation.status, "value") else evaluation.status == "passed":
+            await _check_auto_elevation(
+                project_id=packet.project_id,
+                source_env=source_env,
+                target_env=target_env or "",
+                session=db,
+                request=request,
+            )
+            await db.commit()
+    except Exception:
+        pass  # Gate re-evaluation is best-effort
+
     return {
         "packet_id": packet_id,
         "status": body.status,
         "findings_resolved": resolved_count,
         "completed_at": now.isoformat(),
+        "gate_status": gate_status,
+        "gate_evaluation_id": gate_evaluation_id,
     }
+
+
+async def _check_auto_elevation(
+    project_id: str,
+    source_env: str,
+    target_env: str,
+    session,
+    request=None,
+) -> None:
+    """Auto-elevate if org env config says requires_approval=false for this transition."""
+    try:
+        from pearl.repositories.org_env_config_repo import OrgEnvironmentConfigRepository
+        from pearl.repositories.promotion_repo import PromotionHistoryRepository
+        from pearl.repositories.environment_profile_repo import EnvironmentProfileRepository
+        from pearl.repositories.project_repo import ProjectRepository
+        from pearl.services.id_generator import generate_id
+        from datetime import datetime, timezone
+
+        proj_repo = ProjectRepository(session)
+        project = await proj_repo.get(project_id)
+        if not project or not project.org_id:
+            return
+
+        config_repo = OrgEnvironmentConfigRepository(session)
+        config = await config_repo.get_by_org(project.org_id)
+        if not config:
+            return
+
+        # Find the stage config for target_env
+        stage_config = None
+        for stage in (config.stages or []):
+            if stage.get("name") == target_env:
+                stage_config = stage
+                break
+
+        if not stage_config:
+            return
+
+        if stage_config.get("requires_approval", True):
+            return  # Needs human approval — skip auto-elevation
+
+        # Auto-elevate: create PromotionHistoryRow + update environment profile
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+
+        history_repo = PromotionHistoryRepository(session)
+        await history_repo.create(
+            history_id=generate_id("hist_"),
+            project_id=project_id,
+            source_environment=source_env,
+            target_environment=target_env,
+            evaluation_id="auto_elevation",
+            promoted_by="pearl_auto",
+            promoted_at=now,
+            details={"auto_elevated": True, "reason": "gate_passed_no_approval_required"},
+        )
+
+        env_repo = EnvironmentProfileRepository(session)
+        env_profile = await env_repo.get_by_project(project_id)
+        if env_profile:
+            env_profile.environment = target_env
+
+    except Exception:
+        pass  # Auto-elevation is best-effort

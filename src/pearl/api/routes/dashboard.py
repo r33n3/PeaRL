@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pearl.db.models.approval import ApprovalRequestRow
+from pearl.db.models.environment_profile import EnvironmentProfileRow
 from pearl.db.models.finding import FindingRow
 from pearl.db.models.governance_telemetry import ClientAuditEventRow, ClientCostEntryRow
 from pearl.db.models.project import ProjectRow
@@ -25,6 +26,10 @@ async def dashboard_projects(db: AsyncSession = Depends(get_db)) -> list[dict]:
     """Portfolio view — all projects with status summary."""
     result = await db.execute(select(ProjectRow))
     projects = list(result.scalars().all())
+
+    # Bulk-fetch environment profiles (avoid N+1)
+    env_result = await db.execute(select(EnvironmentProfileRow))
+    env_profiles = {ep.project_id: ep.environment for ep in env_result.scalars().all()}
 
     summaries = []
     for p in projects:
@@ -54,6 +59,7 @@ async def dashboard_projects(db: AsyncSession = Depends(get_db)) -> list[dict]:
         summaries.append({
             "project_id": p.project_id,
             "name": p.name,
+            "environment": env_profiles.get(p.project_id),
             "pending_approvals": pending_count,
             "findings_by_severity": findings_by_severity,
             "total_open_findings": sum(findings_by_severity.values()),
@@ -75,6 +81,12 @@ async def dashboard_project_overview(
     project = (await db.execute(proj_stmt)).scalar_one_or_none()
     if not project:
         raise NotFoundError("Project", project_id)
+
+    # Current environment
+    env_stmt = select(EnvironmentProfileRow).where(
+        EnvironmentProfileRow.project_id == project_id
+    )
+    env_profile = (await db.execute(env_stmt)).scalar_one_or_none()
 
     # Findings by severity
     finding_stmt = select(
@@ -117,6 +129,7 @@ async def dashboard_project_overview(
     return {
         "project_id": project_id,
         "name": project.name,
+        "environment": env_profile.environment if env_profile else None,
         "findings_by_severity": findings_by_severity,
         "total_open_findings": sum(findings_by_severity.values()),
         "gate_status": latest_eval.status if latest_eval else None,
@@ -137,7 +150,7 @@ async def dashboard_project_overview(
             {
                 "event_type": a.event_type,
                 "action": a.action,
-                "source": a.source,
+                "actor": a.source,
                 "created_at": a.created_at.isoformat() if a.created_at else None,
             }
             for a in activities

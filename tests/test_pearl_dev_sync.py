@@ -50,7 +50,7 @@ SAMPLE_READINESS = {
     "evaluation_id": "eval_test123",
     "project_id": "proj_sync_test",
     "source_environment": "dev",
-    "target_environment": "pilot",
+    "target_environment": "preprod",
     "status": "partial",
     "passed_count": 8,
     "failed_count": 5,
@@ -135,7 +135,7 @@ def test_sync_downloads_and_renders(sync_project):
     assert "PEARL:GOVERNANCE:BEGIN" in claude_md
     assert "PEARL:GOVERNANCE:END" in claude_md
     assert "dev" in claude_md
-    assert "pilot" in claude_md
+    assert "preprod" in claude_md
 
     # GOVERNANCE.md should have full details
     governance_md = (sync_project / ".pearl" / "GOVERNANCE.md").read_text(encoding="utf-8")

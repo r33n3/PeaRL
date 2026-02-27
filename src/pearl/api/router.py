@@ -2,9 +2,11 @@
 
 from fastapi import APIRouter
 from pearl.api.routes import (
+    agent,
     approvals,
     audit,
     auth,
+    business_units,
     compile,
     compliance,
     context,
@@ -17,17 +19,20 @@ from pearl.api.routes import (
     health,
     integrations,
     jobs,
+    org_env_config,
     pipelines,
     project_inputs,
     projects,
     promotions,
     remediation,
     reports,
+    requirements,
     scan_targets,
     scanning,
     slack_interactions,
     stream,
     task_packets,
+    timeline,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -57,3 +62,8 @@ api_router.include_router(integrations.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(slack_interactions.router)
 api_router.include_router(stream.router)
+api_router.include_router(agent.router)
+api_router.include_router(business_units.router)
+api_router.include_router(org_env_config.router)
+api_router.include_router(requirements.router)
+api_router.include_router(timeline.router)

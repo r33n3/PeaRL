@@ -271,7 +271,7 @@ class PearlDevMCPServer:
         readiness_path = self._loader.path.parent / "promotion-readiness.json"
         if not readiness_path.exists():
             return {
-                "status": "no_evaluation",
+                "status": "not_evaluated",
                 "message": "Run `pearl-dev sync` to fetch promotion readiness from the PeaRL API.",
             }
 

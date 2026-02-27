@@ -1,20 +1,24 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useProjectOverview } from "@/api/dashboard";
+import { useAgentBrief } from "@/api/agent";
+import { useProjectTimeline } from "@/api/timeline";
 import { VaultCard } from "@/components/shared/VaultCard";
 import { EnvBadge } from "@/components/shared/EnvBadge";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { GateProgress } from "@/components/shared/GateProgress";
 import { MonoText } from "@/components/shared/MonoText";
-import { formatTimestamp } from "@/lib/utils";
-import { Bug, ArrowUpCircle, FileText, Shield, DollarSign } from "lucide-react";
+import { TimelinePanel } from "@/components/shared/TimelinePanel";
+import { Bug, ArrowUpCircle, FileText, Shield, DollarSign, Cpu, CheckCircle } from "lucide-react";
 import type { ApprovalStatus, Environment } from "@/lib/types";
 
-const ENV_ORDER: Environment[] = ["sandbox", "dev", "pilot", "preprod", "prod"];
+const ENV_ORDER: Environment[] = ["sandbox", "dev", "preprod", "prod"];
 
 export function ProjectPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const { data, isLoading } = useProjectOverview(projectId!);
+  const { data: agentBrief } = useAgentBrief(projectId);
+  const { data: timeline = [], isLoading: timelineLoading } = useProjectTimeline(projectId);
 
   if (isLoading || !data) {
     return <p className="text-bone-muted font-mono text-sm">Loading project record...</p>;
@@ -61,7 +65,7 @@ export function ProjectPage() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-4 gap-4 mb-8">
         <VaultCard>
           <div className="flex items-center gap-2 mb-2">
             <Bug size={14} className="text-bone-muted" />
@@ -96,6 +100,35 @@ export function ProjectPage() {
           <p className="text-2xl font-heading font-bold text-bone font-mono">
             ${(overview.total_cost_usd ?? 0).toFixed(4)}
           </p>
+        </VaultCard>
+
+        {/* Agent Status card */}
+        <VaultCard className={agentBrief?.ready_to_elevate ? "border-cold-teal/30" : ""}>
+          <div className="flex items-center gap-2 mb-2">
+            <Cpu size={14} className="text-bone-muted" />
+            <span className="vault-heading text-xs">Agent Status</span>
+          </div>
+          {agentBrief ? (
+            <>
+              {agentBrief.ready_to_elevate ? (
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle size={16} className="text-cold-teal" />
+                  <span className="text-sm font-mono text-cold-teal font-semibold">Ready</span>
+                </div>
+              ) : (
+                <p className="text-2xl font-heading font-bold text-bone">
+                  {agentBrief.blockers_count}
+                </p>
+              )}
+              <p className="text-[10px] font-mono text-bone-dim mt-1">
+                {agentBrief.ready_to_elevate
+                  ? `${agentBrief.current_stage} → ${agentBrief.next_stage}`
+                  : `blocker${agentBrief.blockers_count !== 1 ? "s" : ""}`}
+              </p>
+            </>
+          ) : (
+            <p className="text-xs font-mono text-bone-dim">—</p>
+          )}
         </VaultCard>
       </div>
 
@@ -135,27 +168,11 @@ export function ProjectPage() {
         </div>
       )}
 
-      {/* Activity timeline */}
-      <h2 className="vault-heading text-sm mb-3">Recent Activity</h2>
-      <div className="space-y-0">
-        {(overview.recent_activity as any[])?.map((a: any, i: number) => (
-          <div
-            key={i}
-            className={`flex items-center gap-4 px-4 py-2.5 ${
-              i % 2 === 0 ? "bg-charcoal" : "bg-vault-black"
-            }`}
-          >
-            <MonoText className="text-xs w-32 flex-shrink-0">
-              {formatTimestamp(a.created_at)}
-            </MonoText>
-            <span className="text-xs text-bone-muted w-24 flex-shrink-0">{a.actor ?? a.source}</span>
-            <span className="text-sm text-bone">{a.action ?? a.event_type}</span>
-          </div>
-        ))}
-        {!(overview.recent_activity as any[])?.length && (
-          <p className="text-sm text-bone-dim font-mono px-4 py-4">No recent activity</p>
-        )}
-      </div>
+      {/* Timeline */}
+      <h2 className="vault-heading text-sm mb-3">Project Timeline</h2>
+      <VaultCard className="mb-0">
+        <TimelinePanel events={timeline} isLoading={timelineLoading} maxItems={25} />
+      </VaultCard>
     </div>
   );
 }

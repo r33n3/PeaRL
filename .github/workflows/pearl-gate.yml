@@ -1,0 +1,77 @@
+name: PeaRL Gate
+
+on:
+  pull_request:
+    branches: [dev, preprod, main]
+
+jobs:
+  pearl-gate:
+    name: PeaRL Gate
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read PeaRL config
+        id: cfg
+        run: |
+          PROJECT_ID=$(python3 -c "import yaml; d=yaml.safe_load(open('.pearl.yaml')); print(d['project_id'])")
+          API_URL=$(python3 -c "import yaml; d=yaml.safe_load(open('.pearl.yaml')); print(d['api_url'])")
+          echo "project_id=$PROJECT_ID" >> "$GITHUB_OUTPUT"
+          echo "api_url=$API_URL"       >> "$GITHUB_OUTPUT"
+
+      - name: Resolve gate environments
+        id: env
+        run: |
+          TARGET="${{ github.base_ref }}"
+          case "$TARGET" in
+            dev)     SRC=sandbox ; TGT=dev     ;;
+            preprod) SRC=dev     ; TGT=preprod ;;
+            main)    SRC=preprod ; TGT=prod     ;;
+            *)       echo "No gate configured for branch '$TARGET'"; exit 0 ;;
+          esac
+          echo "source=$SRC" >> "$GITHUB_OUTPUT"
+          echo "target=$TGT" >> "$GITHUB_OUTPUT"
+          echo "Evaluating gate: $SRC → $TGT"
+
+      - name: Evaluate PeaRL gate
+        id: gate
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "${{ steps.cfg.outputs.api_url }}/projects/${{ steps.cfg.outputs.project_id }}/promotions/evaluate?source_environment=${{ steps.env.outputs.source }}&target_environment=${{ steps.env.outputs.target }}")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          echo "HTTP status: $HTTP_CODE"
+          echo "$BODY" | python3 -m json.tool || true
+          echo "body<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$BODY"     >> "$GITHUB_OUTPUT"
+          echo "EOF"       >> "$GITHUB_OUTPUT"
+          echo "http_code=$HTTP_CODE" >> "$GITHUB_OUTPUT"
+          # Extract gate status
+          STATUS=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status','unknown'))")
+          echo "gate_status=$STATUS" >> "$GITHUB_OUTPUT"
+          if [ "$STATUS" != "passed" ]; then
+            echo "::error::PeaRL gate '${{ steps.env.outputs.source }} → ${{ steps.env.outputs.target }}' did not pass (status=$STATUS)"
+            exit 1
+          fi
+
+      - name: Post gate summary
+        if: always()
+        run: |
+          STATUS="${{ steps.gate.outputs.gate_status }}"
+          SRC="${{ steps.env.outputs.source }}"
+          TGT="${{ steps.env.outputs.target }}"
+          echo "## PeaRL Gate: \`$SRC → $TGT\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$STATUS" = "passed" ]; then
+            echo "✅ **Gate passed** — promotion is cleared." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "❌ **Gate blocked** (status: \`$STATUS\`)" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Visit the PeaRL dashboard to contest failing rules or view details." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "<details><summary>Raw evaluation output</summary>" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          echo '${{ steps.gate.outputs.body }}' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "</details>" >> "$GITHUB_STEP_SUMMARY"

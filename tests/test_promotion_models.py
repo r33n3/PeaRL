@@ -145,9 +145,9 @@ class TestPromotionEvaluation:
         ev = PromotionEvaluation(
             evaluation_id="eval_partial001",
             project_id="proj_test",
-            gate_id="gate_dev_to_pilot",
+            gate_id="gate_dev_to_preprod",
             source_environment=Environment.DEV,
-            target_environment=Environment.PILOT,
+            target_environment=Environment.PREPROD,
             status=GateEvaluationStatus.PARTIAL,
             rule_results=[],
             passed_count=5,
@@ -167,7 +167,7 @@ class TestPromotionRequest:
             project_id="proj_test",
             evaluation_id="eval_001",
             source_environment=Environment.DEV,
-            target_environment=Environment.PILOT,
+            target_environment=Environment.PREPROD,
             status=PromotionRequestStatus.PENDING_APPROVAL,
         )
         assert req.status == PromotionRequestStatus.PENDING_APPROVAL
@@ -179,7 +179,7 @@ class TestPromotionHistory:
             history_id="promhist_001",
             project_id="proj_test",
             source_environment=Environment.DEV,
-            target_environment=Environment.PILOT,
+            target_environment=Environment.PREPROD,
             evaluation_id="eval_001",
             promoted_by="admin@example.com",
             promoted_at=datetime.now(timezone.utc),
@@ -191,7 +191,7 @@ class TestPromotionReadiness:
     def test_valid_readiness(self):
         r = PromotionReadiness(
             current_environment=Environment.DEV,
-            next_environment=Environment.PILOT,
+            next_environment=Environment.PREPROD,
             status=GateEvaluationStatus.PARTIAL,
             progress_pct=75.0,
             passed_count=9,
@@ -215,9 +215,9 @@ class TestGateRuleTypeEnum:
             assert GateRuleType(t) is not None
 
     def test_environment_order(self):
-        envs = [Environment.SANDBOX, Environment.DEV, Environment.PILOT, Environment.PREPROD, Environment.PROD]
+        envs = [Environment.SANDBOX, Environment.DEV, Environment.PREPROD, Environment.PROD]
         values = [e.value for e in envs]
-        assert values == ["sandbox", "dev", "pilot", "preprod", "prod"]
+        assert values == ["sandbox", "dev", "preprod", "prod"]
 
 
 class TestGateEvaluationStatus:
