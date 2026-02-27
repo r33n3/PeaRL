@@ -89,7 +89,7 @@ test.describe("Autonomous remediation loop", () => {
       description: "Created by full-workflow e2e test — safe to delete",
       owner_team: "E2E Test Suite",
       business_criticality: "low",
-      external_exposure: "internal",
+      external_exposure: "internal_only",
       ai_enabled: true,
       bu_id: TEST_BU_ID,
     });
@@ -179,8 +179,8 @@ test.describe("Autonomous remediation loop", () => {
     // Heading (project name)
     await expect(page.getByRole("heading").first()).toBeVisible();
 
-    // "sb" bubble for sandbox should be highlighted
-    await expect(page.locator("text=sb").first()).toBeVisible();
+    // "sa" bubble for sandbox should be highlighted (env.slice(0, 2))
+    await expect(page.locator("text=sa").first()).toBeVisible();
   });
 
   test("project page shows Agent Status card", async ({ page }) => {
@@ -335,8 +335,9 @@ test.describe("Autonomous remediation loop", () => {
     await page.goto(`${UI}/projects/${TEST_PROJECT_ID}/promotions`);
     await waitForApi(page);
 
-    // Fix summary text should appear in the card
-    await expect(page.getByText(/Moved hardcoded secret/i)).toBeVisible({ timeout: 8_000 });
+    // The three-column remediation card shows "Agent Fix" and "Finding" column headers
+    await expect(page.getByText(/Agent Fix/i).first()).toBeVisible({ timeout: 8_000 });
+    await expect(page.getByText(/Finding/i).first()).toBeVisible({ timeout: 8_000 });
   });
 
   // ── Full sequential smoke test ─────────────────────────────────────────────

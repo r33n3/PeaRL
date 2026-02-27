@@ -16,37 +16,37 @@
 import { test, expect, type Page, type APIRequestContext } from "@playwright/test";
 
 const API = "http://localhost:8081/api/v1";
-const PROJECT_ID = "proj_feu";
 const BASE = "http://localhost:5173";
+
+// Fresh project ID per run — avoids stale ExceptionRecord carryover
+const RUN_ID = Date.now();
+const PROJECT_ID = `proj_gf_${RUN_ID}`;
 
 // ── Seed helpers ─────────────────────────────────────────────────────────────
 
-async function seedProjFeu(request: APIRequestContext) {
-  // 1. Project (idempotent)
-  const existing = await request.get(`${API}/projects/${PROJECT_ID}`);
-  if (existing.status() !== 200) {
-    const r = await request.post(`${API}/projects`, {
-      data: {
-        schema_version: "1.1",
-        project_id: PROJECT_ID,
-        name: "PeaRL — Feature-Environment Underwriter",
-        description: "Self-referential PeaRL project for gate enforcement demo.",
-        owner_team: "PeaRL Core",
-        business_criticality: "high",
-        external_exposure: "internal",
-        ai_enabled: true,
-      },
-    });
-    expect(r.status()).toBeLessThan(300);
-  }
+async function seedProject(request: APIRequestContext, projectId: string) {
+  // 1. Create fresh project
+  const r = await request.post(`${API}/projects`, {
+    data: {
+      schema_version: "1.1",
+      project_id: projectId,
+      name: `Gate Flow E2E ${RUN_ID}`,
+      description: "Created by gate-flow e2e suite — safe to delete.",
+      owner_team: "E2E Tests",
+      business_criticality: "high",
+      external_exposure: "internal_only",
+      ai_enabled: true,
+    },
+  });
+  expect(r.status()).toBeLessThan(300);
 
   // 2. Org baseline
-  await request.post(`${API}/projects/${PROJECT_ID}/org-baseline`, {
+  await request.post(`${API}/projects/${projectId}/org-baseline`, {
     data: {
       schema_version: "1.1",
       kind: "PearlOrgBaseline",
-      baseline_id: "orgb_feu_baseline",
-      org_name: "PeaRL Demo Org",
+      baseline_id: `orgb_gf_${RUN_ID}`,
+      org_name: "E2E Gate Flow Org",
       defaults: {
         data_privacy: {},
         security: {
@@ -72,10 +72,10 @@ async function seedProjFeu(request: APIRequestContext) {
   });
 
   // 3. Environment profile
-  await request.post(`${API}/projects/${PROJECT_ID}/environment-profile`, {
+  await request.post(`${API}/projects/${projectId}/environment-profile`, {
     data: {
       schema_version: "1.1",
-      profile_id: "envp_feu_sandbox",
+      profile_id: `envp_gf_${RUN_ID}`,
       environment: "sandbox",
       delivery_stage: "prototype",
       risk_level: "low",
@@ -89,7 +89,7 @@ async function seedProjFeu(request: APIRequestContext) {
     data: {
       schema_version: "1.0",
       source_batch: {
-        batch_id: `batch_gateflow_${Date.now()}`,
+        batch_id: `batch_gf_${RUN_ID}`,
         source_system: "e2e_gate_flow",
         received_at: now,
         trust_label: "trusted_internal",
@@ -97,8 +97,8 @@ async function seedProjFeu(request: APIRequestContext) {
       findings: [
         {
           schema_version: "1.0",
-          finding_id: "find_gateflow_critical_001",
-          project_id: PROJECT_ID,
+          finding_id: `find_gf_${RUN_ID}`,
+          project_id: projectId,
           environment: "sandbox",
           category: "security",
           severity: "critical",
@@ -116,9 +116,9 @@ async function seedProjFeu(request: APIRequestContext) {
     },
   });
 
-  // 5. Gate evaluation (sandbox → dev)
+  // 5. Gate evaluation (sandbox → dev) — fresh project has no exceptions, so rules will FAIL
   const ev = await request.post(
-    `${API}/projects/${PROJECT_ID}/promotions/evaluate?source_environment=sandbox&target_environment=dev`
+    `${API}/projects/${projectId}/promotions/evaluate?source_environment=sandbox&target_environment=dev`
   );
   expect(ev.status()).toBe(200);
 }
@@ -127,7 +127,11 @@ async function seedProjFeu(request: APIRequestContext) {
 
 test.describe("Gate contest → approve flow", () => {
   test.beforeAll(async ({ request }) => {
-    await seedProjFeu(request);
+    await seedProject(request, PROJECT_ID);
+  });
+
+  test.afterAll(async ({ request }) => {
+    await request.delete(`${API}/projects/${PROJECT_ID}`).catch(() => {});
   });
 
   // ── helpers ──────────────────────────────────────────────────────────────
@@ -232,6 +236,11 @@ test.describe("Gate contest → approve flow", () => {
   // ── 6. Back on Promotions — exception active or under review ─────────────
 
   test("after approval, rule shows exception active or under review", async ({ page }) => {
+    // Re-evaluate gate so the newly-created ExceptionRecord is reflected
+    await page.request.post(
+      `${API}/projects/${PROJECT_ID}/promotions/evaluate?source_environment=sandbox&target_environment=dev`
+    );
+
     await page.goto(`${BASE}/projects/${PROJECT_ID}/promotions`);
     await waitForApi(page);
 
@@ -285,6 +294,11 @@ test.describe("Gate contest → approve flow", () => {
       await expect(approveBtn).toBeVisible();
       await approveBtn.click();
       await expect(approveBtn).not.toBeVisible({ timeout: 8_000 });
+
+      // Re-evaluate gate so ExceptionRecord is reflected in the readiness data
+      await page.request.post(
+        `${API}/projects/${PROJECT_ID}/promotions/evaluate?source_environment=sandbox&target_environment=dev`
+      );
 
       // Step E: Return to Promotions — contested rule resolved
       await page.goto(`${BASE}/projects/${PROJECT_ID}/promotions`);

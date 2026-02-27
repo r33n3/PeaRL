@@ -43,7 +43,7 @@ def main(api_url: str) -> None:
                 ),
                 "owner_team": "PeaRL Core",
                 "business_criticality": "high",
-                "external_exposure": "internal",
+                "external_exposure": "internal_only",
                 "ai_enabled": True,
             },
         )

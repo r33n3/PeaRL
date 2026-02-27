@@ -42,6 +42,7 @@ async def create_project(
         external_exposure=project.external_exposure,
         ai_enabled=project.ai_enabled,
         schema_version=project.schema_version,
+        bu_id=project.bu_id,
     )
     await db.commit()
     return project.model_dump(mode="json", exclude_none=True)
