@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     # Spec paths
     spec_dir: str = "PeaRL_spec"
 
+    # Path to the pearl_dev src directory, used when generating .mcp.json for projects.
+    # Defaults to auto-detected path relative to this file (works for dev installs).
+    pearl_src_path: str = ""
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",

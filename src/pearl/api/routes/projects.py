@@ -2,7 +2,11 @@
 
 from datetime import datetime, timezone
 
+import json
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pearl.dependencies import get_db, get_trace_id
@@ -108,6 +112,87 @@ async def update_project(
         created_at=row.created_at,
         updated_at=now,
     ).model_dump(mode="json", exclude_none=True)
+
+
+@router.get("/projects/{project_id}/pearl.yaml", response_class=PlainTextResponse)
+async def get_pearl_yaml(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> str:
+    """Download a ready-to-use .pearl.yaml config file for this project."""
+    repo = ProjectRepository(db)
+    row = await repo.get(project_id)
+    if not row:
+        raise NotFoundError("Project", project_id)
+
+    description_line = f"description: {row.description}" if row.description else "# description: optional"
+    bu_line = f"bu_id: {row.bu_id}" if row.bu_id else "# bu_id: optional — assign to a business unit"
+    ai_enabled = str(row.ai_enabled).lower()
+
+    content = f"""# PeaRL governance configuration
+# Drop this file in your project root and open the folder in Claude Code.
+# Claude Code will auto-register this project on the first prompt.
+
+project_id: {row.project_id}
+api_url: http://localhost:8081/api/v1
+
+# Registration fields — used for auto-registration if project is not yet in PeaRL
+name: {row.name}
+owner_team: {row.owner_team}
+business_criticality: {row.business_criticality}
+external_exposure: {row.external_exposure}
+ai_enabled: {ai_enabled}
+{description_line}
+{bu_line}
+
+# Branch → environment mapping
+environments:
+  sandbox: sandbox
+  dev: dev
+  preprod: preprod
+  main: prod
+
+# Branch protection targets (gates enforced on PRs to these branches)
+protected_branches:
+  - dev
+  - preprod
+  - main
+"""
+    return content
+
+
+@router.get("/projects/{project_id}/mcp.json", response_class=PlainTextResponse)
+async def get_mcp_json(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> str:
+    """Download a ready-to-use .mcp.json that wires the PeaRL MCP server into Claude Code."""
+    from pearl.config import settings
+
+    repo = ProjectRepository(db)
+    row = await repo.get(project_id)
+    if not row:
+        raise NotFoundError("Project", project_id)
+
+    # Resolve the pearl_dev src path — prefer explicit config, fall back to auto-detect
+    if settings.pearl_src_path:
+        src_path = settings.pearl_src_path
+    else:
+        # src/pearl/api/routes/projects.py → go up 4 levels to reach src/
+        src_path = str(Path(__file__).resolve().parents[3])
+
+    mcp_config = {
+        "mcpServers": {
+            "pearl": {
+                "command": "python",
+                "args": ["-m", "pearl_dev.unified_mcp", "--directory", "."],
+                "env": {
+                    "PYTHONPATH": src_path,
+                },
+            }
+        }
+    }
+    return json.dumps(mcp_config, indent=2) + "\n"
 
 
 @router.get("/projects/{project_id}/summary")

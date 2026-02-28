@@ -178,6 +178,45 @@ TOOL_DEFINITIONS: list[dict] = [
         },
     },
     {
+        "name": "pearl_register_project",
+        "description": (
+            "Register the current project with PeaRL. Reads project_id and api_url "
+            "from .pearl.yaml in the project root. Required fields not in .pearl.yaml "
+            "(name, owner_team, business_criticality, external_exposure, ai_enabled) "
+            "must be supplied as arguments. Idempotent — safe to call if already registered."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Human-readable project name"},
+                "owner_team": {"type": "string", "description": "Owning team name"},
+                "business_criticality": {
+                    "type": "string",
+                    "enum": ["low", "moderate", "high", "mission_critical"],
+                    "description": "Business criticality level",
+                },
+                "external_exposure": {
+                    "type": "string",
+                    "enum": ["internal_only", "partner", "customer_facing", "public"],
+                    "description": "Who can access this project's outputs",
+                },
+                "ai_enabled": {
+                    "type": "boolean",
+                    "description": "Whether the project uses AI/ML",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Optional project description",
+                },
+                "bu_id": {
+                    "type": "string",
+                    "description": "Optional business unit ID (bu_xxx)",
+                },
+            },
+            "required": ["name", "owner_team", "business_criticality", "external_exposure", "ai_enabled"],
+        },
+    },
+    {
         "name": "pearl_get_governance_costs",
         "description": (
             "Get governance cost report for the project. Shows cumulative "

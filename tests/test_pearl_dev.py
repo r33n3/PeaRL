@@ -510,12 +510,13 @@ class TestMCPServer:
             approvals_dir=tmp_pearl_dir / ".pearl" / "approvals",
         )
         tools = server.get_tool_definitions()
-        assert len(tools) == 9
+        assert len(tools) == 10
         names = {t["name"] for t in tools}
         assert "pearl_check_action" in names
         assert "pearl_check_diff" in names
         assert "pearl_check_promotion" in names
         assert "pearl_register_repo" in names
+        assert "pearl_register_project" in names
         assert "pearl_get_governance_costs" in names
 
     def test_check_action_tool(self, tmp_pearl_dir):

@@ -52,6 +52,8 @@ class PearlDevMCPServer:
             return self._handle_check_promotion()
         elif tool_name == "pearl_register_repo":
             return self._handle_register_repo(arguments)
+        elif tool_name == "pearl_register_project":
+            return self._handle_register_project(arguments)
         elif tool_name == "pearl_request_approval":
             return self._handle_request_approval(arguments)
         elif tool_name == "pearl_report_evidence":
@@ -241,6 +243,64 @@ class PearlDevMCPServer:
             }
         else:
             return {"error": "Failed to register scan target (may already exist or API unavailable)"}
+
+    def _handle_register_project(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Register the current project with PeaRL via POST /projects."""
+        import yaml
+
+        # Find .pearl.yaml in project root
+        project_root = self._loader.path.parent.parent
+        pearl_yaml = project_root / ".pearl.yaml"
+        if not pearl_yaml.exists():
+            return {"error": f".pearl.yaml not found in {project_root}"}
+
+        try:
+            config = yaml.safe_load(pearl_yaml.read_text())
+        except Exception as exc:
+            return {"error": f"Failed to parse .pearl.yaml: {exc}"}
+
+        project_id = config.get("project_id")
+        api_url = config.get("api_url", "http://localhost:8081/api/v1").rstrip("/")
+        if not project_id:
+            return {"error": ".pearl.yaml is missing 'project_id'"}
+
+        payload: dict[str, Any] = {
+            "schema_version": "1.1",
+            "project_id": project_id,
+            "name": args["name"],
+            "owner_team": args["owner_team"],
+            "business_criticality": args["business_criticality"],
+            "external_exposure": args["external_exposure"],
+            "ai_enabled": args["ai_enabled"],
+        }
+        if args.get("description"):
+            payload["description"] = args["description"]
+        if args.get("bu_id"):
+            payload["bu_id"] = args["bu_id"]
+
+        try:
+            import httpx
+            headers = {"Content-Type": "application/json"}
+            if hasattr(self, "_auth_token") and self._auth_token:
+                headers["Authorization"] = f"Bearer {self._auth_token}"
+            r = httpx.post(f"{api_url}/projects", json=payload, headers=headers, timeout=10)
+        except Exception as exc:
+            return {"error": f"API request failed: {exc}. Is PeaRL running at {api_url}?"}
+
+        if r.status_code == 201:
+            self._audit.log(
+                "project_registered", project_id, "registered",
+                tool_name="pearl_register_project",
+            )
+            return {
+                "registered": True,
+                "project_id": project_id,
+                "dashboard_url": f"http://localhost:5173/projects/{project_id}",
+            }
+        elif r.status_code == 409:
+            return {"registered": True, "already_existed": True, "project_id": project_id}
+        else:
+            return {"error": f"API returned {r.status_code}: {r.text}"}
 
     def _handle_get_governance_costs(self, args: dict[str, Any]) -> dict[str, Any]:
         """Get governance cost report from the cost ledger."""
