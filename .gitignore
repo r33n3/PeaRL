@@ -62,3 +62,8 @@ alembic/versions/__pycache__/
 
 # PeaRL internal build spec (not for public repo)
 PeaRL_spec/
+
+# E2E test generated output
+e2e/node_modules/
+e2e/playwright-report/
+e2e/test-results/
