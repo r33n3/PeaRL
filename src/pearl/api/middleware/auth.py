@@ -28,17 +28,17 @@ if settings.effective_expose_openapi:
 
 
 def _decode_jwt(token: str) -> dict:
-    from jose import JWTError, jwt
+    import jwt as pyjwt
 
     try:
-        return jwt.decode(
+        return pyjwt.decode(
             token,
             settings.jwt_secret,
             algorithms=[settings.jwt_algorithm],
             audience=settings.jwt_audience,
             issuer=settings.jwt_issuer,
         )
-    except JWTError as exc:
+    except pyjwt.exceptions.PyJWTError as exc:
         logger.debug("JWT decode failed: %s", exc)
         raise ValueError(f"Invalid token: {exc}") from exc
 

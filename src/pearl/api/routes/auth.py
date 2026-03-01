@@ -29,7 +29,7 @@ router = APIRouter(tags=["Auth"])
 
 def _make_tokens(user_id: str, roles: list[str]) -> tuple[str, str]:
     """Return (access_token, refresh_token)."""
-    from jose import jwt
+    import jwt as pyjwt
 
     now = datetime.now(timezone.utc)
     access_payload = {
@@ -52,8 +52,8 @@ def _make_tokens(user_id: str, roles: list[str]) -> tuple[str, str]:
 
     key = settings.jwt_secret
     algo = settings.jwt_algorithm
-    access_token = jwt.encode(access_payload, key, algorithm=algo)
-    refresh_token = jwt.encode(refresh_payload, key, algorithm=algo)
+    access_token = pyjwt.encode(access_payload, key, algorithm=algo)
+    refresh_token = pyjwt.encode(refresh_payload, key, algorithm=algo)
     return access_token, refresh_token
 
 
@@ -104,16 +104,16 @@ async def refresh_token(request: Request, db: AsyncSession = Depends(get_db)):
     body = await request.json()
     token = body.get("refresh_token", "")
 
-    from jose import JWTError, jwt
+    import jwt as pyjwt
     try:
-        payload = jwt.decode(
+        payload = pyjwt.decode(
             token,
             settings.jwt_secret,
             algorithms=[settings.jwt_algorithm],
             audience=settings.jwt_audience,
             issuer=settings.jwt_issuer,
         )
-    except JWTError as exc:
+    except pyjwt.exceptions.PyJWTError as exc:
         raise AuthenticationError(f"Invalid refresh token: {exc}") from exc
 
     if payload.get("type") != "refresh":
@@ -158,13 +158,14 @@ async def jwks():
     if settings.jwt_algorithm != "RS256" or not settings.jwt_public_key_path:
         return {"keys": []}
 
+    import jwt as pyjwt
     from pathlib import Path
-    from jose.backends import RSAKey
-    import json
+    from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
     pub_pem = Path(settings.jwt_public_key_path).read_bytes()
-    rsa_key = RSAKey(pub_pem, "RS256")
-    return {"keys": [json.loads(rsa_key.public_key().to_json())]}
+    public_key = load_pem_public_key(pub_pem)
+    jwk_dict = pyjwt.algorithms.RSAAlgorithm.to_jwk(public_key, as_dict=True)
+    return {"keys": [jwk_dict]}
 
 
 # ── User management ────────────────────────────────────────────────────────────
