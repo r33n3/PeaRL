@@ -1,9 +1,0 @@
-{
-  "schema_version": "1.1",
-  "finding_refs": [
-    "find_cspm_001"
-  ],
-  "environment": "preprod",
-  "generation_mode": "deterministic",
-  "trace_id": "trc_rem_001"
-}
