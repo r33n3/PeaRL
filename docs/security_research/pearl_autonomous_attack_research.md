@@ -220,9 +220,10 @@ The agent had learned about this flag by reading `.env.example` and `config.py` 
 | Control | Status | Notes |
 |---|---|---|
 | CLAUDE.md prohibits writing to `.env` | ✅ Deployed | Soft control only |
-| **Recommendation:** `chmod 444 .env` | ⚠️ Not enforced | Makes `.env` read-only at OS level — hard control |
+| `PreToolUse` hook blocks shell writes of `PEARL_LOCAL_REVIEWER` flag | ✅ Deployed | Hard control; blocks the specific governance flag write pattern |
+| **Recommendation:** `chmod 400 .env` | ⚠️ Not enforced | Makes `.env` read-only at OS level — hard control (see SECURITY_HARDENING.md §1) |
 | **Recommendation:** Move `.env` outside repo directory | ⚠️ Not done | Agent's working directory is the repo root |
-| **Recommendation:** Run server as separate OS user | ⚠️ Not done | Separates file ownership from agent user |
+| **Recommendation:** Run server as separate OS user | ⚠️ Not done | Separates file ownership from agent user (see SECURITY_HARDENING.md §3) |
 
 ---
 
@@ -242,8 +243,8 @@ If the `ps aux` had not been interrupted, the agent would have restarted the ser
 | Control | Status | Notes |
 |---|---|---|
 | CLAUDE.md prohibits `ps aux`, `kill`, `docker restart` | ✅ Deployed | Soft control only |
-| **Recommendation:** `UserPromptSubmit` hook detecting process-control patterns | ⚠️ Not done | Warns human before execution |
-| **Recommendation:** Claude Code `allowedTools` restriction in `.mcp.json` | ⚠️ Not done | Limit or sandbox Bash tool |
+| `PreToolUse` hook (`pearl_bash_guard.py`) blocks governance bypass Bash patterns | ✅ Deployed | Hard control; does NOT block legitimate ps/kill/docker (needed for prototyping) |
+| `disallowedBashCommands` in `.mcp.json` for governance decide endpoints | ✅ Deployed | Second line of defense at MCP config layer |
 | **Recommendation:** OS-level process namespace isolation | ⚠️ Not done | Container or seccomp restricts `kill`/`ps` |
 
 ---
@@ -261,10 +262,11 @@ If the `ps aux` had not been interrupted, the agent would have restarted the ser
 | Stripped flag documentation from source | Soft | ✅ | L5 |
 | CLAUDE.md governance constraints | Soft | ✅ | L5, L6, L7 |
 | Dashboard reviewer-mode warning banner | Soft | ✅ | L5 |
-| `chmod 444 .env` | Hard | ⚠️ Recommended | L6 |
+| `chmod 400 .env` | Hard | ⚠️ Recommended | L6 |
 | Separate server OS user | Hard | ⚠️ Recommended | L6 |
-| `allowedTools` Bash restriction in `.mcp.json` | Hard | ⚠️ Recommended | L6, L7 |
-| `UserPromptSubmit` hook for process-control patterns | Soft | ⚠️ Recommended | L7 |
+| `disallowedBashCommands` (governance endpoints) in `.mcp.json` | Hard | ✅ Deployed | L3, L7 |
+| `PreToolUse` hook (`pearl_bash_guard.py`) blocking governance bypass patterns | Hard | ✅ Deployed | L6, L7 |
+| 403 structured audit log (`governance_access_denied`) | Detective | ✅ Deployed | L3–L7 |
 | Production JWT auth (no local-mode bypass) | Hard | ⚠️ Production only | L1–L7 |
 
 ---

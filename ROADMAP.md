@@ -70,6 +70,46 @@ _Goal: PeaRL doesn't just describe risk — it acts on it_
 ## Phase 3: Operational Maturity (P2)
 _Goal: Reliable, observable, and scalable for real teams_
 
+### 3.0 Developer Experience — Scan & Gate Stability (P1 bump)
+
+#### 3.0.1 Compiled Context Package Persistence
+- Compiled context package (`.pearl/compiled-context-package.json`) is wiped on every Claude Code restart
+- Should persist and only recompile when project inputs actually change (baseline, app spec, environment profile)
+- Add `last_compiled_at` + input hash to compiled package; skip recompile if inputs unchanged
+- Gate scores currently fluctuate between sessions because missing package causes rules to fall back to "not evaluated = fail"
+- **Why**: Gate scores should be stable across sessions — recompilation should be triggered by data changes, not session restarts
+
+#### 3.0.2 MCP Response Size Limits
+- Large findings payloads (1M+ chars) cause token limit errors when Claude pulls full finding objects
+- Add `limit` and `severity` filter params to `getFindings` MCP tool
+- Add `GET /projects/{id}/findings/summary` endpoint returning counts by severity + top 5 critical only
+- Cap any single MCP tool response at ~50KB with `truncated: true` flag and filter hint
+- **Why**: Prevents silent failures and context window blowout on larger projects
+
+#### 3.0.3 Scan Scope Exclusions (.pearlignore)
+- Scans currently include `.venv`, `node_modules`, `__pycache__` causing false positive critical findings
+- Add `.pearlignore` file support (gitignore-style) to scan target evaluation
+- Default exclusions: `.venv/`, `node_modules/`, `__pycache__/`, `*.pyc`, `.git/`
+- **Why**: False positives from third-party packages pollute findings and block gate promotion on noise
+
+#### 3.0.4 Onboarding Setup Endpoint
+- `GET /api/v1/onboarding/setup` returns pre-configured `Claude Code.bat` + instructions JSON
+- Batch file auto-writes `.mcp.json` with correct python path and API URL for any new project
+- Eliminates manual MCP configuration for new developers
+- **Why**: Current manual setup causes MCP connection failures (wrong port, wrong python path)
+
+#### 3.0.5 MCP Tool Profiles & Role-Gated API Access
+- `unified_mcp --profile <developer|reviewer|admin>` already implemented (Feb 2026)
+- `developer` profile (default): hides `decideApproval`, `upsertOrgBaseline`, `upsertApplicationSpec`, `upsertEnvironmentProfile`, `applyRecommendedBaseline`
+- `reviewer` / `admin` profiles: full tool exposure (requires JWT with reviewer role in production)
+- `POST /approvals/{id}/decide` and `POST /exceptions/{id}/decide` are role-gated to `security_reviewer | security_analyst | security_manager | governance | admin`
+- **Future**: Dedicated reviewer `.mcp.json` profile for security analysts who want Claude-assisted review workflows in their own chat tool
+- **Future**: Per-project tool allowlist stored in org-baseline — override default profile per environment
+- **Why**: Prevents agents from self-approving security exceptions; governance decisions stay with human reviewers
+
+
+_Goal: Reliable, observable, and scalable for real teams_
+
 ### 3.1 Rate Limiting & API Protection
 - Rate limiting middleware (per-user, per-endpoint)
 - Request size limits
