@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -100,6 +100,7 @@ async def claim_task_packet(
 async def complete_task_packet(
     packet_id: str,
     body: CompleteRequest,
+    background_tasks: BackgroundTasks,
     request: Request = None,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
@@ -217,6 +218,21 @@ async def complete_task_packet(
             await db.commit()
     except Exception:
         pass  # Gate re-evaluation is best-effort
+
+    # AGP-05: detect missing context receipt (background — post-response)
+    session_factory = getattr(getattr(request, "app", None), "state", None)
+    session_factory = getattr(session_factory, "db_session_factory", None) if session_factory else None
+    user_sub = "unknown"
+    if request and hasattr(request, "state") and hasattr(request.state, "user"):
+        user_sub = (request.state.user or {}).get("sub", "unknown")
+    if session_factory:
+        async def _agp05(sf=session_factory, pid=packet.project_id, at=now, sub=user_sub, tid=packet.trace_id):
+            from pearl.security.anomaly_detector import detect_agp05_missing_receipt, emit_detection
+            async with sf() as s:
+                result = await detect_agp05_missing_receipt(s, pid, at, sub, tid)
+                if result:
+                    emit_detection(result)
+        background_tasks.add_task(_agp05)
 
     return {
         "packet_id": packet_id,

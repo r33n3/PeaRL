@@ -34,9 +34,7 @@ async def get_current_user(request: Request) -> dict:
 
     user = getattr(request.state, "user", {})
 
-    # In local dev mode, grant operator-level access to unauthenticated requests.
-    # Reviewer/governance decisions (approve/reject) additionally require PEARL_LOCAL_REVIEWER=1,
-    # so that agents hitting the API directly cannot self-approve exceptions.
+    # stripped: governance bypass documentation removed per security_research/SECURITY_HARDENING.md L5
     if settings.local_mode and (not user or user.get("sub") in ("anonymous", "")):
         roles = ["operator"]
         if settings.local_reviewer_mode:

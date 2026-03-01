@@ -354,18 +354,22 @@ See operational hardening guide: [`docs/security_research/SECURITY_HARDENING.md`
 | `PEARL_LOCAL=1` grants `operator` only — not reviewer | L3 direct API exploit | `src/pearl/config.py` |
 | `RequireReviewer` on all decide endpoints | L3, L4 | `src/pearl/dependencies.py` |
 | `false_positive` status requires reviewer role | L4 evidence poisoning | `src/pearl/api/routes/findings.py` |
-| OpenAPI schema hidden in production (`PEARL_EXPOSE_OPENAPI`) | L2 schema discovery | `src/pearl/api/middleware/auth.py` |
+| OpenAPI schema hidden in production (`PEARL_EXPOSE_OPENAPI`) | L2 schema discovery | `src/pearl/main.py` |
 | `disallowedBashCommands` in `.mcp.json` | L3, L7 | `.mcp.json` |
 | `PreToolUse` Bash guard hook (`scripts/pearl_bash_guard.py`) | L6, L7 | Hook script (install in `~/.claude/settings.json`) |
 | 403 structured audit log (`governance_access_denied`) | Detection | `src/pearl/errors/handlers.py` |
+| Behavioral anomaly detection (AGP-01–05) | Detection (post-response) | `src/pearl/security/anomaly_detector.py` |
+| Context receipt detection — AGP-05 on task-complete + promotion | Attestation gap detection | `src/pearl/api/routes/task_packets.py`, `promotions.py` |
 
 ### Soft Controls
 
 | Control | Blocks | Where |
 |---|---|---|
 | CLAUDE.md governance constraints | L5, L6, L7 | `CLAUDE.md` |
+| Stripped bypass documentation from `dependencies.py` (Phase 3) | L5 social engineering | `src/pearl/dependencies.py` |
 | Stripped flag documentation from `.env.example` / `config.py` | L5 social engineering | Source files |
 | Dashboard reviewer-mode warning banner | L5 | `GET /server-config` + frontend |
+| Context drift checker (`scripts/pearl_context_drift_check.py`) | L5 doc drift | Run in CI or as pre-commit hook |
 
 ### Bash Guard Scope
 
@@ -383,6 +387,7 @@ It does **not** block general development commands (`ps`, `kill`, `docker`, `sys
 |---|---|
 | **Structured logs** | `structlog` — JSON in production, console in local |
 | **Governance access denied** | `WARNING governance_access_denied` on every 403 AuthorizationError (path, user_sub, roles, trace_id) |
+| **Governance anomaly detected** | `WARNING governance_anomaly_detected` emitted post-response by `src/pearl/security/anomaly_detector.py` for AGP-01–05 patterns (exception rate, rapid promotion, bulk false_positive, missing receipt) |
 | **Request tracing** | `X-Trace-ID` header via TraceID middleware → `request.state.trace_id` |
 | **Metrics** | Prometheus via `prometheus-fastapi-instrumentator` at `/metrics` |
 | **Client telemetry** | Agents push audit events and cost entries via `POST /projects/{id}/audit-events` and `/cost-entries` |

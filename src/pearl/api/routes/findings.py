@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pearl.dependencies import REVIEWER_ROLES, get_current_user, get_db, get_trace_id
+from pearl.security.anomaly_detector import detect_agp03_bulk_false_positive, emit_detection
 from pearl.errors.exceptions import AuthorizationError, NotFoundError
 from pearl.models.findings_ingest import FindingsIngestRequest, FindingsIngestResponse
 from pearl.repositories.finding_repo import FindingBatchRepository, FindingRepository
@@ -124,6 +125,14 @@ async def bulk_update_finding_status(
     if body.status == "false_positive":
         if not set(current_user.get("roles", [])).intersection(REVIEWER_ROLES):
             raise AuthorizationError("Marking findings as false_positive requires reviewer role")
+        # AGP-03: detect bulk false_positive marking inline (no DB query needed)
+        agp03 = detect_agp03_bulk_false_positive(
+            finding_count=len(body.finding_ids),
+            project_id=project_id,
+            user_sub=current_user.get("sub", "unknown"),
+        )
+        if agp03:
+            emit_detection(agp03)
     repo = FindingRepository(db)
     findings = await repo.get_by_ids(body.finding_ids)
     updated = 0

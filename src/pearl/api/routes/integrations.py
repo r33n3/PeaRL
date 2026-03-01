@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
+import pydantic
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -193,18 +194,21 @@ async def test_integration(
     from pearl.integrations.config import AuthConfig, IntegrationEndpoint, IntegrationRegistry
     from pearl.integrations.service import IntegrationService
 
-    endpoint = IntegrationEndpoint(
-        endpoint_id=row.endpoint_id,
-        name=row.name,
-        adapter_type=row.adapter_type,
-        integration_type=row.integration_type,
-        category=row.category,
-        base_url=row.base_url,
-        auth=AuthConfig(**(row.auth_config or {})),
-        project_mapping=row.project_mapping,
-        enabled=row.enabled,
-        labels=row.labels,
-    )
+    try:
+        endpoint = IntegrationEndpoint(
+            endpoint_id=row.endpoint_id,
+            name=row.name,
+            adapter_type=row.adapter_type,
+            integration_type=row.integration_type,
+            category=row.category,
+            base_url=row.base_url,
+            auth=AuthConfig(**(row.auth_config or {})),
+            project_mapping=row.project_mapping,
+            enabled=row.enabled,
+            labels=row.labels,
+        )
+    except pydantic.ValidationError as exc:
+        raise ValidationError(f"Stored integration config is invalid: {exc}") from exc
 
     registry = IntegrationRegistry(endpoints=[endpoint])
     service = IntegrationService(registry)
@@ -237,18 +241,21 @@ async def pull_from_integration(
     from pearl.integrations.config import AuthConfig, IntegrationEndpoint, IntegrationRegistry
     from pearl.integrations.service import IntegrationService
 
-    endpoint = IntegrationEndpoint(
-        endpoint_id=row.endpoint_id,
-        name=row.name,
-        adapter_type=row.adapter_type,
-        integration_type=row.integration_type,
-        category=row.category,
-        base_url=row.base_url,
-        auth=AuthConfig(**(row.auth_config or {})),
-        project_mapping=row.project_mapping,
-        enabled=row.enabled,
-        labels=row.labels,
-    )
+    try:
+        endpoint = IntegrationEndpoint(
+            endpoint_id=row.endpoint_id,
+            name=row.name,
+            adapter_type=row.adapter_type,
+            integration_type=row.integration_type,
+            category=row.category,
+            base_url=row.base_url,
+            auth=AuthConfig(**(row.auth_config or {})),
+            project_mapping=row.project_mapping,
+            enabled=row.enabled,
+            labels=row.labels,
+        )
+    except pydantic.ValidationError as exc:
+        raise ValidationError(f"Stored integration config is invalid: {exc}") from exc
 
     registry = IntegrationRegistry(endpoints=[endpoint])
     service = IntegrationService(registry)

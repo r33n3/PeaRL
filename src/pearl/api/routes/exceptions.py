@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,6 +42,8 @@ async def list_project_exceptions(
 @router.post("/exceptions", status_code=201)
 async def create_exception(
     exception: ExceptionRecord,
+    background_tasks: BackgroundTasks,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     trace_id: str = Depends(get_trace_id),
 ) -> dict:
@@ -74,6 +76,18 @@ async def create_exception(
         trace_id=exception.trace_id,
     )
     await db.commit()
+
+    # AGP-01: detect rapid exception creation (background — post-response)
+    session_factory = getattr(request.app.state, "db_session_factory", None)
+    user_sub = getattr(request.state, "user", {}).get("sub", "unknown") if hasattr(request.state, "user") else "unknown"
+    if session_factory:
+        async def _agp01(sf=session_factory, pid=exception.project_id, sub=user_sub, tid=trace_id):
+            from pearl.security.anomaly_detector import detect_agp01_exception_rate, emit_detection
+            async with sf() as s:
+                result = await detect_agp01_exception_rate(s, pid, sub, tid)
+                if result:
+                    emit_detection(result)
+        background_tasks.add_task(_agp01)
 
     return exception.model_dump(mode="json", exclude_none=True)
 

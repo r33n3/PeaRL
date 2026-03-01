@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pearl.dependencies import get_db, get_trace_id
@@ -21,6 +21,40 @@ from pearl.services.promotion.gate_evaluator import evaluate_promotion
 from pearl.api.routes.stream import publish_event
 
 router = APIRouter(tags=["Promotions"])
+
+
+def _schedule_anomaly_checks(
+    background_tasks: BackgroundTasks,
+    request,
+    project_id: str,
+    promotion_time,
+    trace_id: str,
+) -> None:
+    """Schedule AGP-02 and AGP-05 anomaly checks as background tasks post-response."""
+    session_factory = getattr(getattr(request, "app", None), "state", None)
+    session_factory = getattr(session_factory, "db_session_factory", None) if session_factory else None
+    user_sub = "unknown"
+    if request and hasattr(request, "state") and hasattr(request.state, "user"):
+        user_sub = (request.state.user or {}).get("sub", "unknown")
+    if not session_factory:
+        return
+
+    async def _agp02(sf=session_factory, pid=project_id, pt=promotion_time, sub=user_sub, tid=trace_id):
+        from pearl.security.anomaly_detector import detect_agp02_rapid_promotion, emit_detection
+        async with sf() as s:
+            result = await detect_agp02_rapid_promotion(s, pid, pt, sub, tid)
+            if result:
+                emit_detection(result)
+
+    async def _agp05(sf=session_factory, pid=project_id, at=promotion_time, sub=user_sub, tid=trace_id):
+        from pearl.security.anomaly_detector import detect_agp05_missing_receipt, emit_detection
+        async with sf() as s:
+            result = await detect_agp05_missing_receipt(s, pid, at, sub, tid)
+            if result:
+                emit_detection(result)
+
+    background_tasks.add_task(_agp02)
+    background_tasks.add_task(_agp05)
 
 
 @router.post("/projects/{project_id}/promotions/evaluate", status_code=200)
@@ -84,6 +118,8 @@ async def get_promotion_readiness(
 @router.post("/projects/{project_id}/promotions/request", status_code=202)
 async def request_promotion(
     project_id: str,
+    background_tasks: BackgroundTasks,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     trace_id: str = Depends(get_trace_id),
 ) -> dict:
@@ -151,6 +187,7 @@ async def request_promotion(
         status = PromotionRequestStatus.APPROVED
         await db.commit()
 
+        _schedule_anomaly_checks(background_tasks, request, project_id, datetime.now(timezone.utc), trace_id)
         return {
             "request_id": generate_id("promreq_"),
             "project_id": project_id,
@@ -183,6 +220,7 @@ async def request_promotion(
     status = PromotionRequestStatus.PENDING_APPROVAL if evaluation_passed else PromotionRequestStatus.EVALUATION_FAILED
     await db.commit()
 
+    _schedule_anomaly_checks(background_tasks, request, project_id, datetime.now(timezone.utc), trace_id)
     return {
         "request_id": generate_id("promreq_"),
         "project_id": project_id,

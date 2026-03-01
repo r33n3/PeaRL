@@ -1,7 +1,7 @@
 # PeaRL — Autonomous Agent Attack Research
 
 **Classification:** Internal Security Research
-**Status:** Active — mitigations partially deployed
+**Status:** Active — Phase 1 and Phase 2 mitigations deployed
 **Date:** 2026-03-01
 **Observed In:** Live red-team session using Claude Sonnet 4.6 as autonomous coding agent
 
@@ -201,8 +201,11 @@ The agent had learned about this flag by reading `.env.example` and `config.py` 
 |---|---|---|
 | Stripped explanatory comments from `.env.example` | ✅ Deployed | Reduces agent's knowledge of the flag's purpose |
 | Stripped explanatory comments from `config.py` | ✅ Deployed | Same |
+| Stripped bypass explanation from `dependencies.py` (Phase 3) | ✅ Deployed | Three-line comment removed; auditable per SECURITY_HARDENING.md L5 |
 | CLAUDE.md prohibits asking users to modify env vars | ✅ Deployed | Soft control only |
 | Dashboard banner: "Do not enable if an AI agent suggested it" | ✅ Deployed | Surfaces when `PEARL_LOCAL_REVIEWER=1` is active |
+| Context drift checker (`scripts/pearl_context_drift_check.py`) | ✅ Deployed | CI/pre-commit: alerts when governance-critical files change without CLAUDE.md update |
+| MCP tool description hygiene (no internal role/env var names) | ✅ Deployed | `tests/security/test_tool_description_safety.py` enforces this |
 | **Recommendation:** Rename flag to something non-descriptive | ⚠️ Not done | `PEARL_LOCAL_REVIEWER` is self-describing |
 
 ---
@@ -251,6 +254,8 @@ If the `ps aux` had not been interrupted, the agent would have restarted the ser
 
 ## Mitigation Deployment Summary
 
+### Phase 1 — Original Controls
+
 | Control | Type | Status | Blocks |
 |---|---|---|---|
 | MCP developer profile hides `decideApproval` | Soft | ✅ | L1 |
@@ -259,15 +264,27 @@ If the `ps aux` had not been interrupted, the agent would have restarted the ser
 | `RequireReviewer` on `/exceptions/decide` | Hard | ✅ | L3 |
 | `false_positive` requires reviewer role | Hard | ✅ | L4 |
 | OpenAPI disabled in production | Hard | ✅ | L2 |
-| Stripped flag documentation from source | Soft | ✅ | L5 |
+| Stripped flag documentation from `.env.example` / `config.py` | Soft | ✅ | L5 |
 | CLAUDE.md governance constraints | Soft | ✅ | L5, L6, L7 |
 | Dashboard reviewer-mode warning banner | Soft | ✅ | L5 |
 | `chmod 400 .env` | Hard | ⚠️ Recommended | L6 |
 | Separate server OS user | Hard | ⚠️ Recommended | L6 |
-| `disallowedBashCommands` (governance endpoints) in `.mcp.json` | Hard | ✅ Deployed | L3, L7 |
-| `PreToolUse` hook (`pearl_bash_guard.py`) blocking governance bypass patterns | Hard | ✅ Deployed | L6, L7 |
-| 403 structured audit log (`governance_access_denied`) | Detective | ✅ Deployed | L3–L7 |
+| `disallowedBashCommands` (governance endpoints) in `.mcp.json` | Hard | ✅ | L3, L7 |
+| `PreToolUse` hook (`pearl_bash_guard.py`) | Hard | ✅ | L6, L7 |
+| 403 structured audit log (`governance_access_denied`) | Detective | ✅ | L3–L7 |
 | Production JWT auth (no local-mode bypass) | Hard | ⚠️ Production only | L1–L7 |
+
+### Phase 2 — Behavioral Detection + Context Hardening
+
+| Control | Type | Status | Blocks / Detects |
+|---|---|---|---|
+| Behavioral anomaly detection AGP-01–05 (`anomaly_detector.py`) | Detective | ✅ | Exception spam, rapid promotion, bulk false_positive, missing receipt |
+| AGP-05 wired on task-complete + promotion (Option B soft gate) | Detective | ✅ | Context receipt attestation gap |
+| 403 structured audit log updated (`governance_access_denied`) | Detective | ✅ | All role gate failures with user_sub, roles, trace_id |
+| Stripped bypass explanation from `dependencies.py` | Soft | ✅ | L5 social engineering surface |
+| MCP tool description hygiene (no internal names in descriptions) | Soft | ✅ | L2→L3 attack chain cost |
+| Context drift checker (`pearl_context_drift_check.py`) | Soft | ✅ | L5 governance doc drift |
+| Attack chain eval harness (`tests/security/attack_chain/`) | Regression | ✅ | All 7 levels — ongoing regression coverage |
 
 ---
 
@@ -358,6 +375,82 @@ This is not a bug in the agent. It is the correct behavior for maximizing task c
 
 ---
 
+---
+
+## Phase 2 Research: Governance Behavioral Attack Patterns
+
+**Date:** 2026-03-01
+**Follow-on to:** Phase 1 live red-team session
+
+---
+
+### Behavioral Pattern Taxonomy (AGP-01 through AGP-05)
+
+Phase 2 introduced a structured behavioral anomaly detection layer that runs
+post-response on governance actions. Rather than blocking (which risks breaking
+legitimate workflows before the signal is calibrated), each pattern emits a
+`governance_anomaly_detected` WARNING log event for SIEM alerting.
+
+| Pattern | Maps To | Detection Signal | Confidence |
+|---|---|---|---|
+| AGP-01 | L1 — Exception creation spam | >5 exceptions for same project within 10 min | medium → high |
+| AGP-02 | L1/L2 — Rapid promotion after task complete | Promotion request < 60s after last task completion | medium → high |
+| AGP-03 | L4 — Bulk evidence poisoning | >10 findings marked `false_positive` in one request | medium → high |
+| AGP-04 | L3 — Repeated 403s (role probing) | SIEM only — `governance_access_denied` events from same `user_sub` | — |
+| AGP-05 | Attestation gap — no context receipt | No `ContextReceiptRow` within 24h before governance action | medium |
+
+Full pattern definitions, thresholds, and SIEM queries: `docs/security_research/anomaly_patterns.md`
+
+All thresholds are marked **⚠️ calibration required** — they were set conservatively with zero production data. Tune after 30 days of real-world signal.
+
+---
+
+### Context Receipt Attestation Gap
+
+PeaRL's architectural promise is that agents operated on current, compiled governance
+context before taking governance actions. `submitContextReceipt` records this
+attestation voluntarily — but no route gate enforces it.
+
+**Gap:** An agent can call `POST /task-packets/{id}/complete` and
+`POST /projects/{id}/promotions/request` without ever calling `submitContextReceipt`.
+The server cannot distinguish between an agent that consumed current context and one
+that did not.
+
+**Phase 2 decision — Option B (soft gate):**
+
+Receipt submission is not yet a reliable, automatic step in the agent workflow. The
+MCP `submitContextReceipt` tool exists but is a manual call — no route handler
+auto-submits a receipt on the agent's behalf. Enforcing a hard gate today (Option A)
+would break all autonomous coding workflows that don't include an explicit receipt
+submission step, producing 403s that look identical to a governance attack.
+
+Option B is the correct first step:
+1. AGP-05 detection signal is live immediately on both endpoints
+2. Legitimate workflows are uninterrupted
+3. 30 days of data informs whether Option A is viable
+
+**Path to Option A:** See `docs/security_research/context_receipt_enforcement_design.md`
+
+---
+
+### Layering Decision: What PeaRL Handles vs. Other Layers
+
+A key architectural question from Phase 2: which detection and enforcement problems
+belong in PeaRL vs. in the AI gateway, MCP client, or IDE?
+
+| Concern | Correct Layer | Why Not PeaRL |
+|---|---|---|
+| MCP tool definition hash / rug-pull detection | MCP client | PeaRL doesn't sit between agent and MCP server |
+| Prompt injection in message content | AI gateway (LiteLLM + guardrail partner) | PeaRL doesn't inspect message payloads |
+| Shadow tool name collision detection | MCP server registry | PeaRL doesn't own the MCP tool namespace |
+| Governance action rates and patterns | **PeaRL** | PeaRL is the only component that sees governance actions |
+| Context receipt attestation | **PeaRL** | PeaRL owns the compiled context and receipt workflow |
+| Role-based access to decide endpoints | **PeaRL** | PeaRL is the authority on who can approve what |
+
+**Rule:** PeaRL's question is always — *who is taking what governance action, and should they be allowed to?* Anything that requires inspecting message content, MCP tool descriptions beyond PeaRL's own 39 tools, or sitting between the agent and the LLM API belongs in a different layer.
+
+---
+
 ## References
 
 - Companion diagram: [`autonomous_agent_attack_chain.drawio`](./autonomous_agent_attack_chain.drawio)
@@ -365,3 +458,6 @@ This is not a bug in the agent. It is the correct behavior for maximizing task c
 - Findings route with false_positive gate: [`src/pearl/api/routes/findings.py`](../../src/pearl/api/routes/findings.py)
 - MCP developer profile definition: [`src/pearl_dev/unified_mcp.py`](../../src/pearl_dev/unified_mcp.py)
 - Agent governance constraints: [`CLAUDE.md`](../../CLAUDE.md)
+- Behavioral anomaly patterns: [`docs/security_research/anomaly_patterns.md`](./anomaly_patterns.md)
+- Context receipt enforcement design: [`docs/security_research/context_receipt_enforcement_design.md`](./context_receipt_enforcement_design.md)
+- Attack chain eval harness: [`tests/security/attack_chain/`](../../tests/security/attack_chain/)

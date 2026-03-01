@@ -175,10 +175,13 @@ fails fast.
 
 ---
 
-## 6. Monitoring — Alert on `governance_access_denied` Events
+## 6. Monitoring — Governance Security Alerts
 
-PeaRL now emits a structured `WARNING` log event whenever an `AuthorizationError`
-(HTTP 403) is raised. In production JSON-structlog mode the event looks like:
+PeaRL emits two families of structured WARNING log events for governance security monitoring.
+
+### 6.1 — `governance_access_denied` (HTTP 403 on governance endpoints)
+
+Emitted by `src/pearl/errors/handlers.py` whenever an `AuthorizationError` is raised:
 
 ```json
 {
@@ -193,26 +196,104 @@ PeaRL now emits a structured `WARNING` log event whenever an `AuthorizationError
 }
 ```
 
-### Alert Query (CloudWatch Logs Insights)
-
+**CloudWatch alert — repeated governance probe (AGP-04):**
 ```sql
-fields @timestamp, path, method, user_sub, user_roles, reason
+fields @timestamp, user_sub, path, method
 | filter event = "governance_access_denied"
-| sort @timestamp desc
-| limit 100
+| stats count() as denied_count by user_sub, bin(5m)
+| filter denied_count > 3
+| sort denied_count desc
 ```
 
-### Alert Query (Datadog / Loki)
-
+**Datadog / Loki — all 403 events:**
 ```
 {service="pearl-api"} |= "governance_access_denied"
 ```
 
-### Recommended Alert Threshold
+**Recommended threshold:** P2 alert if more than **3** events from the same `user_sub`
+within a 5-minute window. ⚠️ Calibration required after 30 days of production data.
 
-Trigger a P2 alert if more than **3** `governance_access_denied` events occur from
-the same `user_sub` within a 5-minute window — this indicates an agent is probing
-the governance API rather than making incidental requests.
+---
+
+### 6.2 — `governance_anomaly_detected` (Behavioral Anomaly Detection)
+
+Emitted by `src/pearl/security/anomaly_detector.py` as a background task after
+governance actions. Pattern taxonomy: `docs/security_research/anomaly_patterns.md`.
+
+```json
+{
+  "level": "warning",
+  "event": "governance_anomaly_detected",
+  "pattern_id": "AGP-01",
+  "project_id": "proj_abc",
+  "user_sub": "agent@example.com",
+  "confidence": "high",
+  "evidence": { "exception_count": 8, "window_minutes": 10, "threshold": 5 },
+  "trace_id": "abc-123"
+}
+```
+
+**CloudWatch — any anomaly detection:**
+```sql
+fields @timestamp, pattern_id, project_id, user_sub, confidence, evidence
+| filter event = "governance_anomaly_detected"
+| sort @timestamp desc
+| limit 100
+```
+
+**CloudWatch — high-confidence only:**
+```sql
+fields @timestamp, pattern_id, project_id, user_sub, evidence
+| filter event = "governance_anomaly_detected" and confidence = "high"
+| sort @timestamp desc
+```
+
+**Datadog / Loki:**
+```
+{service="pearl-api"} |= "governance_anomaly_detected"
+```
+
+**Alert thresholds by pattern** (⚠️ calibration required after 30 days):
+
+| Pattern | Description | Alert on |
+|---|---|---|
+| AGP-01 | Exception creation rate | Any detection at medium+ confidence |
+| AGP-02 | Rapid promotion after task completion | Any high-confidence detection |
+| AGP-03 | Bulk false_positive marking | Any detection (reviewer action — always notable) |
+| AGP-04 | Repeated 403s | SIEM only — see §6.1 query above |
+| AGP-05 | Missing context receipt | Any detection (informational — tune after 30 days) |
+
+---
+
+---
+
+## 7. Context Receipt Enforcement (Option B — Soft Gate)
+
+PeaRL's architectural promise is that agents operated on current, PeaRL-compiled
+governance context before taking governance actions. `submitContextReceipt` records
+this attestation voluntarily — there is no hard gate today.
+
+**Current state (Option B):** AGP-05 fires as a background detection signal after
+`POST /task-packets/{id}/complete` and `POST /projects/{id}/promotions/request` when
+no context receipt exists within the prior 24 hours. The action is not blocked.
+
+**Path to Option A (hard gate):** Three conditions must be met before enforcing:
+1. `compileContext` (or equivalent workflow entry point) auto-submits a receipt
+2. 30 days of AGP-05 data confirms false-positive rate for legitimate workflows is < 5%
+3. Session model decided — recommended: `(jwt_sub, project_id)` + 24h rolling window
+
+Design note: `docs/security_research/context_receipt_enforcement_design.md`
+
+**Monitoring query for AGP-05:**
+```sql
+fields @timestamp, project_id, user_sub, evidence
+| filter event = "governance_anomaly_detected" and pattern_id = "AGP-05"
+| sort @timestamp desc
+```
+
+Use AGP-05 detections to track how often agents operate without submitting a receipt.
+Once the false-positive rate for legitimate workflows is confirmed low, enable Option A
+via the `PEARL_RECEIPT_GATE_ENABLED` config flag (to be added when Option A is built).
 
 ---
 
@@ -226,4 +307,7 @@ the governance API rather than making incidental requests.
 | Server user separation (`pearl-svc`) | Shared/staging | L6 |
 | No `.env` in production (use secrets manager) | Production | L6 |
 | CI assertion: governance flags unset | CI/CD | L3, L5 |
-| Alert on `governance_access_denied` log events | Production | Detection |
+| Alert on `governance_access_denied` log events | Production | Detection (L3–L4 failures) |
+| Alert on `governance_anomaly_detected` log events | Production | Detection (AGP-01–05) |
+| Run `pearl_context_drift_check.py` in CI | CI/CD | L5 documentation drift |
+| Monitor AGP-05 detections (30-day window) | Production | Informs Option A gate decision |
