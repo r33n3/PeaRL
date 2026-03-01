@@ -9,6 +9,7 @@ import { PromotionPage } from "./pages/PromotionPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { AdminBusinessUnitsPage } from "./pages/AdminBusinessUnitsPage";
+import { ExceptionReviewPage } from "./pages/ExceptionReviewPage";
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
         <Route path="/projects/:projectId" element={<ProjectPage />} />
         <Route path="/approvals" element={<ApprovalsPage />} />
         <Route path="/approvals/:approvalId" element={<ApprovalDetailPage />} />
+        <Route path="/exceptions/:exceptionId" element={<ExceptionReviewPage />} />
         <Route path="/projects/:projectId/findings" element={<FindingsPage />} />
         <Route path="/projects/:projectId/promotions" element={<PromotionPage />} />
         <Route path="/projects/:projectId/reports" element={<ReportsPage />} />

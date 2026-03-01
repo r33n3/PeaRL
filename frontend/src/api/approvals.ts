@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./client";
-import type { ApprovalRequest } from "@/lib/types";
+import type { ApprovalRequest, PendingException } from "@/lib/types";
 
 export function useDecideApproval() {
   const qc = useQueryClient();
@@ -78,6 +78,38 @@ export function usePendingApprovals(projectId?: string) {
   return useQuery({
     queryKey: ["approvals", "pending", projectId],
     queryFn: () => apiFetch<ApprovalRequest[]>(`/approvals/pending${params}`),
+  });
+}
+
+export function usePendingExceptions() {
+  return useQuery({
+    queryKey: ["exceptions", "pending"],
+    queryFn: () => apiFetch<PendingException[]>("/exceptions/pending"),
+  });
+}
+
+export function useDecideException() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      exceptionId,
+      decision,
+      decidedBy,
+      reason,
+    }: {
+      exceptionId: string;
+      decision: "approve" | "reject";
+      decidedBy: string;
+      reason?: string;
+    }) =>
+      apiFetch(`/exceptions/${exceptionId}/decide`, {
+        method: "POST",
+        body: JSON.stringify({ decision, decided_by: decidedBy, reason: reason ?? "" }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["exceptions", "pending"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
   });
 }
 

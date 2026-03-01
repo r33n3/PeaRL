@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     # Local development mode (set PEARL_LOCAL=1 to use SQLite, skip Redis)
     local_mode: bool = False
 
+    local_reviewer_mode: bool = False
+
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
@@ -40,6 +42,16 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8080
     log_level: str = "info"
+
+    # OpenAPI schema exposure — defaults to True in local mode only
+    # Set PEARL_EXPOSE_OPENAPI=1 to enable in production (not recommended)
+    expose_openapi: bool | None = None
+
+    @property
+    def effective_expose_openapi(self) -> bool:
+        if self.expose_openapi is not None:
+            return self.expose_openapi
+        return self.local_mode
 
     # Rate limiting
     rate_limit_enabled: bool = True

@@ -24,6 +24,36 @@ from pearl_dev.mcp_tool_defs import TOOL_DEFINITIONS as LOCAL_TOOL_DEFS
 # Names of tools handled locally (no API needed)
 LOCAL_TOOL_NAMES = {t["name"] for t in LOCAL_TOOL_DEFS}
 
+# Tools that require a reviewer/governance/admin role — excluded from the developer profile
+REVIEWER_ONLY_TOOLS = {
+    # Approval decisions — human reviewers only
+    "decideApproval",
+
+    # Policy writes — governance/admin only
+    "upsertOrgBaseline",
+    "upsertApplicationSpec",
+    "upsertEnvironmentProfile",
+    "applyRecommendedBaseline",
+
+    # Project metadata changes — deliberate admin action only
+    # createProject is allowed for developer profile: new projects land in sandbox
+    # and cannot reach dev without human approval at the promotion gate.
+    "updateProject",
+
+    # External review ingestion — operator/admin only
+    "ingestSecurityReview",
+}
+
+# Profiles control which API tools are visible to the MCP client
+# developer: everything except governance write / approval decision tools
+# reviewer:  adds decideApproval + policy write tools
+# admin:     full access (all tools)
+PROFILES = {
+    "developer": {"exclude": REVIEWER_ONLY_TOOLS},
+    "reviewer": {"exclude": set()},
+    "admin": {"exclude": set()},
+}
+
 
 class PearlUnifiedMCPServer:
     """Unified MCP server combining local pearl-dev tools and PeaRL API tools.
@@ -41,12 +71,14 @@ class PearlUnifiedMCPServer:
         environment: str = "dev",
         api_url: str = "http://localhost:8080/api/v1",
         auth_token: str | None = None,
+        profile: str = "developer",
     ) -> None:
         self._project_root = project_root
         self._project_id = project_id
         self._environment = environment
         self._api_url = api_url
         self._auth_token = auth_token
+        self._excluded_tools = PROFILES.get(profile, PROFILES["developer"])["exclude"]
 
         # Lazy-initialized components
         self._dev_server = None
@@ -77,14 +109,16 @@ class PearlUnifiedMCPServer:
         return self._api_server
 
     def _all_tool_definitions(self) -> list[dict]:
-        """Merge local + API tool definitions."""
+        """Merge local + API tool definitions, filtered by profile."""
         tools = list(LOCAL_TOOL_DEFS)
 
         try:
             api_server = self._get_api_server()
             api_tools = api_server.list_tools()
-            # Avoid duplicates (local tools take priority)
-            api_names_to_add = {t["name"] for t in api_tools} - LOCAL_TOOL_NAMES
+            # Avoid duplicates (local tools take priority); exclude profile-restricted tools
+            api_names_to_add = (
+                {t["name"] for t in api_tools} - LOCAL_TOOL_NAMES - self._excluded_tools
+            )
             for t in api_tools:
                 if t["name"] in api_names_to_add:
                     tools.append(t)
@@ -192,6 +226,12 @@ def main() -> None:
         "--auth-token",
         help="Bearer token for API auth",
     )
+    parser.add_argument(
+        "--profile",
+        choices=["developer", "reviewer", "admin"],
+        default="developer",
+        help="Tool profile: developer (default) hides approval-decision and policy-write tools; reviewer/admin expose all",
+    )
     args = parser.parse_args()
 
     # Try to load config from .pearl/pearl-dev.toml
@@ -218,6 +258,7 @@ def main() -> None:
         environment=environment,
         api_url=api_url,
         auth_token=args.auth_token,
+        profile=args.profile,
     )
     server.run_stdio()
 

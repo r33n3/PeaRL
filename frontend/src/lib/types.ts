@@ -25,6 +25,22 @@ export interface ApprovalRequest {
   expires_at: string | null;
 }
 
+export type ExceptionStatus = "pending" | "active" | "expired" | "revoked" | "rejected";
+
+export interface PendingException {
+  exception_id: string;
+  project_id: string;
+  status: ExceptionStatus;
+  requested_by: string;
+  rationale: string;
+  compensating_controls?: string[];
+  scope?: Record<string, unknown>;
+  approved_by?: string[];
+  start_at: string | null;
+  expires_at: string | null;
+  created_at: string | null;
+}
+
 export interface ApprovalComment {
   comment_id: string;
   approval_request_id: string;

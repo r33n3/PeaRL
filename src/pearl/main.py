@@ -81,11 +81,15 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
+    _expose = settings.effective_expose_openapi
     app = FastAPI(
         title="PeaRL API",
         version="1.1.0",
         description="API-first risk orchestration platform for autonomous coding and secure/responsible delivery.",
         lifespan=lifespan,
+        openapi_url="/openapi.json" if _expose else None,
+        docs_url="/docs" if _expose else None,
+        redoc_url="/redoc" if _expose else None,
     )
 
     # CORS middleware for React frontend

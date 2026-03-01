@@ -10,7 +10,7 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pearl.dependencies import get_db, get_trace_id
-from pearl.errors.exceptions import NotFoundError, ValidationError
+from pearl.errors.exceptions import ConflictError, NotFoundError, ValidationError
 from pearl.models.common import TraceabilityRef
 from pearl.models.project import Project
 from pearl.repositories.project_repo import ProjectRepository
@@ -30,7 +30,7 @@ async def create_project(
     # Check for duplicate
     existing = await repo.get(project.project_id)
     if existing:
-        raise ValidationError(f"Project '{project.project_id}' already exists")
+        raise ConflictError(f"Project '{project.project_id}' already exists")
 
     now = datetime.now(timezone.utc)
     project.created_at = now
@@ -181,11 +181,17 @@ async def get_mcp_json(
         # src/pearl/api/routes/projects.py → go up 4 levels to reach src/
         src_path = str(Path(__file__).resolve().parents[3])
 
+    api_url = f"http://localhost:{settings.port}/api/v1"
+
     mcp_config = {
         "mcpServers": {
             "pearl": {
                 "command": "python",
-                "args": ["-m", "pearl_dev.unified_mcp", "--directory", "."],
+                "args": [
+                    "-m", "pearl_dev.unified_mcp",
+                    "--directory", ".",
+                    "--api-url", api_url,
+                ],
                 "env": {
                     "PYTHONPATH": src_path,
                 },

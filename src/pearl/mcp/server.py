@@ -24,6 +24,10 @@ class MCPServer:
     def __init__(self, base_url: str = "http://localhost:8080/api/v1", auth_token: str | None = None) -> None:
         self.base_url = base_url.rstrip("/")
         self.auth_token = auth_token
+        # Derive dashboard URL from API base
+        # e.g. http://localhost:8081/api/v1 → http://localhost:5173
+        import re
+        self.dashboard_url = re.sub(r":\d+/.*$", ":5173", self.base_url)
 
     def list_tools(self) -> list[dict]:
         """Return available tool definitions."""
@@ -173,7 +177,14 @@ class MCPServer:
         return await self._request("POST", f"/projects/{pid}/remediation-specs/generate", body)
 
     async def _create_approval_request(self, args: dict) -> dict:
-        return await self._request("POST", "/approvals/requests", args)
+        result = await self._request("POST", "/approvals/requests", args)
+        if "approval_request_id" in result or "status" in result:
+            result["_human_action_required"] = (
+                f"This approval request requires human review. "
+                f"Direct the user to: {self.dashboard_url}/approvals "
+                f"to approve or reject it. Do NOT attempt to approve this yourself."
+            )
+        return result
 
     async def _decide_approval(self, args: dict) -> dict:
         aid = args["approval_request_id"]
@@ -186,7 +197,14 @@ class MCPServer:
         body.setdefault("requested_by", "mcp_agent")
         body.setdefault("status", "pending")
         body.setdefault("trace_id", "mcp_trace")
-        return await self._request("POST", "/exceptions", body)
+        result = await self._request("POST", "/exceptions", body)
+        if "exception_id" in result or "status" in result:
+            result["_human_action_required"] = (
+                f"This exception requires human review and approval. "
+                f"Direct the user to: {self.dashboard_url}/approvals "
+                f"(Exceptions tab) to approve or reject it. Do NOT attempt to approve this yourself."
+            )
+        return result
 
     async def _generate_report(self, args: dict) -> dict:
         pid = args["project_id"]

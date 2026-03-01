@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pearl.dependencies import get_db, get_trace_id
+from pearl.dependencies import get_db, get_trace_id, RequireReviewer
 from pearl.errors.exceptions import ConflictError, NotFoundError
 from pearl.models.approval import ApprovalCommentCreate, ApprovalDecision, ApprovalRequest
 from pearl.repositories.approval_comment_repo import ApprovalCommentRepository
@@ -76,6 +76,7 @@ async def decide_approval(
     request: Request = None,
     db: AsyncSession = Depends(get_db),
     trace_id: str = Depends(get_trace_id),
+    _reviewer: dict = RequireReviewer,
 ) -> dict:
     req_repo = ApprovalRequestRepository(db)
     approval = await req_repo.get(approval_request_id)

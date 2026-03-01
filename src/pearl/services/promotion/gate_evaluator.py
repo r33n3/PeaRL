@@ -240,6 +240,7 @@ class _EvalContext:
         self.open_findings = []
         self.has_approval = {}
         self.active_exceptions = []
+        self.rejected_exceptions = []
         self.has_report = {}
         # Fairness context
         self.has_fairness_case = False
@@ -329,6 +330,7 @@ async def _build_eval_context(
     # Load exceptions
     exc_repo = ExceptionRepository(session)
     ctx.active_exceptions = await exc_repo.get_active_by_project(project_id)
+    ctx.rejected_exceptions = await exc_repo.get_rejected_by_project(project_id)
 
     # Load reports
     report_repo = ReportRepository(session)
@@ -582,6 +584,26 @@ def _evaluate_rule(rule: GateRuleDefinition, ctx: _EvalContext) -> RuleEvaluatio
                     result=GateRuleResult.EXCEPTION,
                     message=f"Covered by active exception {covering.exception_id}: {message}",
                     exception_id=covering.exception_id,
+                )
+            # Check if a prior exception for this rule was rejected
+            rejected = next(
+                (
+                    e for e in ctx.rejected_exceptions
+                    if rule.rule_type in ((getattr(e, "scope", None) or {}).get("controls") or [])
+                ),
+                None,
+            )
+            if rejected:
+                return RuleEvaluationResult(
+                    rule_id=rule.rule_id,
+                    rule_type=rule.rule_type,
+                    result=GateRuleResult.FAIL,
+                    message=(
+                        f"EXCEPTION REJECTED ({rejected.exception_id}): {message}. "
+                        f"The exception request for this rule was rejected by a reviewer. "
+                        f"This issue must be fixed in the code — do not request another exception."
+                    ),
+                    details=details,
                 )
         return RuleEvaluationResult(
             rule_id=rule.rule_id,

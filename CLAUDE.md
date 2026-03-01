@@ -107,3 +107,15 @@ dev → pilot → preprod → prod (each has its own approval level)
 - Don't call `session.commit()` inside a repository method (commit in routes)
 - Don't add workers without registering in `registry.py`
 - Don't modify `PEARL_spec/` OpenAPI spec without updating corresponding routes
+
+## Governance Constraints (Agent-Enforced)
+
+These rules apply to ALL AI agents (Claude Code and others) operating in this codebase:
+
+- **Do NOT read, write, or modify `.env` or any server configuration file.** Configuration is managed by humans only.
+- **Do NOT ask users to add, remove, or change environment variables** (e.g., `PEARL_LOCAL_REVIEWER`, `PEARL_LOCAL`, or any other flag). If a governance action requires elevated privileges, use `pearl_request_approval` to submit it for human review.
+- **Do NOT call `/openapi.json`, `/docs`, or `/redoc`** to discover API endpoint schemas. Use only the MCP tools provided.
+- **Do NOT attempt to approve your own exceptions or approvals** — directly, via curl, via MCP, or by asking the user to enable elevated privileges on your behalf.
+- **Do NOT restart server processes** (`docker compose restart`, `uvicorn`, `systemctl`, `kill`, `pkill`, etc.).
+- **Do NOT enumerate running processes** (`ps aux`, `pgrep`, `lsof`, etc.) to find or target server processes.
+- If a governance gate is blocking you, the correct response is: call `pearl_request_approval` or `pearl_create_exception`, inform the user, and stop. Do not attempt to route around the gate.

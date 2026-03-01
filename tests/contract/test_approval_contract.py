@@ -25,15 +25,15 @@ async def test_create_approval_request_contract(client):
 
 
 @pytest.mark.asyncio
-async def test_approval_decision_contract(client):
+async def test_approval_decision_contract(reviewer_client):
     """POST /approvals/{id}/decide transitions status to approved."""
     # Create approval first
     req = load_example("approvals/create-approval.request.json")
-    await client.post("/api/v1/approvals/requests", json=req)
+    await reviewer_client.post("/api/v1/approvals/requests", json=req)
 
     # Decide
     decision = load_example("approvals/decision.request.json")
-    r = await client.post(
+    r = await reviewer_client.post(
         f"/api/v1/approvals/{req['approval_request_id']}/decide", json=decision
     )
     assert r.status_code == 200
@@ -43,18 +43,18 @@ async def test_approval_decision_contract(client):
 
 
 @pytest.mark.asyncio
-async def test_approval_already_decided(client):
+async def test_approval_already_decided(reviewer_client):
     """Deciding on an already-decided approval returns 409."""
     req = load_example("approvals/create-approval.request.json")
-    await client.post("/api/v1/approvals/requests", json=req)
+    await reviewer_client.post("/api/v1/approvals/requests", json=req)
 
     decision = load_example("approvals/decision.request.json")
-    await client.post(
+    await reviewer_client.post(
         f"/api/v1/approvals/{req['approval_request_id']}/decide", json=decision
     )
 
     # Try to decide again
-    r = await client.post(
+    r = await reviewer_client.post(
         f"/api/v1/approvals/{req['approval_request_id']}/decide", json=decision
     )
     assert r.status_code == 409

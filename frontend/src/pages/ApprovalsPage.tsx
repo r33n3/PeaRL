@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { usePendingApprovals } from "@/api/dashboard";
+import { usePendingExceptions } from "@/api/approvals";
 import { VaultCard } from "@/components/shared/VaultCard";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { MonoText } from "@/components/shared/MonoText";
 import { formatRelativeTime, ageColor } from "@/lib/utils";
-import type { ApprovalRequest, ApprovalStatus } from "@/lib/types";
+import type { ApprovalRequest, ApprovalStatus, PendingException } from "@/lib/types";
 
 type TabKey = "all" | "promotions" | "exceptions" | "other";
 
@@ -31,12 +32,64 @@ const CONTEST_TYPE_LABELS: Record<string, string> = {
   needs_more_time: "Needs More Time",
 };
 
+function ExceptionRecordCard({ exc, index }: { exc: PendingException; index: number }) {
+  const navigate = useNavigate();
+  const controls = exc.compensating_controls ?? [];
+  return (
+    <VaultCard
+      interactive
+      onClick={() => navigate(`/exceptions/${exc.exception_id}`)}
+      className="stagger-item flex items-center justify-between"
+      style={{ animationDelay: `${index * 50}ms` } as React.CSSProperties}
+    >
+      <div className="flex-1">
+        <div className="flex items-center gap-3 mb-1 flex-wrap">
+          <span className="text-sm font-heading font-semibold text-bone uppercase">Exception</span>
+          <StatusBadge status={exc.status as ApprovalStatus} />
+          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cold-teal/10 text-cold-teal border border-cold-teal/20">
+            Direct
+          </span>
+        </div>
+        <div className="flex items-center gap-4">
+          <MonoText className="text-xs">{exc.project_id}</MonoText>
+          <span className="text-xs text-bone-dim font-mono truncate max-w-xs">{exc.rationale}</span>
+        </div>
+        {controls.length > 0 && (
+          <p className="text-[10px] font-mono text-bone-dim mt-0.5">
+            {controls.length} compensating control{controls.length !== 1 ? "s" : ""}
+          </p>
+        )}
+      </div>
+      <div className="text-right">
+        <MonoText className={`text-xs ${ageColor(exc.created_at)}`}>
+          {formatRelativeTime(exc.created_at)}
+        </MonoText>
+        <MonoText className="block text-[10px]">{exc.exception_id}</MonoText>
+      </div>
+    </VaultCard>
+  );
+}
+
 export function ApprovalsPage() {
   const { data: approvals, isLoading } = usePendingApprovals();
+  const { data: pendingExceptions, isLoading: excLoading } = usePendingExceptions();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabKey>("all");
 
-  const filtered = filterByTab(approvals ?? [], activeTab);
+  const approvalList = approvals ?? [];
+  const excList = pendingExceptions ?? [];
+  const filtered = filterByTab(approvalList, activeTab);
+  const showExceptions = activeTab === "exceptions" || activeTab === "all";
+
+  // Tab counts: exceptions tab includes both approval-request exceptions AND direct exceptions
+  const tabCount = (tab: TabKey): number => {
+    const approvalCount = filterByTab(approvalList, tab).length;
+    if (tab === "exceptions") return approvalCount + excList.length;
+    if (tab === "all") return approvalList.length + excList.length;
+    return approvalCount;
+  };
+
+  const loading = isLoading || excLoading;
 
   return (
     <div>
@@ -45,7 +98,7 @@ export function ApprovalsPage() {
       {/* Tab bar */}
       <div className="flex gap-1 mb-4 border-b border-slate-border">
         {TABS.map((tab) => {
-          const count = filterByTab(approvals ?? [], tab.key).length;
+          const count = tabCount(tab.key);
           return (
             <button
               key={tab.key}
@@ -65,9 +118,9 @@ export function ApprovalsPage() {
         })}
       </div>
 
-      {isLoading ? (
+      {loading ? (
         <p className="text-bone-muted font-mono text-sm">Scanning clearance queue...</p>
-      ) : !filtered.length ? (
+      ) : !filtered.length && !(showExceptions && excList.length > 0) ? (
         <VaultCard className="text-center py-12">
           <p className="text-bone-dim font-mono text-sm">No pending clearances</p>
           <p className="text-bone-dim font-mono text-xs mt-1">All records are in order</p>
@@ -119,6 +172,11 @@ export function ApprovalsPage() {
               </VaultCard>
             );
           })}
+
+          {/* Direct exceptions (no linked approval request) */}
+          {showExceptions && excList.map((exc, i) => (
+            <ExceptionRecordCard key={exc.exception_id} exc={exc} index={filtered.length + i} />
+          ))}
         </div>
       )}
     </div>

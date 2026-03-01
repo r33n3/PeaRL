@@ -72,7 +72,7 @@ def test_check_promotion_no_cache(promo_tool_project):
     server = _make_server(promo_tool_project)
     result = server.handle_tool_call("pearl_check_promotion", {})
     assert result["status"] == "not_evaluated"
-    assert "pearl-dev sync" in result["message"]
+    assert "evaluatePromotionReadiness" in result["message"]
 
 
 def test_check_promotion_reads_cache(promo_tool_project):

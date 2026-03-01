@@ -15,48 +15,48 @@ def load_example(rel_path: str) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_full_flow(client):
+async def test_full_flow(reviewer_client):
     """Exercise the complete happy path through all major endpoints."""
 
     # 1. Create project
     project = load_example("project/create-project.request.json")
-    r = await client.post("/api/v1/projects", json=project)
+    r = await reviewer_client.post("/api/v1/projects", json=project)
     assert r.status_code == 201
     assert r.json()["project_id"] == "proj_customer_support_ai"
 
     # 2. Attach org baseline
     baseline = load_example("project/org-baseline.request.json")
-    r = await client.post("/api/v1/projects/proj_customer_support_ai/org-baseline", json=baseline)
+    r = await reviewer_client.post("/api/v1/projects/proj_customer_support_ai/org-baseline", json=baseline)
     assert r.status_code == 200
     assert r.json()["kind"] == "PearlOrgBaseline"
 
     # 3. Attach app spec
     spec = load_example("project/app-spec.request.json")
-    r = await client.post("/api/v1/projects/proj_customer_support_ai/app-spec", json=spec)
+    r = await reviewer_client.post("/api/v1/projects/proj_customer_support_ai/app-spec", json=spec)
     assert r.status_code == 200
     assert r.json()["kind"] == "PearlApplicationSpec"
 
     # 4. Attach environment profile
     profile = load_example("project/environment-profile.request.json")
-    r = await client.post("/api/v1/projects/proj_customer_support_ai/environment-profile", json=profile)
+    r = await reviewer_client.post("/api/v1/projects/proj_customer_support_ai/environment-profile", json=profile)
     assert r.status_code == 200
     assert r.json()["profile_id"] == "envp_preprod_supervised_high"
 
     # 5. Compile context
     compile_req = load_example("compile/compile-context.request.json")
-    r = await client.post("/api/v1/projects/proj_customer_support_ai/compile-context", json=compile_req)
+    r = await reviewer_client.post("/api/v1/projects/proj_customer_support_ai/compile-context", json=compile_req)
     assert r.status_code == 202
     job_data = r.json()
     assert job_data["job_type"] == "compile_context"
     job_id = job_data["job_id"]
 
     # 6. Get job status
-    r = await client.get(f"/api/v1/jobs/{job_id}")
+    r = await reviewer_client.get(f"/api/v1/jobs/{job_id}")
     assert r.status_code == 200
     assert r.json()["status"] == "succeeded"
 
     # 7. Get compiled package
-    r = await client.get("/api/v1/projects/proj_customer_support_ai/compiled-package")
+    r = await reviewer_client.get("/api/v1/projects/proj_customer_support_ai/compiled-package")
     assert r.status_code == 200
     pkg = r.json()
     assert pkg["kind"] == "PearlCompiledContextPackage"
@@ -66,7 +66,7 @@ async def test_full_flow(client):
 
     # 8. Generate task packet
     tp_req = load_example("task-packets/generate-task-packet.request.json")
-    r = await client.post("/api/v1/projects/proj_customer_support_ai/task-packets", json=tp_req)
+    r = await reviewer_client.post("/api/v1/projects/proj_customer_support_ai/task-packets", json=tp_req)
     assert r.status_code == 201
     tp = r.json()
     assert tp["task_type"] == "refactor"
@@ -77,7 +77,7 @@ async def test_full_flow(client):
 
     # 9. Ingest findings
     findings_req = load_example("findings/findings-ingest.request.json")
-    r = await client.post("/api/v1/findings/ingest", json=findings_req)
+    r = await reviewer_client.post("/api/v1/findings/ingest", json=findings_req)
     assert r.status_code == 202
     ingest = r.json()
     assert ingest["accepted_count"] == 1
@@ -85,7 +85,7 @@ async def test_full_flow(client):
 
     # 10. Generate remediation spec
     rem_req = load_example("remediation/generate-remediation-spec.request.json")
-    r = await client.post(
+    r = await reviewer_client.post(
         "/api/v1/projects/proj_customer_support_ai/remediation-specs/generate",
         json=rem_req,
     )
@@ -97,25 +97,25 @@ async def test_full_flow(client):
 
     # 11. Create approval request
     approval_req = load_example("approvals/create-approval.request.json")
-    r = await client.post("/api/v1/approvals/requests", json=approval_req)
+    r = await reviewer_client.post("/api/v1/approvals/requests", json=approval_req)
     assert r.status_code == 201
     assert r.json()["status"] == "pending"
 
     # 12. Decide approval
     decision = load_example("approvals/decision.request.json")
-    r = await client.post("/api/v1/approvals/appr_network_change_001/decide", json=decision)
+    r = await reviewer_client.post("/api/v1/approvals/appr_network_change_001/decide", json=decision)
     assert r.status_code == 200
     assert r.json()["decision"] == "approve"
 
     # 13. Create exception
     exception = load_example("exceptions/create-exception.request.json")
-    r = await client.post("/api/v1/exceptions", json=exception)
+    r = await reviewer_client.post("/api/v1/exceptions", json=exception)
     assert r.status_code == 201
     assert r.json()["status"] == "active"
 
     # 14. Generate report
     report_req = load_example("reports/generate-report.request.json")
-    r = await client.post("/api/v1/projects/proj_customer_support_ai/reports/generate", json=report_req)
+    r = await reviewer_client.post("/api/v1/projects/proj_customer_support_ai/reports/generate", json=report_req)
     assert r.status_code == 200
     report = r.json()
     assert report["report_type"] == "release_readiness"

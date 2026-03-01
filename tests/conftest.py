@@ -54,3 +54,22 @@ async def client(app):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+
+
+@pytest.fixture
+async def reviewer_client(app):
+    """Async HTTP test client with reviewer role (PEARL_LOCAL_REVIEWER=1).
+
+    Use this fixture for tests that call decide endpoints (POST /approvals/{id}/decide,
+    POST /exceptions/{id}/decide) which require security_reviewer role.
+    """
+    from pearl.config import settings
+
+    original = settings.local_reviewer_mode
+    settings.local_reviewer_mode = True
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            yield ac
+    finally:
+        settings.local_reviewer_mode = original

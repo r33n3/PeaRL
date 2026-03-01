@@ -28,3 +28,20 @@ class ExceptionRepository(BaseRepository):
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def get_rejected_by_project(self, project_id: str) -> list[ExceptionRecordRow]:
+        stmt = select(ExceptionRecordRow).where(
+            ExceptionRecordRow.project_id == project_id,
+            ExceptionRecordRow.status == "rejected",
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_pending(self) -> list[ExceptionRecordRow]:
+        stmt = (
+            select(ExceptionRecordRow)
+            .where(ExceptionRecordRow.status == "pending")
+            .order_by(ExceptionRecordRow.created_at.asc())
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())

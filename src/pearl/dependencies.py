@@ -7,6 +7,9 @@ from fastapi import Depends, Request
 
 from pearl.errors.exceptions import AuthenticationError, AuthorizationError
 
+# Roles authorized to make approval/exception decisions
+REVIEWER_ROLES = ("security_reviewer", "security_analyst", "security_manager", "governance", "admin")
+
 
 async def get_db(request: Request) -> AsyncGenerator:
     """Yield a database session from the app's session factory."""
@@ -27,7 +30,23 @@ def get_trace_id(request: Request) -> str:
 
 async def get_current_user(request: Request) -> dict:
     """Return the authenticated user dict or raise 401."""
+    from pearl.config import settings
+
     user = getattr(request.state, "user", {})
+
+    # In local dev mode, grant operator-level access to unauthenticated requests.
+    # Reviewer/governance decisions (approve/reject) additionally require PEARL_LOCAL_REVIEWER=1,
+    # so that agents hitting the API directly cannot self-approve exceptions.
+    if settings.local_mode and (not user or user.get("sub") in ("anonymous", "")):
+        roles = ["operator"]
+        if settings.local_reviewer_mode:
+            roles = list(REVIEWER_ROLES) + ["operator"]
+        return {
+            "sub": "local_admin",
+            "roles": roles,
+            "scopes": ["*"],
+        }
+
     if not user or user.get("sub") in ("anonymous", ""):
         raise AuthenticationError("Authentication required")
     if "_auth_error" in user:
@@ -54,3 +73,4 @@ TraceId = Annotated[str, Depends(get_trace_id)]
 CurrentUser = Annotated[dict, Depends(get_current_user)]
 RequireAdmin = Depends(require_role("admin"))
 RequireOperator = Depends(require_role("operator", "admin"))
+RequireReviewer = Depends(require_role(*REVIEWER_ROLES))

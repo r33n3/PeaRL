@@ -19,10 +19,12 @@ _PUBLIC_PATHS = {
     "/api/v1/auth/login",
     "/api/v1/auth/refresh",
     "/api/v1/auth/jwks.json",
-    "/docs",
-    "/openapi.json",
-    "/redoc",
+    "/api/v1/server-config",
 }
+
+# Add schema/docs paths only when OpenAPI is exposed (local dev by default)
+if settings.effective_expose_openapi:
+    _PUBLIC_PATHS.update({"/docs", "/openapi.json", "/redoc"})
 
 
 def _decode_jwt(token: str) -> dict:
@@ -48,7 +50,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
         path = request.url.path
 
         # Skip auth for public endpoints
-        if path in _PUBLIC_PATHS or path.startswith("/docs") or path.startswith("/redoc"):
+        schema_prefix = settings.effective_expose_openapi and (
+            path.startswith("/docs") or path.startswith("/redoc")
+        )
+        if path in _PUBLIC_PATHS or schema_prefix:
             request.state.user = {"sub": "anonymous", "roles": [], "scopes": ["*"]}
             return await call_next(request)
 

@@ -3,7 +3,18 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from pearl.config import settings
+
 router = APIRouter()
+
+
+@router.get("/server-config", include_in_schema=False)
+async def server_config():
+    """Return non-sensitive server flags needed by the frontend UI."""
+    return {
+        "reviewer_mode": settings.local_reviewer_mode,
+        "local_mode": settings.local_mode,
+    }
 
 
 @router.get("/health")

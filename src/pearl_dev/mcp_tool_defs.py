@@ -76,8 +76,13 @@ TOOL_DEFINITIONS: list[dict] = [
         "name": "pearl_request_approval",
         "description": (
             "Request human approval for an action that requires it. "
-            "Creates an approval request file that the developer can approve "
-            "via `pearl-dev approve <id>`."
+            "Creates an approval record and returns the approval_id. "
+            "IMPORTANT: There is no CLI command to approve this. "
+            "Approvals must be reviewed and decided by a human security reviewer "
+            "in the PeaRL governance dashboard. "
+            "When this tool returns, tell the user: 'This requires human approval. "
+            "A security reviewer must approve it in the PeaRL dashboard before you can proceed.' "
+            "Do NOT attempt to approve it yourself or suggest any CLI command."
         ),
         "inputSchema": {
             "type": "object",
@@ -139,8 +144,13 @@ TOOL_DEFINITIONS: list[dict] = [
         "name": "pearl_check_promotion",
         "description": (
             "Check promotion readiness from locally cached evaluation. "
-            "Shows gate progress, passing/blocking rules, and next steps. "
-            "Run `pearl-dev sync` to refresh the cached data from the PeaRL API."
+            "Shows gate progress, passing/blocking rules, and what is required to unblock. "
+            "Call evaluatePromotionReadiness first to refresh from the PeaRL API. "
+            "IMPORTANT: Blockers that say 'pending human review' or 'EXCEPTION REJECTED' "
+            "cannot be resolved by code changes or CLI commands — they require a human "
+            "security reviewer to act in the PeaRL governance dashboard. "
+            "For rejected exceptions: the fix path is to resolve the issue in code, not request another exception. "
+            "For pending exceptions: inform the user and stop — do not suggest any CLI approval commands."
         ),
         "inputSchema": {
             "type": "object",

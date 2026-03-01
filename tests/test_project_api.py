@@ -32,9 +32,9 @@ async def test_create_project_duplicate(client):
     data = load_example("project/create-project.request.json")
     await client.post("/api/v1/projects", json=data)
     response = await client.post("/api/v1/projects", json=data)
-    assert response.status_code == 400
+    assert response.status_code == 409
     body = response.json()
-    assert body["error"]["code"] == "VALIDATION_ERROR"
+    assert body["error"]["code"] == "CONFLICT"
 
 
 @pytest.mark.asyncio

@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 from pearl.api.routes import (
     agent,
+    onboarding,
     approvals,
     audit,
     auth,
@@ -67,3 +68,4 @@ api_router.include_router(business_units.router)
 api_router.include_router(org_env_config.router)
 api_router.include_router(requirements.router)
 api_router.include_router(timeline.router)
+api_router.include_router(onboarding.router)

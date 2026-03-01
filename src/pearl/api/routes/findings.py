@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pearl.dependencies import get_db, get_trace_id
-from pearl.errors.exceptions import NotFoundError
+from pearl.dependencies import REVIEWER_ROLES, get_current_user, get_db, get_trace_id
+from pearl.errors.exceptions import AuthorizationError, NotFoundError
 from pearl.models.findings_ingest import FindingsIngestRequest, FindingsIngestResponse
 from pearl.repositories.finding_repo import FindingBatchRepository, FindingRepository
 from pearl.services.id_generator import generate_id
@@ -98,8 +98,12 @@ async def update_finding_status(
     finding_id: str,
     body: FindingStatusUpdate,
     db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ) -> dict:
     """Update a finding's status (triage action)."""
+    if body.status == "false_positive":
+        if not set(current_user.get("roles", [])).intersection(REVIEWER_ROLES):
+            raise AuthorizationError("Marking findings as false_positive requires reviewer role")
     repo = FindingRepository(db)
     finding = await repo.get(finding_id)
     if not finding or finding.project_id != project_id:
@@ -114,8 +118,12 @@ async def bulk_update_finding_status(
     project_id: str,
     body: BulkStatusUpdate,
     db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ) -> dict:
     """Update status for multiple findings at once (bulk triage)."""
+    if body.status == "false_positive":
+        if not set(current_user.get("roles", [])).intersection(REVIEWER_ROLES):
+            raise AuthorizationError("Marking findings as false_positive requires reviewer role")
     repo = FindingRepository(db)
     findings = await repo.get_by_ids(body.finding_ids)
     updated = 0

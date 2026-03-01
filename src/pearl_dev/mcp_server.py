@@ -332,14 +332,33 @@ class PearlDevMCPServer:
         if not readiness_path.exists():
             return {
                 "status": "not_evaluated",
-                "message": "Run `pearl-dev sync` to fetch promotion readiness from the PeaRL API.",
+                "message": (
+                    "No cached promotion readiness found. "
+                    "Call the evaluatePromotionReadiness MCP tool to fetch current gate status from the PeaRL API."
+                ),
             }
 
         data = json.loads(readiness_path.read_text(encoding="utf-8"))
 
         rule_results = data.get("rule_results", [])
         passing = [r for r in rule_results if r.get("result") == "passed"]
-        blocking = [r for r in rule_results if r.get("result") not in ("passed", "skip")]
+        blocking = [r for r in rule_results if r.get("result") not in ("passed", "skip", "exception")]
+
+        def _next_step(r: dict) -> str:
+            msg = r.get("message", "")
+            rule = r.get("rule_type", "")
+            if "EXCEPTION REJECTED" in msg:
+                return (
+                    f"CODE FIX REQUIRED — {rule}: A security reviewer rejected the exception for this rule. "
+                    f"You must fix this in the code. Do not request another exception."
+                )
+            if "pending" in msg.lower() or "pending_review" in msg.lower():
+                return (
+                    f"AWAITING HUMAN REVIEW — {rule}: An exception or approval is pending. "
+                    f"A security reviewer must act in the PeaRL governance dashboard. "
+                    f"There is no CLI command for this. Inform the user and stop."
+                )
+            return f"Fix required — {rule}: {msg}"
 
         return {
             "current_env": data.get("source_environment", data.get("current_environment", "?")),
@@ -349,8 +368,13 @@ class PearlDevMCPServer:
             "passed_count": data.get("passed_count", 0),
             "total_count": data.get("total_count", 0),
             "passing": [{"rule_type": r.get("rule_type"), "message": r.get("message")} for r in passing],
-            "blocking": [{"rule_type": r.get("rule_type"), "message": r.get("message")} for r in blocking],
-            "next_steps": [f"Fix: {r.get('rule_type')} — {r.get('message')}" for r in blocking],
+            "blocking": [{"rule_type": r.get("rule_type"), "message": r.get("message"), "result": r.get("result")} for r in blocking],
+            "next_steps": [_next_step(r) for r in blocking],
+            "_governance_note": (
+                "Blockers labeled 'AWAITING HUMAN REVIEW' cannot be resolved by any code change or tool call. "
+                "Blockers labeled 'CODE FIX REQUIRED' must be fixed in the source code — do not create exceptions for them. "
+                "Do NOT suggest pearl-dev approve, pearl-dev sync, or any other CLI command that does not exist."
+            ),
         }
 
     # ── JSON-RPC 2.0 stdio loop ─────────────────────────────────────────
