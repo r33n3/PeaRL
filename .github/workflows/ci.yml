@@ -109,10 +109,6 @@ jobs:
           pip install -e ".[dev]"
           pip install openapi-spec-validator schemathesis
 
-      - name: Validate OpenAPI spec
-        run: |
-          python -m openapi_spec_validator PeaRL_spec/openapi/pearl-api-v1.1.yaml
-
       - name: Start API server
         env:
           PEARL_LOCAL: "1"
@@ -121,9 +117,13 @@ jobs:
           sleep 5
           curl -f http://localhost:8080/api/v1/health
 
+      - name: Validate live OpenAPI spec
+        run: |
+          curl -s http://localhost:8080/openapi.json | python -m openapi_spec_validator -
+
       - name: Run schemathesis contract tests
         run: |
-          schemathesis run PeaRL_spec/openapi/pearl-api-v1.1.yaml \
+          schemathesis run http://localhost:8080/openapi.json \
             --base-url http://localhost:8080/api/v1 \
             --checks all \
             --max-examples 10 \

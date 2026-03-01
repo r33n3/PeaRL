@@ -167,8 +167,8 @@ PEARL_LOCAL=1 pytest tests/ --cov=src/pearl --cov-report=term-missing
 # Lint
 ruff check src/ tests/
 
-# E2E (requires running server on port 8081)
-cd e2e && npx playwright test
+# E2E (requires running API + frontend)
+cd tests/e2e && npx playwright test
 ```
 
 ---

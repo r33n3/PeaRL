@@ -63,7 +63,18 @@ alembic/versions/__pycache__/
 # PeaRL internal build spec (not for public repo)
 PeaRL_spec/
 
+# Old e2e/ root dir (source files moved to tests/e2e/)
+/e2e/
 # E2E test generated output
-e2e/node_modules/
-e2e/playwright-report/
-e2e/test-results/
+tests/e2e/node_modules/
+tests/e2e/playwright-report/
+tests/e2e/test-results/
+
+# Frontend build output
+frontend/dist/
+
+# Local dev database
+pearl_local.db
+
+# Windows artifacts
+NUL
