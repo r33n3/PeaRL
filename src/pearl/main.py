@@ -31,23 +31,22 @@ async def lifespan(app: FastAPI):
 
     engine = create_async_engine(db_url, **engine_kwargs)
 
-    # Auto-create tables for SQLite (local dev — no Alembic migrations)
-    if "sqlite" in db_url:
-        from pearl.db.base import Base
-        import pearl.db.models  # noqa: F401 — register all ORM models
+    # Auto-create tables (SQLite for local dev; PostgreSQL for compose dev stack)
+    from pearl.db.base import Base
+    import pearl.db.models  # noqa: F401 — register all ORM models
 
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info("SQLite tables created (local mode)")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    logger.info("DB tables created/verified (%s)", "sqlite" if "sqlite" in db_url else "postgresql")
 
-        # Seed default promotion gates (idempotent)
-        from pearl.services.promotion.default_gates import seed_default_gates
+    # Seed default promotion gates (idempotent)
+    from pearl.services.promotion.default_gates import seed_default_gates
 
-        async with async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)() as seed_session:
-            created = await seed_default_gates(seed_session)
-            await seed_session.commit()
-            if created:
-                logger.info("Seeded %d default promotion gates", created)
+    async with async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)() as seed_session:
+        created = await seed_default_gates(seed_session)
+        await seed_session.commit()
+        if created:
+            logger.info("Seeded %d default promotion gates", created)
 
     app.state.db_engine = engine
     app.state.db_session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

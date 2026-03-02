@@ -71,6 +71,7 @@ class PearlUnifiedMCPServer:
         environment: str = "dev",
         api_url: str = "http://localhost:8080/api/v1",
         auth_token: str | None = None,
+        api_key: str | None = None,
         profile: str = "developer",
     ) -> None:
         self._project_root = project_root
@@ -78,6 +79,7 @@ class PearlUnifiedMCPServer:
         self._environment = environment
         self._api_url = api_url
         self._auth_token = auth_token
+        self._api_key = api_key
         self._excluded_tools = PROFILES.get(profile, PROFILES["developer"])["exclude"]
 
         # Lazy-initialized components
@@ -105,6 +107,7 @@ class PearlUnifiedMCPServer:
             self._api_server = MCPServer(
                 base_url=self._api_url,
                 auth_token=self._auth_token,
+                api_key=self._api_key,
             )
         return self._api_server
 
@@ -227,6 +230,10 @@ def main() -> None:
         help="Bearer token for API auth",
     )
     parser.add_argument(
+        "--api-key",
+        help="API key for PeaRL auth (alternative to --auth-token)",
+    )
+    parser.add_argument(
         "--profile",
         choices=["developer", "reviewer", "admin"],
         default="developer",
@@ -252,12 +259,16 @@ def main() -> None:
         # No .pearl/ config — use defaults (still serves API tools)
         root = Path(args.directory).resolve() if args.directory else Path.cwd().resolve()
 
+    import os
+    api_key = args.api_key or os.environ.get("PEARL_API_KEY")
+
     server = PearlUnifiedMCPServer(
         project_root=root,
         project_id=project_id,
         environment=environment,
         api_url=api_url,
         auth_token=args.auth_token,
+        api_key=api_key,
         profile=args.profile,
     )
     server.run_stdio()

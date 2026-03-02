@@ -21,9 +21,10 @@ class MCPServer:
     Wraps the PeaRL REST API and exposes it as MCP tool calls.
     """
 
-    def __init__(self, base_url: str = "http://localhost:8080/api/v1", auth_token: str | None = None) -> None:
+    def __init__(self, base_url: str = "http://localhost:8080/api/v1", auth_token: str | None = None, api_key: str | None = None) -> None:
         self.base_url = base_url.rstrip("/")
         self.auth_token = auth_token
+        self.api_key = api_key
         # Derive dashboard URL from API base
         # e.g. http://localhost:8081/api/v1 → http://localhost:5173
         import re
@@ -99,6 +100,8 @@ class MCPServer:
         headers = {"Content-Type": "application/json"}
         if self.auth_token:
             headers["Authorization"] = f"Bearer {self.auth_token}"
+        elif self.api_key:
+            headers["X-API-Key"] = self.api_key
         return headers
 
     async def _request(self, method: str, path: str, body: dict | None = None, params: dict | None = None) -> dict:
