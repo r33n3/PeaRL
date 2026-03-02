@@ -10,7 +10,7 @@ from pearl.models.common import Integrity
 def compute_integrity(data: dict) -> Integrity:
     """Compute SHA-256 hash of canonical JSON representation."""
     canonical = json.dumps(data, sort_keys=True, separators=(",", ":"))
-    hash_value = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:32]
+    hash_value = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     return Integrity(
         signed=False,
         hash=hash_value,

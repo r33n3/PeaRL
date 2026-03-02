@@ -19,6 +19,7 @@ class CompiledFrom(BaseModel):
     app_spec_id: str
     environment_profile_id: str
     remediation_overlay_id: str | None = None
+    governance_snapshot: dict | None = None
 
 
 class PackageMetadata(BaseModel):

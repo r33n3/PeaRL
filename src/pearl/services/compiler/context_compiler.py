@@ -1,5 +1,7 @@
 """Context compilation engine - merges org-baseline + app-spec + environment-profile."""
 
+import hashlib
+import json
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,14 +28,13 @@ from pearl.models.compiled_context import (
     ToolAndModelConstraints,
     Transparency,
 )
-from pearl.models.common import Reference, TraceabilityRef
+from pearl.models.common import Integrity, Reference, TraceabilityRef
 from pearl.repositories.app_spec_repo import AppSpecRepository
 from pearl.repositories.compiled_package_repo import CompiledPackageRepository
 from pearl.repositories.environment_profile_repo import EnvironmentProfileRepository
 from pearl.repositories.exception_repo import ExceptionRepository
 from pearl.repositories.org_baseline_repo import OrgBaselineRepository
 from pearl.repositories.project_repo import ProjectRepository
-from pearl.services.compiler.integrity import compute_integrity
 from pearl.services.id_generator import generate_id
 
 
@@ -169,6 +170,25 @@ async def compile_context(
 
     package_id = generate_id("pkg_")
     app_id = spec.get("application", {}).get("app_id", "")
+    compiled_at = datetime.now(timezone.utc)
+
+    # Governance-material fields snapshotted at compile time for drift detection
+    governance_snapshot = {
+        "autonomy_mode": env_profile.autonomy_mode,
+        "allowed_actions": sorted(env_profile.allowed_capabilities or []),
+        "blocked_actions": sorted(env_profile.blocked_capabilities or []),
+        "approval_level": env_profile.approval_level,
+        "risk_level": env_profile.risk_level,
+        "prohibited_patterns": sorted(
+            defaults.get("coding", {}).get("prohibited_patterns", [])
+        ),
+        "secret_hardcoding_forbidden": defaults.get("coding", {}).get(
+            "secret_hardcoding_forbidden", False
+        ),
+        "wildcard_permissions_forbidden": defaults.get("iam", {}).get(
+            "wildcard_permissions_forbidden_by_default", False
+        ),
+    }
 
     package = CompiledContextPackage(
         schema_version="1.1",
@@ -180,8 +200,14 @@ async def compile_context(
                 app_spec_id=app_id,
                 environment_profile_id=env_profile.profile_id,
                 remediation_overlay_id=None,
+                governance_snapshot=governance_snapshot,
             ),
-            integrity=compute_integrity({"project_id": project_id, "package_id": package_id}),
+            integrity=Integrity(
+                signed=False,
+                hash=None,
+                hash_alg="sha256",
+                compiled_at=compiled_at,
+            ),
             compiler_version="1.1.0",
             merge_precedence_version="1.1",
         ),
@@ -227,6 +253,15 @@ async def compile_context(
             )
         ],
     )
+
+    # Compute detached hash: serialize with hash=None (excluded by exclude_none),
+    # replace integrity with just compiled_at, then SHA-256 the canonical form.
+    pkg_dict_for_hash = package.model_dump(mode="json", exclude_none=True)
+    pkg_dict_for_hash["package_metadata"]["integrity"] = {
+        "compiled_at": pkg_dict_for_hash["package_metadata"]["integrity"]["compiled_at"]
+    }
+    canonical = json.dumps(pkg_dict_for_hash, sort_keys=True, separators=(",", ":"))
+    package.package_metadata.integrity.hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     # Store compiled package
     pkg_repo = CompiledPackageRepository(session)

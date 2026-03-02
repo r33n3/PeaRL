@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useProjectOverview } from "@/api/dashboard";
-import { useAgentBrief } from "@/api/agent";
+import { useAgentBrief, usePackageIntegrity } from "@/api/agent";
 import { useProjectTimeline } from "@/api/timeline";
 import { VaultCard } from "@/components/shared/VaultCard";
 import { EnvBadge } from "@/components/shared/EnvBadge";
@@ -8,7 +8,7 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { GateProgress } from "@/components/shared/GateProgress";
 import { MonoText } from "@/components/shared/MonoText";
 import { TimelinePanel } from "@/components/shared/TimelinePanel";
-import { Bug, ArrowUpCircle, FileText, Shield, DollarSign, Cpu, CheckCircle } from "lucide-react";
+import { Bug, ArrowUpCircle, FileText, Shield, DollarSign, Cpu, CheckCircle, Package, AlertTriangle, XCircle } from "lucide-react";
 import type { ApprovalStatus, Environment } from "@/lib/types";
 
 const ENV_ORDER: Environment[] = ["sandbox", "dev", "preprod", "prod"];
@@ -18,6 +18,7 @@ export function ProjectPage() {
   const navigate = useNavigate();
   const { data, isLoading } = useProjectOverview(projectId!);
   const { data: agentBrief } = useAgentBrief(projectId);
+  const { data: pkgIntegrity } = usePackageIntegrity(projectId);
   const { data: timeline = [], isLoading: timelineLoading } = useProjectTimeline(projectId);
 
   if (isLoading || !data) {
@@ -65,7 +66,7 @@ export function ProjectPage() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
         <VaultCard>
           <div className="flex items-center gap-2 mb-2">
             <Bug size={14} className="text-bone-muted" />
@@ -124,6 +125,55 @@ export function ProjectPage() {
                 {agentBrief.ready_to_elevate
                   ? `${agentBrief.current_stage} → ${agentBrief.next_stage}`
                   : `blocker${agentBrief.blockers_count !== 1 ? "s" : ""}`}
+              </p>
+            </>
+          ) : (
+            <p className="text-xs font-mono text-bone-dim">—</p>
+          )}
+        </VaultCard>
+
+        {/* Context Package card */}
+        <VaultCard className={
+          pkgIntegrity?.status === "tampered" ? "border-red-500/40" :
+          pkgIntegrity?.status === "stale" ? "border-amber-500/30" :
+          pkgIntegrity?.status === "current" ? "border-cold-teal/20" : ""
+        }>
+          <div className="flex items-center gap-2 mb-2">
+            <Package size={14} className="text-bone-muted" />
+            <span className="vault-heading text-xs">Context Package</span>
+          </div>
+          {pkgIntegrity && pkgIntegrity.status !== "missing" ? (
+            <>
+              {pkgIntegrity.status === "current" && (
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle size={16} className="text-cold-teal" />
+                  <span className="text-sm font-mono text-cold-teal font-semibold">Current</span>
+                </div>
+              )}
+              {pkgIntegrity.status === "stale" && (
+                <div className="flex items-center gap-1.5">
+                  <AlertTriangle size={16} className="text-amber-400" />
+                  <span className="text-sm font-mono text-amber-400 font-semibold">Recompile</span>
+                </div>
+              )}
+              {pkgIntegrity.status === "tampered" && (
+                <div className="flex items-center gap-1.5">
+                  <XCircle size={16} className="text-red-400" />
+                  <span className="text-sm font-mono text-red-400 font-semibold">Tampered</span>
+                </div>
+              )}
+              <p className="text-[10px] font-mono text-bone-dim mt-1 truncate" title={
+                pkgIntegrity.drift_details.length > 0
+                  ? pkgIntegrity.drift_details[0]
+                  : pkgIntegrity.days_since_compiled != null
+                    ? `${pkgIntegrity.days_since_compiled}d ago`
+                    : ""
+              }>
+                {pkgIntegrity.drift_details.length > 0
+                  ? pkgIntegrity.drift_details[0]
+                  : pkgIntegrity.days_since_compiled != null
+                    ? `Compiled ${pkgIntegrity.days_since_compiled}d ago`
+                    : ""}
               </p>
             </>
           ) : (

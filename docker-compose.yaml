@@ -4,19 +4,19 @@ services:
     ports:
       - "8080:8080"
     environment:
-      DATABASE_URL: postgresql+asyncpg://pearl:pearl@postgres:5432/pearl
-      REDIS_URL: redis://redis:6379/0
-      S3_ENDPOINT_URL: http://minio:9000
-      S3_ACCESS_KEY: minioadmin
-      S3_SECRET_KEY: minioadmin
-      S3_BUCKET: pearl-artifacts
-      JWT_SECRET: dev-secret-change-in-production
-      JWT_ALGORITHM: HS256
-      JWT_ISSUER: pearl-api
-      JWT_AUDIENCE: pearl
-      HOST: "0.0.0.0"
-      PORT: "8080"
-      LOG_LEVEL: info
+      PEARL_DATABASE_URL: postgresql+asyncpg://pearl:pearl@postgres:5432/pearl
+      PEARL_REDIS_URL: redis://redis:6379/0
+      PEARL_S3_ENDPOINT_URL: http://minio:9000
+      PEARL_S3_ACCESS_KEY: minioadmin
+      PEARL_S3_SECRET_KEY: minioadmin
+      PEARL_S3_BUCKET: pearl-artifacts
+      PEARL_JWT_SECRET: dev-secret-change-in-production
+      PEARL_JWT_ALGORITHM: HS256
+      PEARL_JWT_ISSUER: pearl-api
+      PEARL_JWT_AUDIENCE: pearl
+      PEARL_HOST: "0.0.0.0"
+      PEARL_PORT: "8080"
+      PEARL_LOG_LEVEL: info
     depends_on:
       postgres:
         condition: service_healthy
@@ -69,7 +69,7 @@ services:
       context: ./frontend
       target: dev
     ports:
-      - "5173:5173"
+      - "5174:5173"
     volumes:
       - ./frontend/src:/app/src
       - ./frontend/index.html:/app/index.html
