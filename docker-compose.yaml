@@ -16,7 +16,9 @@ services:
       PEARL_JWT_AUDIENCE: pearl
       PEARL_HOST: "0.0.0.0"
       PEARL_PORT: "8080"
+      PEARL_PUBLIC_API_URL: "http://localhost:8080/api/v1"
       PEARL_LOG_LEVEL: info
+      PEARL_LOCAL_REVIEWER_MODE: "1"
     depends_on:
       postgres:
         condition: service_healthy
@@ -69,12 +71,13 @@ services:
       context: ./frontend
       target: dev
     ports:
-      - "5174:5173"
+      - "5177:5173"
     volumes:
       - ./frontend/src:/app/src
       - ./frontend/index.html:/app/index.html
     environment:
       - VITE_API_BASE_URL=http://pearl-api:8080
+      - VITE_API_KEY=pearl-KYQXqnybaMaul7PoKJLsT4PZpZSFj0FIaVE2IPrQJNk
     depends_on:
       pearl-api:
         condition: service_started

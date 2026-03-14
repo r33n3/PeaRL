@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from pearl.config import settings
@@ -37,13 +38,63 @@ async def lifespan(app: FastAPI):
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Safe column additions for existing DBs (create_all skips existing tables)
+        try:
+            if "sqlite" in db_url:
+                await conn.execute(text("ALTER TABLE org_baselines ADD COLUMN bu_id VARCHAR(128)"))
+            else:
+                await conn.execute(text("ALTER TABLE org_baselines ADD COLUMN IF NOT EXISTS bu_id VARCHAR(128) REFERENCES business_units(bu_id)"))
+        except Exception:
+            pass  # Column already exists
+        # Allow org-level integrations (project_id nullable)
+        try:
+            if "sqlite" not in db_url:
+                await conn.execute(text("ALTER TABLE integration_endpoints ALTER COLUMN project_id DROP NOT NULL"))
+        except Exception:
+            pass  # Already nullable or table doesn't exist yet
+        # CLAUDE.md governance verification flag
+        try:
+            if "sqlite" in db_url:
+                await conn.execute(text("ALTER TABLE projects ADD COLUMN claude_md_verified BOOLEAN NOT NULL DEFAULT 0"))
+            else:
+                await conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS claude_md_verified BOOLEAN NOT NULL DEFAULT FALSE"))
+        except Exception:
+            pass  # Already exists
+        # Exception governance enrichment columns
+        for col_sql_sqlite, col_sql_pg in [
+            ("ALTER TABLE exception_records ADD COLUMN exception_type VARCHAR(20) NOT NULL DEFAULT 'exception'",
+             "ALTER TABLE exception_records ADD COLUMN IF NOT EXISTS exception_type VARCHAR(20) NOT NULL DEFAULT 'exception'"),
+            ("ALTER TABLE exception_records ADD COLUMN title VARCHAR(256)",
+             "ALTER TABLE exception_records ADD COLUMN IF NOT EXISTS title VARCHAR(256)"),
+            ("ALTER TABLE exception_records ADD COLUMN risk_rating VARCHAR(20)",
+             "ALTER TABLE exception_records ADD COLUMN IF NOT EXISTS risk_rating VARCHAR(20)"),
+            ("ALTER TABLE exception_records ADD COLUMN remediation_plan TEXT",
+             "ALTER TABLE exception_records ADD COLUMN IF NOT EXISTS remediation_plan TEXT"),
+            ("ALTER TABLE exception_records ADD COLUMN board_briefing TEXT",
+             "ALTER TABLE exception_records ADD COLUMN IF NOT EXISTS board_briefing TEXT"),
+            ("ALTER TABLE exception_records ADD COLUMN finding_ids JSON",
+             "ALTER TABLE exception_records ADD COLUMN IF NOT EXISTS finding_ids JSONB"),
+        ]:
+            try:
+                await conn.execute(text(col_sql_sqlite if "sqlite" in db_url else col_sql_pg))
+            except Exception:
+                pass
+        # Project tags column
+        try:
+            if "sqlite" in db_url:
+                await conn.execute(text("ALTER TABLE projects ADD COLUMN tags JSON"))
+            else:
+                await conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS tags JSONB"))
+        except Exception:
+            pass
     logger.info("DB tables created/verified (%s)", "sqlite" if "sqlite" in db_url else "postgresql")
 
     # Seed default promotion gates (idempotent)
-    from pearl.services.promotion.default_gates import seed_default_gates
+    from pearl.services.promotion.default_gates import seed_default_gates, seed_demo_data
 
     async with async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)() as seed_session:
         created = await seed_default_gates(seed_session)
+        await seed_demo_data(seed_session)
         await seed_session.commit()
         if created:
             logger.info("Seeded %d default promotion gates", created)

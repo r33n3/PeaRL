@@ -2,9 +2,11 @@
 
 from fastapi import APIRouter
 from pearl.api.routes import (
+    admin as admin_routes,
     agent,
     onboarding,
     approvals,
+    org_baseline,
     audit,
     auth,
     business_units,
@@ -12,6 +14,7 @@ from pearl.api.routes import (
     compliance,
     context,
     dashboard,
+    enforcement,
     exceptions,
     fairness,
     findings,
@@ -43,6 +46,7 @@ api_router.include_router(projects.router)
 api_router.include_router(project_inputs.router)
 api_router.include_router(jobs.router)
 api_router.include_router(compile.router)
+api_router.include_router(enforcement.router)
 api_router.include_router(task_packets.router)
 api_router.include_router(findings.router)
 api_router.include_router(remediation.router)
@@ -69,3 +73,5 @@ api_router.include_router(org_env_config.router)
 api_router.include_router(requirements.router)
 api_router.include_router(timeline.router)
 api_router.include_router(onboarding.router)
+api_router.include_router(org_baseline.router)
+api_router.include_router(admin_routes.router)

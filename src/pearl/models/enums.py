@@ -252,6 +252,8 @@ class GateRuleType(StrEnum):
     AIUC1_CONTROL_REQUIRED = "aiuc1_control_required"
     # Unified framework control rule (AIUC-1, OWASP LLM/Web, MITRE ATLAS, SLSA, NIST RMF/SSDF)
     FRAMEWORK_CONTROL_REQUIRED = "framework_control_required"
+    # Governance compliance
+    CLAUDE_MD_GOVERNANCE_PRESENT = "claude_md_governance_present"
 
 
 class GateEvaluationStatus(StrEnum):

@@ -173,6 +173,108 @@ async def list_bu_requirements(
     ]
 
 
+@router.get("/business-units/{bu_id}/baseline")
+async def get_bu_baseline(
+    bu_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get BU-level baseline. Returns inherits_org: true if no custom baseline exists."""
+    bu_repo = BusinessUnitRepository(db)
+    bu = await bu_repo.get(bu_id)
+    if not bu:
+        raise NotFoundError("BusinessUnit", bu_id)
+
+    from pearl.repositories.org_baseline_repo import OrgBaselineRepository
+    repo = OrgBaselineRepository(db)
+    row = await repo.get_by_bu(bu_id)
+    if not row:
+        # Also fetch org baseline for comparison
+        org_row = await repo.get_org_wide()
+        return {
+            "bu_id": bu_id,
+            "inherits_org": True,
+            "baseline": None,
+            "org_baseline_id": org_row.baseline_id if org_row else None,
+        }
+    return {
+        "bu_id": bu_id,
+        "inherits_org": False,
+        "baseline": {
+            "baseline_id": row.baseline_id,
+            "org_name": row.org_name,
+            "defaults": row.defaults,
+            "schema_version": row.schema_version,
+        },
+    }
+
+
+@router.post("/business-units/{bu_id}/baseline", status_code=201)
+async def upsert_bu_baseline(
+    bu_id: str,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Create or update a BU-level baseline override."""
+    bu_repo = BusinessUnitRepository(db)
+    bu = await bu_repo.get(bu_id)
+    if not bu:
+        raise NotFoundError("BusinessUnit", bu_id)
+
+    from pearl.db.models.org_baseline import OrgBaselineRow
+    from pearl.repositories.org_baseline_repo import OrgBaselineRepository
+    from sqlalchemy import select
+
+    repo = OrgBaselineRepository(db)
+    existing = await repo.get_by_bu(bu_id)
+
+    baseline_id = body.get("baseline_id") or (existing.baseline_id if existing else f"orgb_bu_{bu_id}")
+    org_name = body.get("org_name", bu.name)
+    defaults = body.get("defaults", {})
+
+    if existing:
+        existing.defaults = defaults
+        existing.org_name = org_name
+        row = existing
+    else:
+        row = OrgBaselineRow(
+            baseline_id=baseline_id,
+            project_id=None,
+            bu_id=bu_id,
+            org_id=bu.org_id,
+            org_name=org_name,
+            defaults=defaults,
+            schema_version=body.get("schema_version", "1.1"),
+        )
+        db.add(row)
+
+    await db.commit()
+    return {
+        "bu_id": bu_id,
+        "baseline_id": row.baseline_id,
+        "org_name": row.org_name,
+        "defaults": row.defaults,
+    }
+
+
+@router.delete("/business-units/{bu_id}/baseline", status_code=204)
+async def delete_bu_baseline(
+    bu_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Remove BU custom baseline — BU reverts to inheriting org baseline."""
+    bu_repo = BusinessUnitRepository(db)
+    bu = await bu_repo.get(bu_id)
+    if not bu:
+        raise NotFoundError("BusinessUnit", bu_id)
+
+    from pearl.repositories.org_baseline_repo import OrgBaselineRepository
+    repo = OrgBaselineRepository(db)
+    existing = await repo.get_by_bu(bu_id)
+    if existing:
+        await db.delete(existing)
+        await db.commit()
+
+
 def _bu_dict(bu) -> dict:
     return {
         "bu_id": bu.bu_id,

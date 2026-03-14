@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pearl.db.base import Base, TimestampMixin
@@ -23,3 +23,10 @@ class ExceptionRecordRow(Base, TimestampMixin):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     review_cadence_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     trace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    # Governance enrichment fields (added for full exception/acceptance workflow)
+    exception_type: Mapped[str] = mapped_column(String(20), nullable=False, default="exception")  # "exception" | "acceptance"
+    title: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    risk_rating: Mapped[str | None] = mapped_column(String(20), nullable=True)  # low | moderate | high | critical
+    remediation_plan: Mapped[str | None] = mapped_column(Text, nullable=True)
+    board_briefing: Mapped[str | None] = mapped_column(Text, nullable=True)
+    finding_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)  # findings covered by this exception

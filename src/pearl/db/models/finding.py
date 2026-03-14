@@ -33,6 +33,8 @@ class FindingRow(Base, TimestampMixin):
     compliance_refs: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     verdict: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     rai_eval_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    anomaly_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
 
 class FindingBatchRow(Base, TimestampMixin):

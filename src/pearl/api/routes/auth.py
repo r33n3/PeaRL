@@ -19,6 +19,7 @@ from pearl.models.user import (
     UserLogin,
     UserResponse,
 )
+from pearl.repositories.compiled_package_repo import CompiledPackageRepository
 from pearl.repositories.user_repo import ApiKeyRepository, UserRepository
 from pearl.services.id_generator import generate_id
 
@@ -150,6 +151,67 @@ async def logout(request: Request):
             settings.jwt_refresh_token_expire_days * 86400,
             "1",
         )
+
+
+@router.post("/auth/project-token")
+async def issue_project_token(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Issue a short-lived project-scoped token with ACoP claims (§8.5).
+
+    The caller must hold a valid access token. The returned token adds:
+    - ``acop_contract_id`` — latest compiled package ID
+    - ``acop_environment`` — project's current environment
+    - ``acop_cih`` — contract integrity hash (``sha256-{hex}``)
+    - ``acop_permitted_tools`` — allowed tool classes from the compiled contract
+    """
+    import jwt as pyjwt
+
+    current_user = getattr(request.state, "user", {})
+    user_id = current_user.get("sub")
+    if not user_id or user_id in ("anonymous", "dev-user"):
+        raise AuthenticationError("Authentication required")
+
+    body = await request.json()
+    project_id = body.get("project_id")
+    if not project_id:
+        from pearl.errors.exceptions import ValidationError
+        raise ValidationError("project_id is required")
+
+    pkg_repo = CompiledPackageRepository(db)
+    pkg_row = await pkg_repo.get_latest_by_project(project_id)
+    if not pkg_row:
+        raise NotFoundError("Compiled package", project_id)
+
+    pkg_data = pkg_row.package_data
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": user_id,
+        "roles": current_user.get("roles", []),
+        "iss": settings.jwt_issuer,
+        "aud": settings.jwt_audience,
+        "iat": now,
+        "exp": now + timedelta(minutes=15),  # Short-lived — scope to one project session
+        "type": "access",
+        # ACoP §8.5 custom claims
+        "acop_contract_id": pkg_row.package_id,
+        "acop_environment": pkg_data.get("project_identity", {}).get("environment", ""),
+        "acop_cih": pkg_row.integrity_hash or "",
+        "acop_permitted_tools": (
+            pkg_data.get("tool_and_model_constraints", {}).get("allowed_tool_classes", [])
+        ),
+        "acop_project_id": project_id,
+    }
+    token = pyjwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "expires_in": 15 * 60,
+        "acop_contract_id": pkg_row.package_id,
+        "acop_environment": payload["acop_environment"],
+        "acop_cih": payload["acop_cih"],
+    }
 
 
 @router.get("/auth/jwks.json")

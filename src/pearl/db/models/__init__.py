@@ -7,6 +7,7 @@ from pearl.db.models.environment_profile import EnvironmentProfileRow
 from pearl.db.models.compiled_package import CompiledPackageRow
 from pearl.db.models.task_packet import TaskPacketRow
 from pearl.db.models.finding import FindingRow, FindingBatchRow
+from pearl.db.models.finding_resolution import FindingResolutionRow
 from pearl.db.models.remediation_spec import RemediationSpecRow
 from pearl.db.models.approval import ApprovalRequestRow, ApprovalDecisionRow
 from pearl.db.models.approval_comment import ApprovalCommentRow
@@ -57,6 +58,7 @@ __all__ = [
     "TaskPacketRow",
     "FindingRow",
     "FindingBatchRow",
+    "FindingResolutionRow",
     "RemediationSpecRow",
     "ApprovalRequestRow",
     "ApprovalDecisionRow",

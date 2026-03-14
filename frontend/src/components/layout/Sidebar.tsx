@@ -1,19 +1,16 @@
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
   ShieldCheck,
   Settings,
   Bell,
-  Building2,
+  BookLock,
 } from "lucide-react";
 
 const MAIN_NAV = [
   { to: "/", icon: LayoutDashboard, label: "Projects" },
   { to: "/approvals", icon: ShieldCheck, label: "Clearances" },
-];
-
-const ADMIN_NAV = [
-  { to: "/admin/business-units", icon: Building2, label: "Business Units" },
+  { to: "/policy", icon: BookLock, label: "Policy" },
 ];
 
 export function Sidebar({
@@ -37,12 +34,11 @@ export function Sidebar({
     <aside className="w-60 flex-shrink-0 bg-charcoal border-r border-slate-border flex flex-col">
       {/* Logo / Brand */}
       <div className="px-5 py-5 border-b border-slate-border">
-        <h1 className="font-heading text-xl font-bold tracking-widest uppercase text-cold-teal">
-          PeaRL
-        </h1>
-        <p className="font-mono text-[10px] text-bone-muted mt-0.5 tracking-wider">
-          ARCHIVE INTERFACE v1.1
-        </p>
+        <Link to="/">
+          <h1 className="font-heading text-xl font-bold tracking-widest uppercase pearl-wordart">
+            PeaRL
+          </h1>
+        </Link>
       </div>
 
       {/* Navigation */}
@@ -53,19 +49,6 @@ export function Sidebar({
             {label}
           </NavLink>
         ))}
-
-        {/* Admin section */}
-        <div className="pt-3 pb-1">
-          <p className="text-[9px] font-heading uppercase tracking-widest text-bone-dim px-3 mb-1">
-            Administration
-          </p>
-          {ADMIN_NAV.map(({ to, icon: Icon, label }) => (
-            <NavLink key={to} to={to} className={navClass(to)}>
-              <Icon size={16} />
-              {label}
-            </NavLink>
-          ))}
-        </div>
 
         <NavLink to="/settings" className={navClass("/settings")}>
           <Settings size={16} />

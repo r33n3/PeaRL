@@ -11,6 +11,7 @@ from pearl.security.anomaly_detector import detect_agp03_bulk_false_positive, em
 from pearl.errors.exceptions import AuthorizationError, NotFoundError
 from pearl.models.findings_ingest import FindingsIngestRequest, FindingsIngestResponse
 from pearl.repositories.finding_repo import FindingBatchRepository, FindingRepository
+from pearl.repositories.finding_resolution_repo import FindingResolutionRepository
 from pearl.services.id_generator import generate_id
 from pearl.workers.queue import enqueue_job
 
@@ -19,11 +20,29 @@ router = APIRouter(tags=["Findings"])
 
 class FindingStatusUpdate(BaseModel):
     status: str  # "resolved", "false_positive", "accepted", "suppressed", "open"
+    # Evidence fields — required when status="resolved"
+    approval_mode: str | None = None   # "human" | "rescan"
+    evidence_notes: str | None = None
+    commit_sha: str | None = None
+    pr_url: str | None = None
+    test_run_id: str | None = None
+    diff_summary: str | None = None
+    resolved_by: str | None = None
 
 
 class BulkStatusUpdate(BaseModel):
     finding_ids: list[str]
     status: str  # "resolved", "false_positive", "accepted", "suppressed", "open"
+
+
+class ResolutionDecision(BaseModel):
+    decided_by: str
+    reason: str | None = None
+
+
+class ResolutionRejection(BaseModel):
+    decided_by: str
+    rejection_reason: str
 
 
 def _finding_to_dict(f) -> dict:
@@ -54,6 +73,27 @@ def _finding_to_dict(f) -> dict:
         "confidence": confidence,
         "detected_at": f.detected_at.isoformat() if f.detected_at else None,
         "created_at": f.created_at.isoformat() if f.created_at else None,
+    }
+
+
+def _resolution_to_dict(r) -> dict:
+    """Convert a FindingResolutionRow to a dict."""
+    return {
+        "resolution_id": r.resolution_id,
+        "finding_id": r.finding_id,
+        "resolved_by": r.resolved_by,
+        "approval_mode": r.approval_mode,
+        "approval_status": r.approval_status,
+        "evidence_notes": r.evidence_notes,
+        "commit_sha": r.commit_sha,
+        "pr_url": r.pr_url,
+        "test_run_id": r.test_run_id,
+        "diff_summary": r.diff_summary,
+        "approved_by": r.approved_by,
+        "approved_at": r.approved_at.isoformat() if r.approved_at else None,
+        "rejection_reason": r.rejection_reason,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+        "updated_at": r.updated_at.isoformat() if r.updated_at else None,
     }
 
 
@@ -105,13 +145,117 @@ async def update_finding_status(
     if body.status == "false_positive":
         if not set(current_user.get("roles", [])).intersection(REVIEWER_ROLES):
             raise AuthorizationError("Marking findings as false_positive requires reviewer role")
+
     repo = FindingRepository(db)
     finding = await repo.get(finding_id)
     if not finding or finding.project_id != project_id:
         raise NotFoundError("Finding", finding_id)
-    finding.status = body.status
+
+    if body.status == "resolved":
+        # Transition to pending_resolution — evidence must be approved before final resolution
+        finding.status = "pending_resolution"
+        res_repo = FindingResolutionRepository(db)
+        await res_repo.create(
+            resolution_id=generate_id("fres"),
+            finding_id=finding_id,
+            project_id=project_id,
+            resolved_by=body.resolved_by or current_user.get("sub", "unknown"),
+            approval_mode=body.approval_mode or "human",
+            approval_status="pending",
+            evidence_notes=body.evidence_notes,
+            commit_sha=body.commit_sha,
+            pr_url=body.pr_url,
+            test_run_id=body.test_run_id,
+            diff_summary=body.diff_summary,
+        )
+    else:
+        finding.status = body.status
+
     await db.commit()
-    return {"finding_id": finding_id, "status": body.status}
+    return {"finding_id": finding_id, "status": finding.status}
+
+
+@router.get("/projects/{project_id}/findings/{finding_id}/resolution")
+async def get_finding_resolution(
+    project_id: str,
+    finding_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Fetch the resolution record for a finding (audit trail)."""
+    finding_repo = FindingRepository(db)
+    finding = await finding_repo.get(finding_id)
+    if not finding or finding.project_id != project_id:
+        raise NotFoundError("Finding", finding_id)
+
+    res_repo = FindingResolutionRepository(db)
+    resolution = await res_repo.get_by_finding(finding_id)
+    if not resolution:
+        raise NotFoundError("FindingResolution", finding_id)
+
+    return _resolution_to_dict(resolution)
+
+
+@router.post("/projects/{project_id}/findings/{finding_id}/resolution/approve")
+async def approve_finding_resolution(
+    project_id: str,
+    finding_id: str,
+    body: ResolutionDecision,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Approve fix evidence — finding transitions to resolved."""
+    if not set(current_user.get("roles", [])).intersection(REVIEWER_ROLES):
+        raise AuthorizationError("Approving resolutions requires reviewer role")
+
+    finding_repo = FindingRepository(db)
+    finding = await finding_repo.get(finding_id)
+    if not finding or finding.project_id != project_id:
+        raise NotFoundError("Finding", finding_id)
+
+    res_repo = FindingResolutionRepository(db)
+    resolution = await res_repo.get_by_finding(finding_id)
+    if not resolution:
+        raise NotFoundError("FindingResolution", finding_id)
+
+    now = datetime.now(timezone.utc)
+    resolution.approval_status = "approved"
+    resolution.approved_by = body.decided_by
+    resolution.approved_at = now
+    finding.status = "resolved"
+    finding.resolved_at = now
+
+    await db.commit()
+    return {"finding_id": finding_id, "status": "resolved", "approval_status": "approved"}
+
+
+@router.post("/projects/{project_id}/findings/{finding_id}/resolution/reject")
+async def reject_finding_resolution(
+    project_id: str,
+    finding_id: str,
+    body: ResolutionRejection,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Reject fix evidence — finding is reopened."""
+    if not set(current_user.get("roles", [])).intersection(REVIEWER_ROLES):
+        raise AuthorizationError("Rejecting resolutions requires reviewer role")
+
+    finding_repo = FindingRepository(db)
+    finding = await finding_repo.get(finding_id)
+    if not finding or finding.project_id != project_id:
+        raise NotFoundError("Finding", finding_id)
+
+    res_repo = FindingResolutionRepository(db)
+    resolution = await res_repo.get_by_finding(finding_id)
+    if not resolution:
+        raise NotFoundError("FindingResolution", finding_id)
+
+    resolution.approval_status = "rejected"
+    resolution.rejection_reason = body.rejection_reason
+    finding.status = "open"
+
+    await db.commit()
+    return {"finding_id": finding_id, "status": "open", "approval_status": "rejected"}
 
 
 @router.post("/projects/{project_id}/findings/bulk-status")
@@ -155,6 +299,8 @@ async def ingest_findings(
     quarantined = 0
     finding_repo = FindingRepository(db)
 
+    ingested_finding_ids: set[str] = set()
+
     for finding in request.findings:
         try:
             await finding_repo.create(
@@ -179,6 +325,7 @@ async def ingest_findings(
                 verdict=finding.verdict,
                 rai_eval_type=finding.rai_eval_type,
             )
+            ingested_finding_ids.add(finding.finding_id)
             accepted += 1
         except Exception:
             quarantined += 1
@@ -193,6 +340,24 @@ async def ingest_findings(
         quarantined_count=quarantined,
         normalized_count=accepted if request.options and request.options.normalize_on_ingest else 0,
     )
+
+    # Rescan auto-approval: for each project in the batch, check pending rescan resolutions
+    project_ids = {f.project_id for f in request.findings}
+    res_repo = FindingResolutionRepository(db)
+    now = datetime.now(timezone.utc)
+    for pid in project_ids:
+        pending = await res_repo.get_pending_rescan(pid)
+        for resolution in pending:
+            # If the finding is absent from this rescan batch → fix is confirmed
+            if resolution.finding_id not in ingested_finding_ids:
+                resolution.approval_status = "auto_approved"
+                resolution.approved_by = "rescan"
+                resolution.approved_at = now
+                # Resolve the parent finding
+                parent = await finding_repo.get(resolution.finding_id)
+                if parent:
+                    parent.status = "resolved"
+                    parent.resolved_at = now
 
     # Enqueue normalization job if requested
     job_id = None

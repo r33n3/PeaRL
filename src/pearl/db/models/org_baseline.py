@@ -10,10 +10,14 @@ class OrgBaselineRow(Base, TimestampMixin):
     __tablename__ = "org_baselines"
 
     baseline_id: Mapped[str] = mapped_column(String(128), primary_key=True)
-    project_id: Mapped[str] = mapped_column(String(128), ForeignKey("projects.project_id"), nullable=False, index=True)
+    project_id: Mapped[str | None] = mapped_column(String(128), ForeignKey("projects.project_id"), nullable=True, index=True)
     org_name: Mapped[str] = mapped_column(String(200), nullable=False)
     defaults: Mapped[dict] = mapped_column(JSON, nullable=False)
     environment_defaults: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     integrity: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     schema_version: Mapped[str] = mapped_column(String(20), nullable=False, default="1.1")
     org_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    # BU-level baseline: bu_id set + project_id=NULL means this row is a BU override
+    bu_id: Mapped[str | None] = mapped_column(
+        String(128), ForeignKey("business_units.bu_id"), nullable=True, index=True
+    )

@@ -27,6 +27,7 @@ SANDBOX_TO_DEV = {
     "target_environment": "dev",
     "rules": [
         _rule(GateRuleType.PROJECT_REGISTERED, "Project must be registered in PeaRL"),
+        _rule(GateRuleType.CLAUDE_MD_GOVERNANCE_PRESENT, "PeaRL governance block must be present and confirmed in CLAUDE.md"),
         _rule(GateRuleType.ORG_BASELINE_ATTACHED, "Organization security baseline must be attached"),
         _rule(GateRuleType.APP_SPEC_DEFINED, "Application specification must be defined"),
         _rule(GateRuleType.NO_HARDCODED_SECRETS, "No hardcoded secrets in codebase"),
@@ -171,3 +172,102 @@ async def seed_default_gates(session) -> int:
         )
 
     return created
+
+
+async def seed_demo_data(session) -> None:
+    """Seed DEMO org baseline + Demo-BU1 + Demo-BU2 (idempotent)."""
+    from sqlalchemy import select
+    from pearl.db.models.org_baseline import OrgBaselineRow
+    from pearl.db.models.business_unit import BusinessUnitRow
+    from pearl.db.models.org import OrgRow
+    from pearl.scanning.baseline_package import ESSENTIAL_BASELINE
+
+    # Seed the default org (required FK for BUs and baselines)
+    existing_org = (await session.execute(
+        select(OrgRow).where(OrgRow.org_id == "org_default")
+    )).scalar_one_or_none()
+    if not existing_org:
+        session.add(OrgRow(
+            org_id="org_default",
+            name="DEMO",
+            slug="demo",
+            settings={},
+        ))
+        await session.flush()
+
+    # Rename any existing org-wide baseline to "DEMO" (fixes "benderbox dev org" display)
+    org_wide = await session.execute(
+        select(OrgBaselineRow)
+        .where(OrgBaselineRow.project_id.is_(None))
+        .where(OrgBaselineRow.bu_id.is_(None))
+        .limit(1)
+    )
+    existing_org = org_wide.scalar_one_or_none()
+    if existing_org and existing_org.org_name != "DEMO":
+        existing_org.org_name = "DEMO"
+        return  # already have an org baseline, just renamed it
+
+    # Seed org-wide DEMO baseline if absent
+    existing_baseline = (await session.execute(
+        select(OrgBaselineRow).where(OrgBaselineRow.baseline_id == "orgb_demo")
+    )).scalar_one_or_none()
+
+    if not existing_baseline:
+        demo_baseline = OrgBaselineRow(
+            baseline_id="orgb_demo",
+            project_id=None,
+            bu_id=None,
+            org_id="org_default",
+            org_name="DEMO",
+            defaults=ESSENTIAL_BASELINE["defaults"],
+            schema_version="1.1",
+        )
+        session.add(demo_baseline)
+
+    # Seed Demo-BU1 (inherits org — no custom baseline row)
+    bu1 = (await session.execute(
+        select(BusinessUnitRow).where(BusinessUnitRow.bu_id == "bu_demo_1")
+    )).scalar_one_or_none()
+    if not bu1:
+        session.add(BusinessUnitRow(
+            bu_id="bu_demo_1",
+            org_id="org_default",
+            name="Demo-BU1",
+            description="Primary business unit — inherits DEMO org baseline",
+            framework_selections=["aiuc1"],
+            additional_guardrails={},
+        ))
+
+    # Seed Demo-BU2 (custom baseline with stricter security domain)
+    bu2 = (await session.execute(
+        select(BusinessUnitRow).where(BusinessUnitRow.bu_id == "bu_demo_2")
+    )).scalar_one_or_none()
+    if not bu2:
+        session.add(BusinessUnitRow(
+            bu_id="bu_demo_2",
+            org_id="org_default",
+            name="Demo-BU2",
+            description="Subsidiary business unit — custom security baseline",
+            framework_selections=["aiuc1", "owasp_llm"],
+            additional_guardrails={},
+        ))
+
+    # Seed Demo-BU2 custom baseline (all security controls enabled)
+    existing_bu2_baseline = (await session.execute(
+        select(OrgBaselineRow).where(OrgBaselineRow.baseline_id == "orgb_demo_bu2")
+    )).scalar_one_or_none()
+    if not existing_bu2_baseline:
+        import copy
+        bu2_defaults = copy.deepcopy(ESSENTIAL_BASELINE["defaults"])
+        # Tighten security domain — enable all B controls
+        if "security" in bu2_defaults:
+            bu2_defaults["security"] = {k: True for k in bu2_defaults["security"]}
+        session.add(OrgBaselineRow(
+            baseline_id="orgb_demo_bu2",
+            project_id=None,
+            bu_id="bu_demo_2",
+            org_id="org_default",
+            org_name="DEMO",
+            defaults=bu2_defaults,
+            schema_version="1.1",
+        ))

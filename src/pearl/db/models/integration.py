@@ -14,10 +14,10 @@ class IntegrationEndpointRow(Base, TimestampMixin):
     __tablename__ = "integration_endpoints"
 
     endpoint_id: Mapped[str] = mapped_column(String(128), primary_key=True)
-    project_id: Mapped[str] = mapped_column(
+    project_id: Mapped[str | None] = mapped_column(
         String(128),
         ForeignKey("projects.project_id"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)

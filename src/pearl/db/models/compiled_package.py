@@ -14,4 +14,5 @@ class CompiledPackageRow(Base, TimestampMixin):
     environment: Mapped[str] = mapped_column(String(50), nullable=False)
     package_data: Mapped[dict] = mapped_column(JSON, nullable=False)
     integrity: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    integrity_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
     schema_version: Mapped[str] = mapped_column(String(20), nullable=False, default="1.1")

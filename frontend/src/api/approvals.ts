@@ -113,6 +113,29 @@ export function useDecideException() {
   });
 }
 
+export function useProjectExceptions(projectId?: string) {
+  return useQuery({
+    queryKey: ["exceptions", "project", projectId],
+    queryFn: () => apiFetch<any[]>(`/projects/${projectId}/exceptions`),
+    enabled: !!projectId,
+  });
+}
+
+export function useRevokeException() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ exceptionId, revokedBy, reason }: { exceptionId: string; revokedBy: string; reason?: string }) =>
+      apiFetch(`/exceptions/${exceptionId}/revoke`, {
+        method: "POST",
+        body: JSON.stringify({ revoked_by: revokedBy, reason: reason ?? "" }),
+      }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["exceptions"] });
+      qc.invalidateQueries({ queryKey: ["promotion"] });
+    },
+  });
+}
+
 export function usePendingApprovalsByType(requestType?: string, projectId?: string) {
   const query = usePendingApprovals(projectId);
   return {

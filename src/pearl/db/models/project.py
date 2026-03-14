@@ -1,6 +1,6 @@
 """Project table."""
 
-from sqlalchemy import Boolean, ForeignKey, String, Text
+from sqlalchemy import JSON, Boolean, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pearl.db.base import Base, TimestampMixin
@@ -21,3 +21,6 @@ class ProjectRow(Base, TimestampMixin):
     bu_id: Mapped[str | None] = mapped_column(
         String(128), ForeignKey("business_units.bu_id"), nullable=True, index=True
     )
+    current_environment: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    claude_md_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    tags: Mapped[list | None] = mapped_column(JSON, nullable=True)

@@ -17,6 +17,36 @@ class IntegrationEndpointRepository(BaseRepository):
     async def list_by_project(self, project_id: str) -> list[IntegrationEndpointRow]:
         return await self.list_by_field("project_id", project_id)
 
+    async def list_org_wide(self) -> list[IntegrationEndpointRow]:
+        """List all org-level integrations (project_id IS NULL)."""
+        stmt = select(IntegrationEndpointRow).where(
+            IntegrationEndpointRow.project_id.is_(None)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_org_by_name(self, name: str) -> IntegrationEndpointRow | None:
+        """Find an org-level endpoint by name."""
+        stmt = select(IntegrationEndpointRow).where(
+            and_(
+                IntegrationEndpointRow.project_id.is_(None),
+                IntegrationEndpointRow.name == name,
+            )
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_org_by_adapter_type(self, adapter_type: str) -> IntegrationEndpointRow | None:
+        """Find an org-level endpoint by adapter_type (for singleton configs like routing_config)."""
+        stmt = select(IntegrationEndpointRow).where(
+            and_(
+                IntegrationEndpointRow.project_id.is_(None),
+                IntegrationEndpointRow.adapter_type == adapter_type,
+            )
+        ).limit(1)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def list_sources(self, project_id: str) -> list[IntegrationEndpointRow]:
         """List enabled source and bidirectional endpoints for a project."""
         stmt = select(IntegrationEndpointRow).where(

@@ -67,3 +67,4 @@ class ApplicationSpec(BaseModel):
     tests: dict[str, Any] | None = None
     approvals: dict[str, Any] | None = None
     integrity: Integrity | None = None
+    policy_scope_exclusions: list[str] | None = None

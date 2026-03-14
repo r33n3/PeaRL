@@ -34,14 +34,17 @@ async def get_current_user(request: Request) -> dict:
 
     user = getattr(request.state, "user", {})
 
-    # stripped: governance bypass documentation removed per security_research/SECURITY_HARDENING.md L5
-    if settings.local_mode and (not user or user.get("sub") in ("anonymous", "")):
-        roles = ["operator"]
-        if settings.local_reviewer_mode:
-            roles = list(REVIEWER_ROLES) + ["operator"]
+    # Local reviewer mode: grant reviewer roles without full local_mode (dev/demo use only)
+    if settings.local_reviewer_mode and (not user or user.get("sub") in ("anonymous", "")):
         return {
             "sub": "local_admin",
-            "roles": roles,
+            "roles": list(REVIEWER_ROLES) + ["operator"],
+            "scopes": ["*"],
+        }
+    if settings.local_mode and (not user or user.get("sub") in ("anonymous", "")):
+        return {
+            "sub": "local_admin",
+            "roles": ["operator"],
             "scopes": ["*"],
         }
 

@@ -85,3 +85,65 @@ export function useBURequirements(buId?: string) {
     enabled: !!buId,
   });
 }
+
+export interface BUBaselineResponse {
+  bu_id: string;
+  inherits_org: boolean;
+  baseline: {
+    baseline_id: string;
+    org_name: string;
+    defaults: Record<string, Record<string, unknown>>;
+    schema_version: string;
+  } | null;
+  org_baseline_id?: string;
+}
+
+export function useBUBaseline(buId?: string) {
+  return useQuery({
+    queryKey: ["bu-baseline", buId],
+    queryFn: () => apiFetch<BUBaselineResponse>(`/business-units/${buId}/baseline`),
+    enabled: !!buId,
+  });
+}
+
+export function useSaveBUBaseline() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ buId, data }: { buId: string; data: Record<string, unknown> }) =>
+      apiFetch(`/business-units/${buId}/baseline`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: (_data, { buId }) => {
+      qc.invalidateQueries({ queryKey: ["bu-baseline", buId] });
+      qc.invalidateQueries({ queryKey: ["dashboard", "policy", "baselines"] });
+    },
+  });
+}
+
+export function useDeleteBUBaseline() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (buId: string) =>
+      apiFetch(`/business-units/${buId}/baseline`, { method: "DELETE" }),
+    onSuccess: (_data, buId) => {
+      qc.invalidateQueries({ queryKey: ["bu-baseline", buId] });
+      qc.invalidateQueries({ queryKey: ["dashboard", "policy", "baselines"] });
+    },
+  });
+}
+
+export function useAssignProjectToBU() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, buId }: { projectId: string; buId: string | null }) =>
+      apiFetch(`/projects/${projectId}/bu`, {
+        method: "PATCH",
+        body: JSON.stringify({ bu_id: buId }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["dashboard", "projects"] });
+      qc.invalidateQueries({ queryKey: ["dashboard", "policy", "baselines"] });
+    },
+  });
+}

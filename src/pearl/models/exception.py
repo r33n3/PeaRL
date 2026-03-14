@@ -1,6 +1,7 @@
 """Pydantic model for ExceptionRecord entity."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -12,6 +13,8 @@ class ExceptionScope(BaseModel):
     environment: Environment | None = None
     components: list[str] | None = None
     controls: list[str] | None = None
+    finding_ids: list[str] | None = None
+    policy_ids: list[str] | None = None
 
 
 class ExceptionRecord(BaseModel):
@@ -30,3 +33,10 @@ class ExceptionRecord(BaseModel):
     expires_at: datetime | None = None
     review_cadence_days: int | None = Field(None, ge=1)
     trace_id: str = Field(..., min_length=8, max_length=128)
+    # Governance enrichment
+    exception_type: Literal["exception", "acceptance"] = "exception"
+    title: str | None = None
+    risk_rating: Literal["low", "moderate", "high", "critical"] | None = None
+    remediation_plan: str | None = None
+    board_briefing: str | None = None
+    finding_ids: list[str] | None = None

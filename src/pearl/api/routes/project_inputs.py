@@ -30,9 +30,9 @@ async def get_org_baseline(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Fetch the org baseline for a project."""
-    await _ensure_project_exists(project_id, db)
+    project = await _ensure_project_exists(project_id, db)
     repo = OrgBaselineRepository(db)
-    row = await repo.get_by_project(project_id)
+    row = await repo.get_for_project(project_id, bu_id=getattr(project, "bu_id", None))
     if not row:
         raise NotFoundError("OrgBaseline", project_id)
     return {

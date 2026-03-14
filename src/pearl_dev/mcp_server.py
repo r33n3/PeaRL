@@ -260,7 +260,7 @@ class PearlDevMCPServer:
             return {"error": f"Failed to parse .pearl.yaml: {exc}"}
 
         project_id = config.get("project_id")
-        api_url = config.get("api_url", "http://localhost:8081/api/v1").rstrip("/")
+        api_url = config.get("api_url", "http://localhost:8080/api/v1").rstrip("/")
         if not project_id:
             return {"error": ".pearl.yaml is missing 'project_id'"}
 

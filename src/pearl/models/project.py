@@ -20,6 +20,7 @@ class Project(BaseModel):
     external_exposure: ExternalExposure
     ai_enabled: bool
     bu_id: str | None = None
+    tags: list[str] | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
     traceability: TraceabilityRef | None = None

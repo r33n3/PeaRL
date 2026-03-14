@@ -4,6 +4,10 @@ import {
   useFindings,
   useUpdateFindingStatus,
   useBulkUpdateFindingStatus,
+  useResolveFinding,
+  useGetResolution,
+  useApproveResolution,
+  useRejectResolution,
 } from "@/api/findings";
 import { useProjectOverview } from "@/api/dashboard";
 import { VaultCard } from "@/components/shared/VaultCard";
@@ -30,8 +34,13 @@ import {
   Lock,
   AlertCircle,
   Loader2,
+  Clock,
+  ThumbsUp,
+  ThumbsDown,
+  GitCommit,
+  ExternalLink,
 } from "lucide-react";
-import type { Severity, FindingStatus, Finding } from "@/lib/types";
+import type { Severity, FindingStatus, Finding, FindingResolution } from "@/lib/types";
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
@@ -43,6 +52,7 @@ const PAGE_SIZES = [20, 50, 100];
 const STATUSES: { value: FindingStatus | "all"; label: string }[] = [
   { value: "all", label: "All Statuses" },
   { value: "open", label: "Open" },
+  { value: "pending_resolution", label: "Pending Resolution" },
   { value: "resolved", label: "Resolved" },
   { value: "false_positive", label: "False Positive" },
   { value: "accepted", label: "Accepted" },
@@ -51,6 +61,7 @@ const STATUSES: { value: FindingStatus | "all"; label: string }[] = [
 
 const FINDING_STATUS_COLORS: Record<string, string> = {
   open: "bg-dried-blood/20 text-dried-blood-bright border border-dried-blood/40",
+  pending_resolution: "bg-amber-500/15 text-amber-400 border border-amber-500/30",
   resolved: "bg-cold-teal/20 text-cold-teal border border-cold-teal/30",
   false_positive: "bg-bone-dim/20 text-bone-muted border border-bone-dim/40",
   accepted: "bg-clinical-cyan/10 text-clinical-cyan border border-clinical-cyan/20",
@@ -68,7 +79,7 @@ const SEVERITY_CARD_ACCENT: Record<Severity, string> = {
 
 /** Map severity/category to which gate transitions it blocks */
 function getGateBlockers(finding: Finding): string[] {
-  if (finding.status !== "open") return [];
+  if (finding.status !== "open" && finding.status !== "pending_resolution") return [];
   const blockers: string[] = [];
   const title = (finding.title || "").toLowerCase();
 
@@ -94,11 +105,14 @@ function getGateBlockers(finding: Finding): string[] {
 /* ------------------------------------------------------------------ */
 
 function FindingStatusBadge({ status }: { status: string }) {
+  const label =
+    status === "pending_resolution" ? "Pending Approval" : status.replace(/_/g, " ");
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-medium ${FINDING_STATUS_COLORS[status] ?? FINDING_STATUS_COLORS.open}`}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-medium ${FINDING_STATUS_COLORS[status] ?? FINDING_STATUS_COLORS.open}`}
     >
-      {status.replace(/_/g, " ")}
+      {status === "pending_resolution" && <Clock size={10} />}
+      {label}
     </span>
   );
 }
@@ -123,6 +137,330 @@ function ComplianceTag({ framework, refs }: { framework: string; refs: string[] 
           {r}
         </MonoText>
       ))}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Fix Evidence Block (read-only)                                     */
+/* ------------------------------------------------------------------ */
+
+function EvidenceBlock({
+  resolution,
+  showApprovalLine = false,
+}: {
+  resolution: FindingResolution;
+  showApprovalLine?: boolean;
+}) {
+  return (
+    <div className="bg-wet-stone rounded border border-slate-border p-4 space-y-3">
+      <h4 className="vault-heading text-[10px] text-bone-dim flex items-center gap-1">
+        <ShieldCheck size={10} /> Fix Evidence
+      </h4>
+      {resolution.evidence_notes && (
+        <p className="text-sm text-bone-muted leading-relaxed">{resolution.evidence_notes}</p>
+      )}
+      <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+        {resolution.commit_sha && (
+          <div className="flex items-center gap-1.5 text-bone-dim">
+            <GitCommit size={11} className="text-cold-teal" />
+            <span className="truncate">{resolution.commit_sha}</span>
+          </div>
+        )}
+        {resolution.pr_url && (
+          <a
+            href={resolution.pr_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 text-clinical-cyan hover:underline truncate"
+          >
+            <ExternalLink size={11} /> PR / MR
+          </a>
+        )}
+        {resolution.test_run_id && (
+          <div className="flex items-center gap-1.5 text-bone-dim">
+            <span className="text-[10px] uppercase tracking-wider text-bone-dim/60">Test Run:</span>
+            <span>{resolution.test_run_id}</span>
+          </div>
+        )}
+        {resolution.diff_summary && (
+          <div className="col-span-2">
+            <span className="text-[10px] uppercase tracking-wider text-bone-dim/60">Diff:</span>
+            <p className="text-bone-muted mt-0.5">{resolution.diff_summary}</p>
+          </div>
+        )}
+      </div>
+      <div className="flex items-center gap-2 text-[10px] font-mono text-bone-dim pt-1 border-t border-slate-border">
+        <span>Submitted by {resolution.resolved_by}</span>
+        <span>·</span>
+        <span>{resolution.approval_mode === "rescan" ? "awaiting rescan" : "awaiting human review"}</span>
+        {resolution.created_at && (
+          <>
+            <span>·</span>
+            <span>{formatTimestamp(resolution.created_at)}</span>
+          </>
+        )}
+      </div>
+      {showApprovalLine && resolution.approval_status !== "pending" && (
+        <div className="flex items-center gap-2 text-[10px] font-mono pt-1 border-t border-slate-border">
+          {resolution.approval_status === "approved" && (
+            <span className="text-cold-teal">
+              ✓ Approved by {resolution.approved_by} on {formatTimestamp(resolution.approved_at)}
+            </span>
+          )}
+          {resolution.approval_status === "auto_approved" && (
+            <span className="text-cold-teal">
+              ✓ Auto-approved by rescan on {formatTimestamp(resolution.approved_at)}
+            </span>
+          )}
+          {resolution.approval_status === "rejected" && (
+            <span className="text-dried-blood-bright">
+              ✗ Rejected: {resolution.rejection_reason}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Inline Resolve Form                                                */
+/* ------------------------------------------------------------------ */
+
+function ResolveForm({
+  finding,
+  projectId,
+  onCancel,
+}: {
+  finding: Finding;
+  projectId: string;
+  onCancel: () => void;
+}) {
+  const [approvalMode, setApprovalMode] = useState<"human" | "rescan">("human");
+  const [evidenceNotes, setEvidenceNotes] = useState("");
+  const [commitSha, setCommitSha] = useState("");
+  const [prUrl, setPrUrl] = useState("");
+  const [testRunId, setTestRunId] = useState("");
+  const [diffSummary, setDiffSummary] = useState("");
+
+  const resolve = useResolveFinding();
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    resolve.mutate(
+      {
+        projectId,
+        findingId: finding.finding_id,
+        approval_mode: approvalMode,
+        evidence_notes: evidenceNotes || undefined,
+        commit_sha: commitSha || undefined,
+        pr_url: prUrl || undefined,
+        test_run_id: testRunId || undefined,
+        diff_summary: diffSummary || undefined,
+      },
+      { onSuccess: onCancel }
+    );
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-3 mt-4 pt-4 border-t border-slate-border">
+      <h4 className="vault-heading text-[10px] text-bone-dim flex items-center gap-1">
+        <ShieldCheck size={10} /> Submit Fix Evidence
+      </h4>
+
+      <div>
+        <label className="block text-[10px] font-mono text-bone-dim mb-1 uppercase tracking-wider">
+          Evidence Notes
+        </label>
+        <textarea
+          value={evidenceNotes}
+          onChange={(e) => setEvidenceNotes(e.target.value)}
+          rows={3}
+          placeholder="Describe what was fixed and how..."
+          className="input-vault w-full text-xs resize-none"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-[10px] font-mono text-bone-dim mb-1 uppercase tracking-wider">
+            Commit SHA <span className="text-bone-dim/50">(optional)</span>
+          </label>
+          <input
+            type="text"
+            value={commitSha}
+            onChange={(e) => setCommitSha(e.target.value)}
+            placeholder="abc123f"
+            className="input-vault w-full text-xs"
+          />
+        </div>
+        <div>
+          <label className="block text-[10px] font-mono text-bone-dim mb-1 uppercase tracking-wider">
+            PR / MR URL <span className="text-bone-dim/50">(optional)</span>
+          </label>
+          <input
+            type="url"
+            value={prUrl}
+            onChange={(e) => setPrUrl(e.target.value)}
+            placeholder="https://github.com/org/repo/pull/42"
+            className="input-vault w-full text-xs"
+          />
+        </div>
+        <div>
+          <label className="block text-[10px] font-mono text-bone-dim mb-1 uppercase tracking-wider">
+            Test Run ID <span className="text-bone-dim/50">(optional)</span>
+          </label>
+          <input
+            type="text"
+            value={testRunId}
+            onChange={(e) => setTestRunId(e.target.value)}
+            placeholder="run-12345"
+            className="input-vault w-full text-xs"
+          />
+        </div>
+        <div>
+          <label className="block text-[10px] font-mono text-bone-dim mb-1 uppercase tracking-wider">
+            Diff Summary <span className="text-bone-dim/50">(optional)</span>
+          </label>
+          <input
+            type="text"
+            value={diffSummary}
+            onChange={(e) => setDiffSummary(e.target.value)}
+            placeholder="Short description of the diff"
+            className="input-vault w-full text-xs"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-[10px] font-mono text-bone-dim mb-2 uppercase tracking-wider">
+          Approval Path
+        </label>
+        <div className="flex items-center gap-4">
+          <label className="flex items-center gap-2 cursor-pointer text-xs font-mono text-bone-muted">
+            <input
+              type="radio"
+              name="approval_mode"
+              value="human"
+              checked={approvalMode === "human"}
+              onChange={() => setApprovalMode("human")}
+              className="accent-cold-teal"
+            />
+            Human Review
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer text-xs font-mono text-bone-muted">
+            <input
+              type="radio"
+              name="approval_mode"
+              value="rescan"
+              checked={approvalMode === "rescan"}
+              onChange={() => setApprovalMode("rescan")}
+              className="accent-cold-teal"
+            />
+            Wait for Rescan
+          </label>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 pt-1">
+        <button
+          type="submit"
+          className="btn-teal text-xs py-1 px-3"
+          disabled={resolve.isPending}
+        >
+          {resolve.isPending ? <Loader2 size={12} className="animate-spin" /> : <ShieldCheck size={12} />}
+          Submit Fix Evidence
+        </button>
+        <button
+          type="button"
+          className="btn-ghost text-xs py-1 px-3"
+          onClick={onCancel}
+          disabled={resolve.isPending}
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Reviewer Actions (approve / reject)                                */
+/* ------------------------------------------------------------------ */
+
+function ReviewerActions({
+  finding,
+  projectId,
+}: {
+  finding: Finding;
+  projectId: string;
+}) {
+  const [rejectReason, setRejectReason] = useState("");
+  const [showRejectInput, setShowRejectInput] = useState(false);
+  const approve = useApproveResolution();
+  const reject = useRejectResolution();
+
+  if (showRejectInput) {
+    return (
+      <div className="space-y-2">
+        <textarea
+          value={rejectReason}
+          onChange={(e) => setRejectReason(e.target.value)}
+          rows={2}
+          placeholder="Reason for rejection..."
+          className="input-vault w-full text-xs resize-none"
+          autoFocus
+        />
+        <div className="flex gap-2">
+          <button
+            className="btn-danger text-xs py-1 px-3"
+            disabled={!rejectReason.trim() || reject.isPending}
+            onClick={() =>
+              reject.mutate({
+                projectId,
+                findingId: finding.finding_id,
+                decided_by: "reviewer",
+                rejection_reason: rejectReason,
+              })
+            }
+          >
+            {reject.isPending ? <Loader2 size={12} className="animate-spin" /> : <ThumbsDown size={12} />}
+            Confirm Reject
+          </button>
+          <button
+            className="btn-ghost text-xs py-1 px-3"
+            onClick={() => setShowRejectInput(false)}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex gap-2">
+      <button
+        className="btn-teal text-xs py-1 px-3"
+        disabled={approve.isPending}
+        onClick={() =>
+          approve.mutate({
+            projectId,
+            findingId: finding.finding_id,
+            decided_by: "reviewer",
+          })
+        }
+      >
+        {approve.isPending ? <Loader2 size={12} className="animate-spin" /> : <ThumbsUp size={12} />}
+        Approve
+      </button>
+      <button
+        className="btn-danger text-xs py-1 px-3"
+        onClick={() => setShowRejectInput(true)}
+      >
+        <ThumbsDown size={12} /> Reject
+      </button>
     </div>
   );
 }
@@ -212,6 +550,7 @@ function BlockerBanner({
 
 function FindingCard({
   finding,
+  projectId,
   isExpanded,
   isSelected,
   onToggleExpand,
@@ -220,6 +559,7 @@ function FindingCard({
   isUpdating,
 }: {
   finding: Finding;
+  projectId: string;
   isExpanded: boolean;
   isSelected: boolean;
   onToggleExpand: () => void;
@@ -227,7 +567,14 @@ function FindingCard({
   onStatusChange: (status: FindingStatus) => void;
   isUpdating: boolean;
 }) {
+  const [showResolveForm, setShowResolveForm] = useState(false);
   const gateBlockers = getGateBlockers(finding);
+
+  // Fetch resolution only when expanded and relevant
+  const needsResolution =
+    isExpanded &&
+    (finding.status === "pending_resolution" || finding.status === "resolved");
+  const { data: resolution } = useGetResolution(finding.finding_id, projectId, needsResolution);
 
   return (
     <VaultCard
@@ -354,31 +701,64 @@ function FindingCard({
             </div>
           )}
 
-          <div>
-            <h4 className="vault-heading text-[10px] mb-2 text-bone-dim">Actions</h4>
-            <div className="flex flex-wrap gap-2">
-              {finding.status !== "resolved" && (
-                <button className="btn-teal text-xs py-1 px-3" disabled={isUpdating} onClick={() => onStatusChange("resolved")}>
-                  <ShieldCheck size={12} /> Resolve
-                </button>
-              )}
-              {finding.status !== "false_positive" && (
-                <button className="btn-ghost text-xs py-1 px-3" disabled={isUpdating} onClick={() => onStatusChange("false_positive")}>
-                  <ShieldX size={12} /> False Positive
-                </button>
-              )}
-              {finding.status !== "accepted" && (
-                <button className="btn-ghost text-xs py-1 px-3" disabled={isUpdating} onClick={() => onStatusChange("accepted")}>
-                  <ShieldAlert size={12} /> Accept Risk
-                </button>
-              )}
-              {finding.status !== "open" && (
-                <button className="btn-danger text-xs py-1 px-3" disabled={isUpdating} onClick={() => onStatusChange("open")}>
-                  <RotateCcw size={12} /> Reopen
-                </button>
+          {/* Resolution evidence block — pending or resolved */}
+          {resolution && (finding.status === "pending_resolution" || finding.status === "resolved") && (
+            <EvidenceBlock
+              resolution={resolution}
+              showApprovalLine={finding.status === "resolved"}
+            />
+          )}
+
+          {/* Reviewer actions for pending_resolution */}
+          {finding.status === "pending_resolution" && resolution && (
+            <div>
+              <h4 className="vault-heading text-[10px] mb-2 text-bone-dim">Reviewer Actions</h4>
+              <ReviewerActions finding={finding} projectId={projectId} />
+            </div>
+          )}
+
+          {/* Actions */}
+          {finding.status !== "pending_resolution" && finding.status !== "resolved" && (
+            <div>
+              <h4 className="vault-heading text-[10px] mb-2 text-bone-dim">Actions</h4>
+              {showResolveForm ? (
+                <ResolveForm
+                  finding={finding}
+                  projectId={projectId}
+                  onCancel={() => setShowResolveForm(false)}
+                />
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    className="btn-teal text-xs py-1 px-3"
+                    disabled={isUpdating}
+                    onClick={() => setShowResolveForm(true)}
+                  >
+                    <ShieldCheck size={12} /> Resolve
+                  </button>
+                  {finding.status !== "false_positive" && (
+                    <button className="btn-ghost text-xs py-1 px-3" disabled={isUpdating} onClick={() => onStatusChange("false_positive")}>
+                      <ShieldX size={12} /> False Positive
+                    </button>
+                  )}
+                  {finding.status !== "accepted" && (
+                    <button className="btn-ghost text-xs py-1 px-3" disabled={isUpdating} onClick={() => onStatusChange("accepted")}>
+                      <ShieldAlert size={12} /> Accept Risk
+                    </button>
+                  )}
+                </div>
               )}
             </div>
-          </div>
+          )}
+
+          {/* Reopen for resolved/false_positive/accepted/suppressed */}
+          {(finding.status === "resolved" || finding.status === "false_positive" || finding.status === "accepted" || finding.status === "suppressed") && (
+            <div className="pt-2">
+              <button className="btn-danger text-xs py-1 px-3" disabled={isUpdating} onClick={() => onStatusChange("open")}>
+                <RotateCcw size={12} /> Reopen
+              </button>
+            </div>
+          )}
         </div>
       )}
     </VaultCard>
@@ -634,7 +1014,7 @@ export function FindingsPage() {
           <select
             value={filterStatus}
             onChange={(e) => handleStatusFilterChange(e.target.value as FindingStatus | "all")}
-            className="input-vault text-xs py-1 px-2 w-auto min-w-[140px] appearance-none cursor-pointer"
+            className="input-vault text-xs py-1 px-2 w-auto min-w-[160px] appearance-none cursor-pointer"
           >
             {STATUSES.map((s) => (
               <option key={s.value} value={s.value}>{s.label}</option>
@@ -652,7 +1032,6 @@ export function FindingsPage() {
           <span className="text-xs font-mono text-bone-dim">{selectedIds.size} selected</span>
           <div className="flex items-center gap-2 ml-auto">
             <span className="text-xs text-bone-dim font-mono">Mark as:</span>
-            <button className="btn-teal text-xs py-1 px-3" disabled={bulkUpdate.isPending} onClick={() => handleBulkAction("resolved")}>Resolved</button>
             <button className="btn-ghost text-xs py-1 px-3" disabled={bulkUpdate.isPending} onClick={() => handleBulkAction("false_positive")}>False Positive</button>
             <button className="btn-ghost text-xs py-1 px-3" disabled={bulkUpdate.isPending} onClick={() => handleBulkAction("accepted")}>Accept Risk</button>
             <button className="btn-ghost text-xs py-1 px-3" disabled={bulkUpdate.isPending} onClick={() => handleBulkAction("suppressed")}>Suppress</button>
@@ -697,6 +1076,7 @@ export function FindingsPage() {
               >
                 <FindingCard
                   finding={finding}
+                  projectId={projectId!}
                   isExpanded={expandedId === finding.finding_id}
                   isSelected={selectedIds.has(finding.finding_id)}
                   onToggleExpand={() => setExpandedId((prev) => prev === finding.finding_id ? null : finding.finding_id)}

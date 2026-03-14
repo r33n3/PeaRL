@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./client";
-import type { Finding } from "@/lib/types";
+import type { Finding, FindingResolution } from "@/lib/types";
 
 export interface FindingsPage {
   items: Finding[];
@@ -32,6 +32,94 @@ export function useFindings(
         `/projects/${projectId}/findings${qs ? `?${qs}` : ""}`
       ),
     enabled: !!projectId,
+  });
+}
+
+export interface ResolveFindingPayload {
+  projectId: string;
+  findingId: string;
+  approval_mode: "human" | "rescan";
+  evidence_notes?: string;
+  commit_sha?: string;
+  pr_url?: string;
+  test_run_id?: string;
+  diff_summary?: string;
+  resolved_by?: string;
+}
+
+export function useResolveFinding() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, findingId, ...evidence }: ResolveFindingPayload) =>
+      apiFetch(`/projects/${projectId}/findings/${findingId}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "resolved", ...evidence }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["findings"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+export function useGetResolution(findingId: string, projectId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["resolution", findingId],
+    queryFn: () =>
+      apiFetch<FindingResolution>(`/projects/${projectId}/findings/${findingId}/resolution`),
+    enabled: enabled && !!findingId && !!projectId,
+  });
+}
+
+export function useApproveResolution() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      findingId,
+      decided_by,
+      reason,
+    }: {
+      projectId: string;
+      findingId: string;
+      decided_by: string;
+      reason?: string;
+    }) =>
+      apiFetch(`/projects/${projectId}/findings/${findingId}/resolution/approve`, {
+        method: "POST",
+        body: JSON.stringify({ decided_by, reason }),
+      }),
+    onSuccess: (_data, { findingId }) => {
+      qc.invalidateQueries({ queryKey: ["findings"] });
+      qc.invalidateQueries({ queryKey: ["resolution", findingId] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+export function useRejectResolution() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      findingId,
+      decided_by,
+      rejection_reason,
+    }: {
+      projectId: string;
+      findingId: string;
+      decided_by: string;
+      rejection_reason: string;
+    }) =>
+      apiFetch(`/projects/${projectId}/findings/${findingId}/resolution/reject`, {
+        method: "POST",
+        body: JSON.stringify({ decided_by, rejection_reason }),
+      }),
+    onSuccess: (_data, { findingId }) => {
+      qc.invalidateQueries({ queryKey: ["findings"] });
+      qc.invalidateQueries({ queryKey: ["resolution", findingId] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
   });
 }
 

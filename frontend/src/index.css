@@ -196,3 +196,27 @@
     @apply opacity-0 animate-fade-in;
   }
 }
+
+@layer utilities {
+  .pearl-wordart {
+    background: linear-gradient(
+      120deg,
+      #f5f2ee 0%,
+      #d8eff0 20%,
+      #f0edf8 40%,
+      #e8f5ef 60%,
+      #f5f0ea 80%,
+      #f5f2ee 100%
+    );
+    background-size: 300% 300%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: pearl-shimmer 6s ease-in-out infinite;
+  }
+
+  @keyframes pearl-shimmer {
+    0%, 100% { background-position: 0% 50%; }
+    50%       { background-position: 100% 50%; }
+  }
+}

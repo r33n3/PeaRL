@@ -28,6 +28,7 @@ class ClientAuditEventRow(Base, TimestampMixin):
     tool_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     source: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    signature: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
 
 class ClientCostEntryRow(Base, TimestampMixin):

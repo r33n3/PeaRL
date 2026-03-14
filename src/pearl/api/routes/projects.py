@@ -13,6 +13,7 @@ from pearl.dependencies import get_db, get_trace_id
 from pearl.errors.exceptions import ConflictError, NotFoundError, ValidationError
 from pearl.models.common import TraceabilityRef
 from pearl.models.project import Project
+from pearl.repositories.environment_profile_repo import EnvironmentProfileRepository
 from pearl.repositories.project_repo import ProjectRepository
 from pearl.services.id_generator import generate_id
 
@@ -48,6 +49,17 @@ async def create_project(
         schema_version=project.schema_version,
         bu_id=project.bu_id,
     )
+
+    env_repo = EnvironmentProfileRepository(db)
+    await env_repo.create(
+        profile_id=generate_id("envprof_"),
+        project_id=project.project_id,
+        environment="sandbox",
+        delivery_stage="bootstrap",
+        risk_level="low",
+        autonomy_mode="assistive",
+    )
+
     await db.commit()
     return project.model_dump(mode="json", exclude_none=True)
 
@@ -71,6 +83,8 @@ async def get_project(
         business_criticality=row.business_criticality,
         external_exposure=row.external_exposure,
         ai_enabled=row.ai_enabled,
+        bu_id=row.bu_id,
+        tags=getattr(row, "tags", None),
         created_at=row.created_at,
         updated_at=row.updated_at,
     ).model_dump(mode="json", exclude_none=True)
@@ -114,6 +128,44 @@ async def update_project(
     ).model_dump(mode="json", exclude_none=True)
 
 
+@router.patch("/projects/{project_id}/bu")
+async def assign_project_to_bu(
+    project_id: str,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Assign (or unassign) a project to a business unit."""
+    repo = ProjectRepository(db)
+    row = await repo.get(project_id)
+    if not row:
+        raise NotFoundError("Project", project_id)
+
+    bu_id = body.get("bu_id")  # None = unassign
+    row.bu_id = bu_id
+    await db.commit()
+    return {"project_id": project_id, "bu_id": bu_id}
+
+
+@router.patch("/projects/{project_id}/tags")
+async def update_project_tags(
+    project_id: str,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Set the tags list for a project (replaces existing tags)."""
+    repo = ProjectRepository(db)
+    row = await repo.get(project_id)
+    if not row:
+        raise NotFoundError("Project", project_id)
+
+    tags = body.get("tags", [])
+    if not isinstance(tags, list):
+        raise ValidationError("tags must be a list of strings")
+    row.tags = [str(t) for t in tags]
+    await db.commit()
+    return {"project_id": project_id, "tags": row.tags}
+
+
 @router.get("/projects/{project_id}/pearl.yaml", response_class=PlainTextResponse)
 async def get_pearl_yaml(
     project_id: str,
@@ -125,6 +177,8 @@ async def get_pearl_yaml(
     if not row:
         raise NotFoundError("Project", project_id)
 
+    from pearl.config import settings
+
     description_line = f"description: {row.description}" if row.description else "# description: optional"
     bu_line = f"bu_id: {row.bu_id}" if row.bu_id else "# bu_id: optional — assign to a business unit"
     ai_enabled = str(row.ai_enabled).lower()
@@ -134,7 +188,7 @@ async def get_pearl_yaml(
 # Claude Code will auto-register this project on the first prompt.
 
 project_id: {row.project_id}
-api_url: http://localhost:8081/api/v1
+api_url: {settings.effective_public_api_url}
 
 # Registration fields — used for auto-registration if project is not yet in PeaRL
 name: {row.name}
@@ -181,7 +235,7 @@ async def get_mcp_json(
         # src/pearl/api/routes/projects.py → go up 4 levels to reach src/
         src_path = str(Path(__file__).resolve().parents[3])
 
-    api_url = f"http://localhost:{settings.port}/api/v1"
+    api_url = settings.effective_public_api_url
 
     mcp_config = {
         "mcpServers": {
@@ -314,4 +368,46 @@ async def get_project_summary(
         "findings_by_severity": findings_by_severity,
         "promotion_readiness": promotion,
         "fairness": fairness,
+    }
+
+
+# Governance block text — written to CLAUDE.md during project onboarding
+PEARL_GOVERNANCE_BLOCK = """
+---
+## PeaRL Governance
+
+All environment promotions and elevation requests **must go through PeaRL**.
+
+- Verify `./pearl/` symlink exists before any elevation action
+- Use PeaRL MCP tools (`pearl_check_action`, `pearl_request_approval`) — never bypass or self-approve a gate
+- If a gate blocks you, call `pearl_request_approval` and stop
+- `PEARL_LOCAL=1` and similar bypass flags must never be set
+- No shutting down, restarting, or modifying the PeaRL backend from within this project
+"""
+
+
+@router.post("/projects/{project_id}/confirm-claude-md", status_code=200)
+async def confirm_claude_md(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Confirm that the PeaRL governance block has been written to CLAUDE.md.
+
+    Call this after writing the governance block returned in this response
+    to the project's CLAUDE.md. Sets claude_md_verified=True on the project,
+    which satisfies the CLAUDE_MD_GOVERNANCE_PRESENT gate rule.
+    """
+    repo = ProjectRepository(db)
+    row = await repo.get(project_id)
+    if not row:
+        raise NotFoundError("Project", project_id)
+
+    row.claude_md_verified = True
+    await db.commit()
+
+    return {
+        "project_id": project_id,
+        "claude_md_verified": True,
+        "governance_block": PEARL_GOVERNANCE_BLOCK.strip(),
+        "message": "Governance block confirmed. Gate rule CLAUDE_MD_GOVERNANCE_PRESENT will now pass.",
     }

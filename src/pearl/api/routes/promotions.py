@@ -11,6 +11,7 @@ from pearl.errors.exceptions import ValidationError
 from pearl.models.enums import ApprovalDecisionValue, ApprovalRequestType, ApprovalStatus, PromotionRequestStatus
 from pearl.repositories.approval_repo import ApprovalDecisionRepository, ApprovalRequestRepository
 from pearl.repositories.exception_repo import ExceptionRepository
+from pearl.repositories.environment_profile_repo import EnvironmentProfileRepository
 from pearl.repositories.promotion_repo import (
     PromotionEvaluationRepository,
     PromotionGateRepository,
@@ -183,6 +184,20 @@ async def request_promotion(
             promoted_at=datetime.now(timezone.utc),
             details={"auto_approved": True, "approval_request_id": approval_id},
         )
+
+        env_repo = EnvironmentProfileRepository(db)
+        env_profile = await env_repo.get_by_project(project_id)
+        if env_profile:
+            env_profile.environment = evaluation.target_environment
+        else:
+            await env_repo.create(
+                profile_id=generate_id("envprof_"),
+                project_id=project_id,
+                environment=evaluation.target_environment,
+                delivery_stage="bootstrap",
+                risk_level="low",
+                autonomy_mode="assistive",
+            )
 
         status = PromotionRequestStatus.APPROVED
         await db.commit()
@@ -455,11 +470,32 @@ async def rollback_promotion(
     """Roll back a promotion for a project. Requires admin role."""
     from fastapi import Request
     from pearl.errors.exceptions import AuthorizationError
+    from pearl.repositories.finding_repo import FindingRepository
+    from pearl.services.id_generator import generate_id as _gen_id
 
-    # Require admin role
+    # Require admin role — emit BA-06 finding before blocking
     if request:
         user = getattr(request.state, "user", {})
         if "admin" not in user.get("roles", []):
+            # BA-06: unauthorized promotion attempt
+            _from_env = body.get("from_environment", "unknown")
+            _find_repo = FindingRepository(db)
+            await _find_repo.create(
+                finding_id=_gen_id("find_"),
+                project_id=project_id,
+                environment=_from_env,
+                category="governance",
+                severity="high",
+                title="Unauthorized Promotion Attempt (BA-06)",
+                source={"system": "pearl-promotion-gate"},
+                full_data={"attempted_by": user.get("sub", "unknown"), "roles": user.get("roles", [])},
+                normalized=True,
+                detected_at=datetime.now(timezone.utc),
+                anomaly_code="BA-06",
+                status="open",
+                schema_version="1.1",
+            )
+            await db.commit()
             raise AuthorizationError("Admin role required for rollback")
 
     from_environment = body.get("from_environment")
@@ -473,13 +509,14 @@ async def rollback_promotion(
     now = datetime.now(timezone.utc)
 
     history_repo = PromotionHistoryRepository(db)
+    promoted_by = getattr(getattr(request, "state", None), "user", {}).get("sub", "system") if request else "system"
     await history_repo.create(
         history_id=history_id,
         project_id=project_id,
         source_environment=from_environment,
         target_environment="rollback",
         evaluation_id="rollback",
-        promoted_by=getattr(getattr(request, "state", None), "user", {}).get("sub", "system") if request else "system",
+        promoted_by=promoted_by,
         promoted_at=now,
         details={
             "type": "rollback",
@@ -487,7 +524,25 @@ async def rollback_promotion(
             "trace_id": trace_id,
         },
     )
+
+    # Update current_environment on ProjectRow to reflect demotion
+    from pearl.repositories.project_repo import ProjectRepository as _ProjRepo
+    _proj = await _ProjRepo(db).get(project_id)
+    if _proj:
+        await _ProjRepo(db).update(_proj, current_environment="rollback")
+
     await db.commit()
+
+    # Emit SSE demotion event
+    if request:
+        _redis = getattr(request.app.state, "redis", None)
+        await publish_event(_redis, "auto_demotion", {
+            "project_id": project_id,
+            "history_id": history_id,
+            "type": "rollback",
+            "from_environment": from_environment,
+            "triggered_by": promoted_by,
+        })
 
     return {
         "history_id": history_id,

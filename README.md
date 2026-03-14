@@ -34,49 +34,126 @@ PeaRL sits between your AI agents and production, enforcing governance gates, ap
 
 ---
 
-## Quickstart (Local Dev)
+## Quickstart
 
 ### Prerequisites
-- Python 3.12+
-- Node 20+ (frontend only)
-- Docker + Docker Compose
+- Docker Desktop with WSL 2 integration enabled (Settings → Resources → WSL Integration)
+- Python 3.12+ and Node 20+ only needed for [local dev mode](#local-dev-mode-no-docker)
 
-### 1. Clone and install
+---
+
+### Option A — Full stack (Docker Compose, recommended)
 
 ```bash
 git clone https://github.com/your-org/pearl
 cd pearl
+docker compose up --build
+```
+
+| Service | URL |
+|---|---|
+| Dashboard | http://localhost:5174 |
+| API | http://localhost:8080/api/v1 |
+| MinIO console | http://localhost:9001 |
+
+**Bootstrap credentials**
+- Login: `admin@pearl.dev` / `PeaRL-admin-2026`
+- API key: `pearl-KYQXqnybaMaul7PoKJLsT4PZpZSFj0FIaVE2IPrQJNk`
+
+> **Note:** The Postgres volume starts empty. You need to create your first project (see [Your First Project](#your-first-project) below).
+
+---
+
+### Option B — Local dev mode (no Docker)
+
+Uses SQLite in-memory — no external services needed.
+
+```bash
 pip install -e ".[dev]"
-```
 
-### 2. Start services (optional — local mode uses SQLite)
-
-```bash
-docker compose up -d postgres redis minio
-```
-
-### 3. Run the API in local mode
-
-```bash
+# Terminal 1: API
 PEARL_LOCAL=1 uvicorn pearl.main:app --reload --port 8081
+
+# Terminal 2: Frontend
+cd frontend && npm install && npm run dev
 ```
 
-Or use Docker Compose for the full stack:
+Open http://localhost:5173. Auth is bypassed (operator role). Use `PEARL_LOCAL_REVIEWER=1` to add reviewer role (human reviewers only — do not set on an agent's behalf).
+
+---
+
+## Your First Project
+
+### 1. Register the project
+
+Via the dashboard (http://localhost:5174) or curl:
 
 ```bash
-docker compose up
+curl -s -X POST http://localhost:8080/api/v1/projects \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: pearl-KYQXqnybaMaul7PoKJLsT4PZpZSFj0FIaVE2IPrQJNk" \
+  -d '{
+    "project_id": "proj_myapp001",
+    "name": "My First Project",
+    "owner_team": "Engineering",
+    "business_criticality": "high",
+    "external_exposure": "public",
+    "ai_enabled": true,
+    "schema_version": "1.1"
+  }'
 ```
 
-### 4. Run the frontend
+### 2. Download the launcher (Windows + WSL)
+
+The onboarding endpoint generates a Windows batch file that wires everything up automatically:
 
 ```bash
-cd frontend
-npm install
-cp .env.example .env
-npm run dev
+curl -s http://localhost:8080/api/v1/onboarding/setup | python3 -c \
+  "import sys,json; print(json.load(sys.stdin)['bat_file'])" \
+  > "Claude Code.bat"
 ```
 
-Open http://localhost:5173
+Save `Claude Code.bat` somewhere convenient (e.g. `C:\Users\<you>\Development\`).
+
+**What the launcher does on each run:**
+1. Opens a folder browser — select your project folder
+2. Writes `.mcp.json` into that folder if it doesn't already exist (wires PeaRL MCP into Claude Code)
+3. If `.pearl.yaml` exists, silently auto-registers the project
+4. If no `.pearl.yaml` yet, prints a first-prompt instruction to register via MCP
+5. Launches `claude` in that folder
+
+### 3. Get the project config files
+
+After registering, download both governance config files into your project folder:
+
+```bash
+PROJECT=proj_myapp001
+API=http://localhost:8080/api/v1
+KEY="pearl-KYQXqnybaMaul7PoKJLsT4PZpZSFj0FIaVE2IPrQJNk"
+
+curl -s "$API/projects/$PROJECT/pearl.yaml" -H "X-API-Key: $KEY" > .pearl.yaml
+curl -s "$API/projects/$PROJECT/mcp.json"  -H "X-API-Key: $KEY" > .mcp.json
+```
+
+- `.pearl.yaml` — project identity + branch→environment mapping (commit this)
+- `.mcp.json` — MCP server config pointing Claude Code at PeaRL (gitignore or commit depending on team setup)
+
+### 4. Open the project in Claude Code
+
+Double-click `Claude Code.bat`, select your project folder. Claude Code starts with all 39 PeaRL MCP tools available.
+
+From the first prompt, Claude can:
+- `pearl_get_project` — load project context and governance rules
+- `pearl_submit_findings` — report security/compliance findings
+- `pearl_request_approval` — gate a decision through a human reviewer
+- `pearl_evaluate_promotion` — check if code is ready to promote to the next environment
+- `pearl_compile_context` — build a full governance context package
+
+### 5. Monitor on the dashboard
+
+- **Projects** — overview of all projects and their gate status
+- **Clearances** — pending approval requests from agents
+- **Administration → Project Data** — delete projects during setup/testing (admin only)
 
 ---
 
@@ -175,27 +252,30 @@ cd tests/e2e && npx playwright test
 
 ## MCP Integration
 
-PeaRL exposes **39 tools** via MCP. Add to your project's `.mcp.json`:
+PeaRL exposes **39 tools** via MCP for Claude Code and other MCP-compatible AI agents.
+
+The easiest path is the [Your First Project](#your-first-project) flow above — the launcher and config endpoints handle `.mcp.json` generation automatically.
+
+To wire it manually, add to your project's `.mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "pearl": {
       "command": "python3",
-      "args": ["-m", "pearl_dev.unified_mcp", "--directory", ".", "--api-url", "http://localhost:8081/api/v1"],
+      "args": ["-m", "pearl_dev.unified_mcp", "--directory", ".", "--api-url", "http://localhost:8080/api/v1"],
       "env": {"PYTHONPATH": "/path/to/PeaRL/src"}
     }
   }
 }
 ```
 
-Or use the onboarding endpoint to auto-generate this file:
+Or fetch a pre-configured file for a specific project:
 
 ```bash
-curl http://localhost:8081/api/v1/onboarding/setup | jq -r .bat_file > "Claude Code.bat"
+curl http://localhost:8080/api/v1/projects/{project_id}/mcp.json \
+  -H "X-API-Key: pearl-KYQXqnybaMaul7PoKJLsT4PZpZSFj0FIaVE2IPrQJNk" > .mcp.json
 ```
-
-The returned batch file handles WSL path conversion, `.mcp.json` generation, and auto-registration on launch.
 
 ---
 

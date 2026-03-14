@@ -5,6 +5,7 @@ import json
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pearl.dependencies import get_db, get_trace_id
@@ -12,9 +13,38 @@ from pearl.errors.exceptions import NotFoundError
 from pearl.models.compiled_context import CompiledContextPackage
 from pearl.repositories.compiled_package_repo import CompiledPackageRepository
 from pearl.repositories.environment_profile_repo import EnvironmentProfileRepository
+from pearl.repositories.finding_repo import FindingRepository
 from pearl.repositories.org_baseline_repo import OrgBaselineRepository
 from pearl.services.compiler.context_compiler import compile_context
+from pearl.services.id_generator import generate_id
 from pearl.workers.queue import enqueue_job
+
+
+async def _emit_ba_finding(
+    db: AsyncSession,
+    project_id: str,
+    environment: str,
+    anomaly_code: str,
+    title: str,
+    details: dict,
+) -> None:
+    """Create a BA-coded ACoP anomaly finding."""
+    repo = FindingRepository(db)
+    await repo.create(
+        finding_id=generate_id("find_"),
+        project_id=project_id,
+        environment=environment,
+        category="governance",
+        severity="critical",
+        title=title,
+        source={"system": "pearl-acop-enforcement"},
+        full_data=details,
+        normalized=True,
+        detected_at=datetime.now(timezone.utc),
+        anomaly_code=anomaly_code,
+        status="open",
+        schema_version="1.1",
+    )
 
 router = APIRouter(tags=["ContextCompile"])
 
@@ -86,18 +116,20 @@ async def compile_context_endpoint(
 async def get_compiled_package(
     project_id: str,
     db: AsyncSession = Depends(get_db),
-) -> dict:
+) -> JSONResponse:
     repo = CompiledPackageRepository(db)
     row = await repo.get_latest_by_project(project_id)
     if not row:
         raise NotFoundError("Compiled package", project_id)
 
-    return row.package_data
+    # ACoP §4.3: serve contract objects with application/acop+json content-type
+    return JSONResponse(content=row.package_data, media_type="application/acop+json")
 
 
 @router.get("/projects/{project_id}/compiled-package/integrity")
 async def get_package_integrity(
     project_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     repo = CompiledPackageRepository(db)
@@ -114,10 +146,38 @@ async def get_package_integrity(
     compiled_at_str = pkg_dict.get("package_metadata", {}).get("integrity", {}).get("compiled_at")
 
     body_for_hash = json.loads(json.dumps(pkg_dict))  # deep copy
+    body_for_hash.pop("integrity_hash", None)  # ACoP CIH field added after hash — exclude it
     body_for_hash["package_metadata"]["integrity"] = {"compiled_at": compiled_at_str}
     canonical = json.dumps(body_for_hash, sort_keys=True, separators=(",", ":"))
     computed_hash = hashlib.sha256(canonical.encode()).hexdigest()
     hash_valid = stored_hash is not None and stored_hash == computed_hash
+
+    # BA-05: emit a finding and trigger auto-demotion when contract integrity is violated
+    if not hash_valid:
+        environment = pkg_dict.get("project_identity", {}).get("environment", "unknown")
+        await _emit_ba_finding(
+            db=db,
+            project_id=project_id,
+            environment=environment,
+            anomaly_code="BA-05",
+            title="Contract Integrity Hash Mismatch (BA-05)",
+            details={
+                "package_id": pkg_dict.get("package_metadata", {}).get("package_id"),
+                "stored_hash": stored_hash,
+                "computed_hash": computed_hash,
+            },
+        )
+        from pearl.services.demotion import auto_demote
+        redis = getattr(request.app.state, "redis", None) if request else None
+        await auto_demote(
+            session=db,
+            project_id=project_id,
+            anomaly_code="BA-05",
+            triggered_by="pearl-integrity-check",
+            from_environment=environment,
+            redis=redis,
+        )
+        await db.commit()
 
     # 2. Governance drift detection
     snapshot = (pkg_dict.get("package_metadata", {})

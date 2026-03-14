@@ -43,3 +43,26 @@ export function useSaveOrgBaseline() {
     },
   });
 }
+
+/** Org-wide baseline — not project-scoped. Reads/writes GET/POST /org/baseline. */
+export function useOrgBaselineGlobal() {
+  return useQuery({
+    queryKey: ["org", "baseline", "global"],
+    queryFn: () => apiFetch<OrgBaselineData>("/org/baseline"),
+    retry: false,
+  });
+}
+
+export function useSaveOrgBaselineGlobal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Record<string, unknown>) =>
+      apiFetch("/org/baseline", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["org", "baseline"] });
+    },
+  });
+}

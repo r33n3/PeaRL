@@ -268,6 +268,8 @@ class _EvalContext:
         self.baseline_defaults = {}
         # BU-derived framework requirements for this transition
         self.bu_requirements: list[ResolvedRequirement] = []
+        # Governance compliance
+        self.has_claude_md_governance: bool = False
 
 
 async def _build_eval_context(
@@ -281,9 +283,10 @@ async def _build_eval_context(
     ctx.project = project
     ctx.ai_enabled = project.ai_enabled
 
-    # Check baseline
+    # Check baseline — 3-tier resolution: project → BU → org-wide
     baseline_repo = OrgBaselineRepository(session)
-    baseline = await baseline_repo.get_by_project(project_id)
+    bu_id = getattr(project, "bu_id", None)
+    baseline = await baseline_repo.get_for_project(project_id, bu_id=bu_id)
     ctx.has_baseline = baseline is not None
     ctx.baseline_defaults = (baseline.defaults or {}) if baseline else {}
 
@@ -454,6 +457,9 @@ async def _build_eval_context(
         except Exception:
             ctx.bu_requirements = []
 
+    # Check CLAUDE.md governance block confirmation
+    ctx.has_claude_md_governance = bool(getattr(project, "claude_md_verified", False))
+
     return ctx
 
 
@@ -475,6 +481,7 @@ _FIX_GUIDANCE: dict[str, str] = {
     "compliance_score_threshold": "Improve compliance score by resolving scan findings. Target: 80%+.",
     "required_analyzers_completed": "Run all required analyzers. Trigger a full scan via POST /scan-targets/{id}/trigger.",
     "project_registered": "Ensure the project is properly registered in PeaRL.",
+    "claude_md_governance_present": "Write the PeaRL governance block to the project's CLAUDE.md, then call POST /projects/{id}/confirm-claude-md to confirm.",
     "residual_risk_report": "Generate a residual risk report via POST /projects/{id}/reports.",
     "data_classifications_documented": "Add data classifications to the application spec.",
     "iam_roles_defined": "Define IAM roles and trust boundaries in the application spec.",
@@ -629,6 +636,16 @@ def _evaluate_rule(rule: GateRuleDefinition, ctx: _EvalContext) -> RuleEvaluatio
 
 def _eval_project_registered(rule, ctx):
     return ctx.project is not None, "Project is registered" if ctx.project else "Project not registered", None
+
+
+def _eval_claude_md_governance_present(rule, ctx):
+    if ctx.has_claude_md_governance:
+        return True, "PeaRL governance block confirmed in CLAUDE.md", None
+    return (
+        False,
+        "PeaRL governance block not confirmed in CLAUDE.md — run POST /projects/{id}/confirm-claude-md after writing the block",
+        {"fix": "Write the PeaRL governance block to CLAUDE.md, then call POST /projects/{id}/confirm-claude-md"},
+    )
 
 
 def _eval_org_baseline_attached(rule, ctx):
@@ -1267,4 +1284,6 @@ RULE_EVALUATORS = {
     GateRuleType.AIUC1_CONTROL_REQUIRED: _eval_aiuc1_control_required,
     # Unified multi-framework control evaluation
     GateRuleType.FRAMEWORK_CONTROL_REQUIRED: _eval_framework_control_required,
+    # Governance compliance
+    GateRuleType.CLAUDE_MD_GOVERNANCE_PRESENT: _eval_claude_md_governance_present,
 }

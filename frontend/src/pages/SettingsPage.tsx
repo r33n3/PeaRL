@@ -13,16 +13,20 @@ import {
 } from "@/api/promotions";
 import type { GateData, GateRuleData } from "@/api/promotions";
 import {
-  useIntegrations,
-  useCreateIntegration,
-  useDeleteIntegration,
-  useTestIntegration,
+  useOrgIntegrations,
+  useCreateOrgIntegration,
+  useUpdateOrgIntegration,
+  useDeleteOrgIntegration,
+  useTestOrgIntegration,
+  useEventRouting,
+  useSaveEventRouting,
 } from "@/api/integrations";
-import { useOrgBaseline, useSaveOrgBaseline } from "@/api/settings";
+import { useOrgBaseline, useSaveOrgBaseline, useOrgBaselineGlobal, useSaveOrgBaselineGlobal } from "@/api/settings";
 import { useDefaultPipeline, useUpdatePipeline } from "@/api/pipelines";
 import type { PipelineStage } from "@/api/pipelines";
 import { useProjects } from "@/api/dashboard";
 import { AdminBusinessUnitsPage } from "./AdminBusinessUnitsPage";
+import { AdminProjectsPage } from "./AdminProjectsPage";
 import type { IntegrationEndpoint } from "@/lib/types";
 import {
   Plug,
@@ -54,27 +58,98 @@ import {
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
-type Tab = "integrations" | "gates" | "baseline" | "notifications" | "environments" | "business_units";
+type Tab = "gates" | "baseline" | "environments" | "business_units" | "integrations" | "project_data";
 
 const TABS: { key: Tab; icon: typeof Plug; label: string }[] = [
-  { key: "integrations", icon: Plug, label: "Integrations" },
   { key: "gates", icon: ShieldCheck, label: "Gate Rules" },
-  { key: "baseline", icon: FileCode, label: "Org Baseline" },
-  { key: "notifications", icon: Bell, label: "Notifications" },
+  { key: "baseline", icon: FileCode, label: "Baselines" },
   { key: "environments", icon: Layers, label: "Environments" },
   { key: "business_units", icon: Building2, label: "Business Units" },
+  { key: "integrations", icon: Plug, label: "Integrations" },
+  { key: "project_data", icon: Trash2, label: "Project Data" },
 ];
 
-const ADAPTER_TYPES = [
-  "snyk",
-  "semgrep",
-  "trivy",
-  "slack",
-  "jira",
-  "github",
-] as const;
+/* ------------------------------------------------------------------ */
+/*  Integration Catalogue                                              */
+/* ------------------------------------------------------------------ */
 
-const INTEGRATION_TYPES = ["source", "sink", "bidirectional"] as const;
+interface CatalogueEntry {
+  adapter_type: string;
+  category: string;
+  label: string;
+  description: string;
+}
+
+const INTEGRATION_CATALOGUE: CatalogueEntry[] = [
+  { adapter_type: "snyk",        category: "security_scanning",     label: "Snyk",        description: "SCA / vulnerability scanning" },
+  { adapter_type: "semgrep",     category: "security_scanning",     label: "Semgrep",     description: "SAST / code analysis" },
+  { adapter_type: "trivy",       category: "security_scanning",     label: "Trivy",       description: "Container & IaC scanning" },
+  { adapter_type: "sonarqube",   category: "security_scanning",     label: "SonarQube",   description: "Code quality & SAST" },
+  { adapter_type: "github",      category: "repo_management",       label: "GitHub",      description: "Source code, PRs, Actions" },
+  { adapter_type: "gitlab",      category: "repo_management",       label: "GitLab",      description: "Source code, MRs, CI/CD" },
+  { adapter_type: "azure_devops",category: "repo_management",       label: "Azure DevOps",description: "Repos, pipelines, work items" },
+  { adapter_type: "jira",        category: "issue_tracking",        label: "Jira",        description: "Ticket & project management" },
+  { adapter_type: "linear",      category: "issue_tracking",        label: "Linear",      description: "Issue tracking" },
+  { adapter_type: "servicenow",  category: "issue_tracking",        label: "ServiceNow",  description: "Enterprise ITSM" },
+  { adapter_type: "slack",       category: "notification_channels", label: "Slack",       description: "Team alerts & notifications" },
+  { adapter_type: "teams",       category: "notification_channels", label: "Teams",       description: "Enterprise notifications" },
+  { adapter_type: "webhook",     category: "notification_channels", label: "Webhook",     description: "Custom HTTP endpoint" },
+  { adapter_type: "email",       category: "notification_channels", label: "Email",       description: "SMTP / email alerts" },
+  { adapter_type: "pagerduty",   category: "notification_channels", label: "PagerDuty",   description: "Incident alerting" },
+];
+
+const CATEGORY_ORDER = ["security_scanning", "repo_management", "issue_tracking", "notification_channels"] as const;
+
+const CATEGORY_LABELS: Record<string, string> = {
+  security_scanning:     "Security Scanning",
+  repo_management:       "Repository Management",
+  issue_tracking:        "Issue Tracking",
+  notification_channels: "Notification Channels",
+};
+
+type ConfigFormState = Record<string, string>;
+
+function getAdapterFields(adapter_type: string): { key: string; label: string; placeholder: string; type?: string }[] {
+  const webhookAdapters = ["slack", "teams", "webhook", "pagerduty"];
+  const tokenAdapters = ["github", "gitlab", "snyk", "semgrep", "trivy", "sonarqube"];
+  const ticketAdapters = ["jira", "linear", "servicenow", "azure_devops"];
+  if (webhookAdapters.includes(adapter_type)) {
+    return [{ key: "webhook_url", label: "Webhook URL", placeholder: "https://..." }];
+  }
+  if (tokenAdapters.includes(adapter_type)) {
+    return [
+      { key: "base_url",   label: "Base URL",   placeholder: "https://api.example.com" },
+      { key: "api_token",  label: "API Token",  placeholder: "token...", type: "password" },
+    ];
+  }
+  if (ticketAdapters.includes(adapter_type)) {
+    return [
+      { key: "base_url",     label: "Base URL",     placeholder: "https://yourorg.atlassian.net" },
+      { key: "api_token",    label: "API Token",    placeholder: "token...", type: "password" },
+      { key: "project_key", label: "Project Key",  placeholder: "PROJ" },
+    ];
+  }
+  if (adapter_type === "email") {
+    return [
+      { key: "smtp_host",     label: "SMTP Host",     placeholder: "smtp.example.com" },
+      { key: "smtp_port",     label: "SMTP Port",     placeholder: "587" },
+      { key: "from_address",  label: "From Address",  placeholder: "alerts@example.com" },
+      { key: "to_addresses",  label: "To Addresses",  placeholder: "team@example.com" },
+    ];
+  }
+  return [
+    { key: "base_url",  label: "Base URL",  placeholder: "https://..." },
+    { key: "api_token", label: "API Token", placeholder: "token...", type: "password" },
+  ];
+}
+
+function buildAuthConfig(adapter_type: string, form: ConfigFormState): Record<string, string> {
+  return Object.fromEntries(getAdapterFields(adapter_type).map(f => [f.key, form[f.key] ?? ""]));
+}
+
+function buildBaseUrl(adapter_type: string, form: ConfigFormState): string {
+  return form["base_url"] ?? form["webhook_url"] ?? form["smtp_host"] ?? "";
+}
 
 const EVENT_TYPES = [
   "approval.created",
@@ -148,271 +223,374 @@ function ProjectSelector({
 }
 
 /* ================================================================== */
-/*  TAB 1 -- Integrations                                             */
+/*  TAB 1 -- Integrations (categorized, org-level)                    */
 /* ================================================================== */
 
-interface NewIntegrationForm {
-  name: string;
-  adapter_type: string;
-  integration_type: string;
-  category: string;
-  base_url: string;
-}
-
-const EMPTY_FORM: NewIntegrationForm = {
-  name: "",
-  adapter_type: "snyk",
-  integration_type: "source",
-  category: "",
-  base_url: "",
-};
-
 function IntegrationsTab() {
-  const [projectId, setProjectId] = useState("");
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<NewIntegrationForm>({ ...EMPTY_FORM });
-  const [testResults, setTestResults] = useState<
-    Record<string, { success: boolean; message?: string }>
-  >({});
+  const { data: integrations, isLoading } = useOrgIntegrations();
+  const createMut = useCreateOrgIntegration();
+  const updateMut = useUpdateOrgIntegration();
+  const deleteMut = useDeleteOrgIntegration();
+  const testMut = useTestOrgIntegration();
+  const { data: routingData, isLoading: routingLoading } = useEventRouting();
+  const saveRoutingMut = useSaveEventRouting();
+  const [routing, setRouting] = useState<Record<string, string[]>>({});
+  const [isRoutingDirty, setIsRoutingDirty] = useState(false);
 
-  const { data: integrations, isLoading } = useIntegrations(projectId);
-  const createMut = useCreateIntegration();
-  const deleteMut = useDeleteIntegration();
-  const testMut = useTestIntegration();
+  useEffect(() => {
+    if (routingData?.routing) {
+      setRouting(routingData.routing);
+      setIsRoutingDirty(false);
+    }
+  }, [routingData]);
 
-  const handleCreate = () => {
-    if (!projectId || !form.name || !form.base_url) return;
-    createMut.mutate(
-      { projectId, data: form },
-      {
-        onSuccess: () => {
-          setForm({ ...EMPTY_FORM });
-          setShowForm(false);
-        },
-      }
-    );
+  const toggleRoute = (event: string, adapter: string) => {
+    setRouting(prev => {
+      const current = new Set(prev[event] ?? []);
+      if (current.has(adapter)) current.delete(adapter); else current.add(adapter);
+      return { ...prev, [event]: Array.from(current) };
+    });
+    setIsRoutingDirty(true);
+  };
+
+  const [addingAdapter, setAddingAdapter] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [configForm, setConfigForm] = useState<ConfigFormState>({});
+  const [addPickerCategory, setAddPickerCategory] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, { success: boolean; message?: string }>>({});
+
+  const configuredByType = useMemo(() => {
+    const map: Record<string, IntegrationEndpoint> = {};
+    (integrations ?? []).filter(i => i.enabled).forEach(i => { map[i.adapter_type] = i; });
+    return map;
+  }, [integrations]);
+
+  const handleStartAdd = (adapter_type: string) => {
+    setAddingAdapter(adapter_type);
+    setEditingId(null);
+    setConfigForm({});
+    setAddPickerCategory(null);
+  };
+
+  const handleStartEdit = (ep: IntegrationEndpoint) => {
+    setEditingId(ep.endpoint_id);
+    setAddingAdapter(null);
+    const form: ConfigFormState = {};
+    if (ep.auth_config) {
+      Object.entries(ep.auth_config).forEach(([k, v]) => {
+        if (typeof v === "string") form[k] = v;
+      });
+    }
+    if (ep.base_url) form["base_url"] = ep.base_url;
+    setConfigForm(form);
+  };
+
+  const handleCancelForm = () => {
+    setAddingAdapter(null);
+    setEditingId(null);
+    setConfigForm({});
+  };
+
+  const handleSaveNew = (entry: CatalogueEntry) => {
+    const integrationType = entry.category === "notification_channels" ? "sink" : "source";
+    createMut.mutate({
+      name: entry.label,
+      adapter_type: entry.adapter_type,
+      category: entry.category,
+      integration_type: integrationType,
+      base_url: buildBaseUrl(entry.adapter_type, configForm),
+      auth_config: buildAuthConfig(entry.adapter_type, configForm),
+    }, { onSuccess: handleCancelForm });
+  };
+
+  const handleSaveEdit = (ep: IntegrationEndpoint) => {
+    updateMut.mutate({
+      endpointId: ep.endpoint_id,
+      data: {
+        base_url: buildBaseUrl(ep.adapter_type, configForm),
+        auth_config: buildAuthConfig(ep.adapter_type, configForm),
+      },
+    }, { onSuccess: handleCancelForm });
   };
 
   const handleDelete = (ep: IntegrationEndpoint) => {
-    if (!window.confirm(`Delete integration "${ep.name}"?`)) return;
-    deleteMut.mutate({ projectId, endpointId: ep.endpoint_id });
+    if (!window.confirm(`Remove ${ep.name} integration?`)) return;
+    deleteMut.mutate({ endpointId: ep.endpoint_id });
   };
 
   const handleTest = (ep: IntegrationEndpoint) => {
-    testMut.mutate(
-      { projectId, endpointId: ep.endpoint_id },
-      {
-        onSuccess: (result) => {
-          setTestResults((prev) => ({
-            ...prev,
-            [ep.endpoint_id]: result as { success: boolean; message?: string },
-          }));
-          setTimeout(() => {
-            setTestResults((prev) => {
-              const next = { ...prev };
-              delete next[ep.endpoint_id];
-              return next;
-            });
-          }, 3000);
-        },
-        onError: () => {
-          setTestResults((prev) => ({
-            ...prev,
-            [ep.endpoint_id]: { success: false, message: "Connection failed" },
-          }));
-          setTimeout(() => {
-            setTestResults((prev) => {
-              const next = { ...prev };
-              delete next[ep.endpoint_id];
-              return next;
-            });
-          }, 3000);
-        },
-      }
-    );
+    testMut.mutate({ endpointId: ep.endpoint_id }, {
+      onSuccess: (result) => {
+        setTestResults(prev => ({ ...prev, [ep.endpoint_id]: result as { success: boolean; message?: string } }));
+        setTimeout(() => setTestResults(prev => { const n = { ...prev }; delete n[ep.endpoint_id]; return n; }), 4000);
+      },
+      onError: () => {
+        setTestResults(prev => ({ ...prev, [ep.endpoint_id]: { success: false, message: "Connection failed" } }));
+        setTimeout(() => setTestResults(prev => { const n = { ...prev }; delete n[ep.endpoint_id]; return n; }), 4000);
+      },
+    });
   };
 
-  return (
-    <div className="space-y-4">
-      {/* Header row */}
-      <div className="flex items-center justify-between">
-        <ProjectSelector value={projectId} onChange={setProjectId} />
-        <button
-          className="btn-teal flex items-center gap-1.5 text-sm"
-          onClick={() => setShowForm((v) => !v)}
-        >
-          <Plus size={14} />
-          Add Integration
-        </button>
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 text-bone-muted text-sm font-mono py-8 justify-center">
+        <Loader2 size={16} className="animate-spin" /> Loading integrations...
       </div>
+    );
+  }
 
-      {/* Inline add form */}
-      {showForm && (
-        <VaultCard className="space-y-3">
-          <h3 className="vault-heading text-xs mb-2">New Integration</h3>
-          <div className="grid grid-cols-2 gap-3">
-            <input
-              className="input-vault text-sm"
-              placeholder="Name"
-              value={form.name}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, name: e.target.value }))
-              }
-            />
-            <select
-              className="input-vault text-sm"
-              value={form.adapter_type}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, adapter_type: e.target.value }))
-              }
-            >
-              {ADAPTER_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-            <select
-              className="input-vault text-sm"
-              value={form.integration_type}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, integration_type: e.target.value }))
-              }
-            >
-              {INTEGRATION_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-            <input
-              className="input-vault text-sm"
-              placeholder="Category"
-              value={form.category}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, category: e.target.value }))
-              }
-            />
-          </div>
-          <input
-            className="input-vault text-sm w-full"
-            placeholder="Base URL (https://...)"
-            value={form.base_url}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, base_url: e.target.value }))
-            }
-          />
-          <div className="flex gap-2 pt-1">
-            <button
-              className="btn-teal text-sm flex items-center gap-1.5"
-              disabled={createMut.isPending || !form.name || !form.base_url}
-              onClick={handleCreate}
-            >
-              {createMut.isPending ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <Plus size={14} />
+  return (
+    <div className="space-y-8">
+      {CATEGORY_ORDER.map(category => {
+        const catalogueEntries = INTEGRATION_CATALOGUE.filter(e => e.category === category);
+        const configuredEntries = catalogueEntries.filter(e => !!configuredByType[e.adapter_type]);
+        const unconfiguredEntries = catalogueEntries.filter(e => !configuredByType[e.adapter_type]);
+        const isPickerOpen = addPickerCategory === category;
+        const isAddingInCategory = addingAdapter && INTEGRATION_CATALOGUE.find(e => e.adapter_type === addingAdapter)?.category === category;
+
+        return (
+          <div key={category}>
+            {/* Category header */}
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-heading font-semibold uppercase tracking-wider text-bone">
+                {CATEGORY_LABELS[category]}
+              </h3>
+              {unconfiguredEntries.length > 0 && (
+                <button
+                  className="btn-ghost text-xs flex items-center gap-1"
+                  onClick={() => setAddPickerCategory(isPickerOpen ? null : category)}
+                >
+                  <Plus size={12} /> Add
+                </button>
               )}
-              Create
-            </button>
-            <button
-              className="btn-ghost text-sm"
-              onClick={() => {
-                setShowForm(false);
-                setForm({ ...EMPTY_FORM });
-              }}
-            >
-              Cancel
-            </button>
-          </div>
-        </VaultCard>
-      )}
+            </div>
 
-      {/* List */}
-      {!projectId ? (
-        <VaultCard className="text-center py-8">
-          <p className="text-bone-dim font-mono text-sm">
-            Select a project to view integrations
-          </p>
-        </VaultCard>
-      ) : isLoading ? (
-        <div className="flex items-center gap-2 text-bone-muted text-sm font-mono py-6 justify-center">
-          <Loader2 size={16} className="animate-spin" /> Loading integration
-          endpoints...
-        </div>
-      ) : !integrations || integrations.length === 0 ? (
-        <VaultCard className="text-center py-8">
-          <Plug size={24} className="text-bone-dim mx-auto mb-2" />
-          <p className="text-bone-dim font-mono text-sm">
-            No integrations configured
-          </p>
-          <p className="text-bone-dim font-mono text-xs mt-1">
-            Click "Add Integration" to register an endpoint
-          </p>
-        </VaultCard>
-      ) : (
-        <div className="space-y-3">
-          {integrations.map((ep) => (
-            <VaultCard
-              key={ep.endpoint_id}
-              className="flex items-center justify-between"
-            >
-              <div className="flex items-center gap-4">
-                <div
-                  className={`w-2 h-2 rounded-full shrink-0 ${
-                    ep.enabled ? "bg-cold-teal" : "bg-dried-blood-bright"
-                  }`}
-                />
-                <div>
-                  <span className="text-sm text-bone font-heading font-semibold">
-                    {ep.name}
-                  </span>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <MonoText className="text-xs">{ep.adapter_type}</MonoText>
-                    <span className="text-[10px] text-clinical-cyan bg-charcoal px-1.5 py-0.5 rounded font-mono">
-                      {ep.integration_type}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {/* Test result inline */}
-                {(() => {
-                  const tr = testResults[ep.endpoint_id];
-                  if (!tr) return null;
-                  return (
-                    <span
-                      className={`text-xs font-mono ${
-                        tr.success ? "text-cold-teal" : "text-dried-blood-bright"
-                      }`}
+            {/* Add picker */}
+            {isPickerOpen && (
+              <VaultCard className="mb-3 space-y-2">
+                <p className="text-xs font-mono text-bone-muted mb-2">Select an integration to configure:</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {unconfiguredEntries.map(entry => (
+                    <button
+                      key={entry.adapter_type}
+                      className="text-left px-3 py-2 rounded bg-vault-black/50 hover:bg-charcoal border border-slate-border/30 hover:border-cold-teal/40 transition-colors"
+                      onClick={() => handleStartAdd(entry.adapter_type)}
                     >
-                      {tr.success ? "Connected" : tr.message || "Failed"}
-                    </span>
+                      <div className="text-sm font-semibold text-bone">{entry.label}</div>
+                      <div className="text-xs text-bone-dim font-mono">{entry.description}</div>
+                    </button>
+                  ))}
+                </div>
+                <button className="btn-ghost text-xs" onClick={() => setAddPickerCategory(null)}>Cancel</button>
+              </VaultCard>
+            )}
+
+            {/* Inline add form */}
+            {isAddingInCategory && (() => {
+              const entry = INTEGRATION_CATALOGUE.find(e => e.adapter_type === addingAdapter)!;
+              const fields = getAdapterFields(addingAdapter!);
+              return (
+                <VaultCard className="mb-3 border-cold-teal/30 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-heading font-semibold text-bone">{entry.label}</span>
+                    <span className="text-xs text-bone-dim font-mono">{entry.description}</span>
+                  </div>
+                  <div className={`grid gap-2 ${fields.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+                    {fields.map(f => (
+                      <div key={f.key} className={fields.length === 1 ? "col-span-full" : ""}>
+                        <label className="text-[10px] font-mono text-bone-muted block mb-1">{f.label}</label>
+                        <input
+                          className="input-vault text-sm w-full"
+                          type={f.type ?? "text"}
+                          placeholder={f.placeholder}
+                          value={configForm[f.key] ?? ""}
+                          onChange={e => setConfigForm(prev => ({ ...prev, [f.key]: e.target.value }))}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      className="btn-teal text-sm flex items-center gap-1.5"
+                      disabled={createMut.isPending}
+                      onClick={() => handleSaveNew(entry)}
+                    >
+                      {createMut.isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                      Save
+                    </button>
+                    <button className="btn-ghost text-sm" onClick={handleCancelForm}>Cancel</button>
+                  </div>
+                </VaultCard>
+              );
+            })()}
+
+            {/* Configured cards */}
+            {configuredEntries.length > 0 ? (
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+                {configuredEntries.map(entry => {
+                  const ep = configuredByType[entry.adapter_type];
+                  const tr = testResults[ep.endpoint_id];
+                  const isEditing = editingId === ep.endpoint_id;
+                  return (
+                    <VaultCard key={entry.adapter_type} className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-full shrink-0 ${ep.enabled ? "bg-cold-teal" : "bg-dried-blood-bright"}`} />
+                        <span className="text-sm font-heading font-semibold text-bone">{entry.label}</span>
+                      </div>
+                      <p className="text-xs text-bone-dim font-mono">{entry.description}</p>
+
+                      {tr && (
+                        <p className={`text-xs font-mono ${tr.success ? "text-cold-teal" : "text-dried-blood-bright"}`}>
+                          {tr.success ? "Connected" : (tr.message ?? "Failed")}
+                        </p>
+                      )}
+
+                      {/* Inline edit form */}
+                      {isEditing && (() => {
+                        const fields = getAdapterFields(ep.adapter_type);
+                        return (
+                          <div className="space-y-2 pt-2 border-t border-slate-border/30">
+                            {fields.map(f => (
+                              <div key={f.key}>
+                                <label className="text-[10px] font-mono text-bone-muted block mb-1">{f.label}</label>
+                                <input
+                                  className="input-vault text-sm w-full"
+                                  type={f.type ?? "text"}
+                                  placeholder={f.placeholder}
+                                  value={configForm[f.key] ?? ""}
+                                  onChange={e => setConfigForm(prev => ({ ...prev, [f.key]: e.target.value }))}
+                                />
+                              </div>
+                            ))}
+                            <div className="flex gap-2 pt-1">
+                              <button
+                                className="btn-teal text-xs flex items-center gap-1"
+                                disabled={updateMut.isPending}
+                                onClick={() => handleSaveEdit(ep)}
+                              >
+                                {updateMut.isPending ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                                Save
+                              </button>
+                              <button className="btn-ghost text-xs" onClick={handleCancelForm}>Cancel</button>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Actions */}
+                      {!isEditing && (
+                        <div className="flex items-center gap-1.5 pt-1">
+                          <button
+                            className="btn-ghost text-xs py-1 px-2 flex items-center gap-1"
+                            onClick={() => handleTest(ep)}
+                            disabled={testMut.isPending}
+                          >
+                            <RefreshCw size={11} className={testMut.isPending ? "animate-spin" : ""} />
+                            Test
+                          </button>
+                          <button
+                            className="btn-ghost text-xs py-1 px-2 flex items-center gap-1"
+                            onClick={() => handleStartEdit(ep)}
+                          >
+                            <Edit2 size={11} /> Edit
+                          </button>
+                          <button
+                            className="btn-ghost text-xs py-1 px-2 text-dried-blood-bright flex items-center gap-1 ml-auto"
+                            onClick={() => handleDelete(ep)}
+                            disabled={deleteMut.isPending}
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        </div>
+                      )}
+                    </VaultCard>
                   );
-                })()}
-                <button
-                  className="btn-ghost text-xs py-1 px-2 flex items-center gap-1"
-                  onClick={() => handleTest(ep)}
-                  disabled={testMut.isPending}
-                >
-                  <RefreshCw
-                    size={12}
-                    className={testMut.isPending ? "animate-spin" : ""}
-                  />
-                  Test
-                </button>
-                <button
-                  className="btn-ghost text-xs py-1 px-2 text-dried-blood-bright flex items-center gap-1"
-                  onClick={() => handleDelete(ep)}
-                  disabled={deleteMut.isPending}
-                >
-                  <Trash2 size={12} />
-                </button>
+                })}
               </div>
-            </VaultCard>
-          ))}
-        </div>
-      )}
+            ) : (
+              !isPickerOpen && !isAddingInCategory && (
+                <p className="text-xs text-bone-dim font-mono py-3 text-center">
+                  No {CATEGORY_LABELS[category].toLowerCase()} configured — click Add to get started
+                </p>
+              )
+            )}
+          </div>
+        );
+      })}
+
+      {/* ChatOps / Event Routing */}
+      {(() => {
+        const notifChannels = (integrations ?? []).filter(i => i.category === "notification_channels" && i.enabled);
+        return (
+          <VaultCard>
+            <div className="flex items-center gap-2 mb-3">
+              <Bell size={14} className="text-cold-teal" />
+              <h2 className="vault-heading text-xs">ChatOps &amp; Event Routing</h2>
+              {isRoutingDirty && (
+                <button
+                  className="btn-teal text-xs flex items-center gap-1 ml-auto"
+                  onClick={() => saveRoutingMut.mutate({ routing }, { onSuccess: () => setIsRoutingDirty(false) })}
+                  disabled={saveRoutingMut.isPending}
+                >
+                  {saveRoutingMut.isPending ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                  Save
+                </button>
+              )}
+            </div>
+
+            {notifChannels.length === 0 ? (
+              <p className="text-xs text-bone-dim font-mono">
+                Add a notification channel above (Slack, Teams, Webhook, Email, or PagerDuty) to configure event routing.
+              </p>
+            ) : routingLoading ? (
+              <div className="flex items-center gap-2 text-bone-muted text-xs font-mono py-4">
+                <Loader2 size={12} className="animate-spin" /> Loading routing config...
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs font-mono">
+                  <thead>
+                    <tr className="border-b border-slate-border/30">
+                      <th className="text-left text-bone-muted py-2 pr-6 font-normal">Event</th>
+                      {notifChannels.map(ch => {
+                        const entry = INTEGRATION_CATALOGUE.find(e => e.adapter_type === ch.adapter_type);
+                        return (
+                          <th key={ch.endpoint_id} className="text-center text-bone-muted py-2 px-3 font-normal">
+                            {entry?.label ?? ch.adapter_type}
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {EVENT_TYPES.map(event => (
+                      <tr key={event} className="border-b border-slate-border/20 last:border-0">
+                        <td className="py-2 pr-6 text-bone">{event}</td>
+                        {notifChannels.map(ch => {
+                          const isChecked = (routing[event] ?? []).includes(ch.adapter_type);
+                          return (
+                            <td key={ch.endpoint_id} className="py-2 px-3 text-center">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => toggleRoute(event, ch.adapter_type)}
+                                className="accent-cold-teal cursor-pointer"
+                              />
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="text-[10px] text-bone-dim font-mono mt-3">
+                  Dashboard notifications are always active regardless of routing settings.
+                </p>
+              </div>
+            )}
+          </VaultCard>
+        );
+      })()}
     </div>
   );
 }
@@ -1320,7 +1498,6 @@ function fieldKeyToAiuc1Id(fieldKey: string): string {
 }
 
 function BaselineTab() {
-  const [projectId, setProjectId] = useState("");
   const [editMode, setEditMode] = useState(false);
   const [editedDefaults, setEditedDefaults] = useState<
     Record<string, Record<string, unknown>> | null
@@ -1363,14 +1540,14 @@ function BaselineTab() {
     return map;
   }, [gates]);
 
-  const { data: baseline, isLoading, isError } = useOrgBaseline(projectId);
-  const saveMut = useSaveOrgBaseline();
+  const { data: baseline, isLoading, isError } = useOrgBaselineGlobal();
+  const saveMut = useSaveOrgBaselineGlobal();
 
-  // Reset edit state when baseline or project changes
+  // Reset edit state when baseline changes
   useEffect(() => {
     setEditMode(false);
     setEditedDefaults(null);
-  }, [projectId, baseline]);
+  }, [baseline]);
 
   const toggleSection = (cat: string) => {
     setExpandedSections((prev) => {
@@ -1407,14 +1584,11 @@ function BaselineTab() {
     if (!baseline || !editedDefaults) return;
     saveMut.mutate(
       {
-        projectId,
-        data: {
-          schema_version: "1.1",
-          kind: "PearlOrgBaseline",
-          baseline_id: baseline.baseline_id,
-          org_name: baseline.org_name,
-          defaults: editedDefaults,
-        },
+        schema_version: "1.1",
+        kind: "PearlOrgBaseline",
+        baseline_id: baseline.baseline_id,
+        org_name: baseline.org_name,
+        defaults: editedDefaults,
       },
       {
         onSuccess: () => {
@@ -1450,7 +1624,10 @@ function BaselineTab() {
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <ProjectSelector value={projectId} onChange={setProjectId} />
+        <div>
+          <h2 className="font-heading font-semibold text-bone">Organizational Baseline</h2>
+          {baseline && <p className="text-[10px] font-mono text-bone-dim mt-0.5">{baseline.org_name} · {baseline.baseline_id} · applies to all projects</p>}
+        </div>
         {baseline && !editMode && (
           <button
             className="btn-ghost text-sm flex items-center gap-1.5"
@@ -1488,13 +1665,7 @@ function BaselineTab() {
       </div>
 
       {/* Content */}
-      {!projectId ? (
-        <VaultCard className="text-center py-8">
-          <p className="text-bone-dim font-mono text-sm">
-            Select a project to view its org baseline
-          </p>
-        </VaultCard>
-      ) : isLoading ? (
+      {isLoading ? (
         <div className="flex items-center gap-2 text-bone-muted text-sm font-mono py-6 justify-center">
           <Loader2 size={16} className="animate-spin" /> Loading baseline...
         </div>
@@ -1502,7 +1673,7 @@ function BaselineTab() {
         <VaultCard className="text-center py-8">
           <FileCode size={24} className="text-bone-dim mx-auto mb-2" />
           <p className="text-bone-dim font-mono text-sm">
-            No baseline configured for this project
+            No org-wide baseline configured. Use the API or MCP to create one.
           </p>
         </VaultCard>
       ) : (
@@ -1695,133 +1866,6 @@ function BaselineTab() {
   );
 }
 
-/* ================================================================== */
-/*  TAB 4 -- Notifications                                            */
-/* ================================================================== */
-
-function NotificationsTab() {
-  const [projectId, setProjectId] = useState("");
-  const [webhookUrl, setWebhookUrl] = useState("");
-
-  const { data: integrations } = useIntegrations(projectId);
-  const createMut = useCreateIntegration();
-
-  // Find existing slack sink
-  const slackIntegration = useMemo(
-    () =>
-      integrations?.find(
-        (i) => i.adapter_type === "slack" && i.integration_type === "sink"
-      ) ?? null,
-    [integrations]
-  );
-
-  const hasSlack = slackIntegration !== null;
-
-  // Pre-fill URL from existing slack integration
-  useEffect(() => {
-    if (slackIntegration) {
-      setWebhookUrl(slackIntegration.base_url);
-    } else {
-      setWebhookUrl("");
-    }
-  }, [slackIntegration]);
-
-  const handleSaveSlack = () => {
-    if (!projectId || !webhookUrl) return;
-    createMut.mutate({
-      projectId,
-      data: {
-        name: "Slack Notifications",
-        adapter_type: "slack",
-        integration_type: "sink",
-        category: "notification",
-        base_url: webhookUrl,
-      },
-    });
-  };
-
-  return (
-    <div className="space-y-4">
-      {/* Project selector */}
-      <div className="flex items-center">
-        <ProjectSelector value={projectId} onChange={setProjectId} />
-      </div>
-
-      {/* Slack Webhook */}
-      <VaultCard>
-        <h2 className="vault-heading text-xs mb-3">Slack Webhook</h2>
-        <div className="flex gap-2">
-          <input
-            className="input-vault flex-1 text-sm"
-            placeholder="https://hooks.slack.com/services/..."
-            value={webhookUrl}
-            onChange={(e) => setWebhookUrl(e.target.value)}
-          />
-          <button
-            className="btn-teal text-sm flex items-center gap-1.5"
-            onClick={handleSaveSlack}
-            disabled={createMut.isPending || !webhookUrl || !projectId}
-          >
-            {createMut.isPending ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <Save size={14} />
-            )}
-            Save
-          </button>
-        </div>
-        {hasSlack && (
-          <p className="text-xs text-cold-teal font-mono mt-2">
-            Slack integration active
-          </p>
-        )}
-        {!hasSlack && projectId && (
-          <p className="text-xs text-bone-dim font-mono mt-2">
-            No Slack integration configured for this project
-          </p>
-        )}
-      </VaultCard>
-
-      {/* Event Routing */}
-      <VaultCard>
-        <div className="flex items-center gap-2 mb-3">
-          <h2 className="vault-heading text-xs">Event Routing</h2>
-          <div className="group relative ml-auto">
-            <Info size={14} className="text-bone-dim cursor-help" />
-            <div className="absolute right-0 top-6 w-64 bg-charcoal border border-slate-border rounded p-2 text-xs text-bone-muted font-mono opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity z-10">
-              Events route to all enabled notification sinks
-            </div>
-          </div>
-        </div>
-        <div className="space-y-2">
-          {EVENT_TYPES.map((event) => (
-            <div
-              key={event}
-              className="flex items-center justify-between px-3 py-2 bg-vault-black/50 rounded"
-            >
-              <MonoText className="text-xs">{event}</MonoText>
-              <div className="flex items-center gap-3">
-                <span className="text-[10px] font-mono text-cold-teal">
-                  dashboard
-                </span>
-                <span
-                  className={`text-[10px] font-mono ${
-                    hasSlack ? "text-cold-teal" : "text-bone-dim"
-                  }`}
-                >
-                  slack
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-        <p className="text-[10px] text-bone-dim font-mono mt-3">
-          Events route to all enabled notification sinks
-        </p>
-      </VaultCard>
-    </div>
-  );
-}
 
 /* ================================================================== */
 /*  TAB 5 — Environments                                              */
@@ -2160,7 +2204,7 @@ function EnvironmentsTab() {
 /* ================================================================== */
 
 export function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<Tab>("integrations");
+  const [activeTab, setActiveTab] = useState<Tab>("gates");
 
   return (
     <div>
@@ -2185,12 +2229,12 @@ export function SettingsPage() {
       </div>
 
       {/* Tab content */}
-      {activeTab === "integrations" && <IntegrationsTab />}
       {activeTab === "gates" && <GateRulesTab />}
       {activeTab === "baseline" && <BaselineTab />}
-      {activeTab === "notifications" && <NotificationsTab />}
       {activeTab === "environments" && <EnvironmentsTab />}
       {activeTab === "business_units" && <AdminBusinessUnitsPage />}
+      {activeTab === "integrations" && <IntegrationsTab />}
+      {activeTab === "project_data" && <AdminProjectsPage />}
     </div>
   );
 }

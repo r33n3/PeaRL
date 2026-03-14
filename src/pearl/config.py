@@ -43,6 +43,18 @@ class Settings(BaseSettings):
     port: int = 8080
     log_level: str = "info"
 
+    # Public-facing API URL — used when generating .pearl.yaml and .mcp.json for projects.
+    # Set PEARL_PUBLIC_API_URL in your environment or .env so all generated configs point
+    # to the correct host/port without any hardcoding.
+    # Defaults to http://localhost:{port}/api/v1 when not set.
+    public_api_url: str = ""
+
+    @property
+    def effective_public_api_url(self) -> str:
+        if self.public_api_url:
+            return self.public_api_url.rstrip("/")
+        return f"http://localhost:{self.port}/api/v1"
+
     # OpenAPI schema exposure — defaults to True in local mode only
     # Set PEARL_EXPOSE_OPENAPI=1 to enable in production (not recommended)
     expose_openapi: bool | None = None
@@ -57,6 +69,9 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     rate_limit_writes_per_minute: int = 100
     rate_limit_reads_per_minute: int = 1000
+
+    # Audit HMAC (for immutable audit event signatures)
+    audit_hmac_key: str = "dev-audit-hmac-key-change-in-production"
 
     # Slack
     slack_signing_secret: str = ""

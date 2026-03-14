@@ -27,11 +27,15 @@ class IntegrationEndpointCreate(BaseModel):
     adapter_type: str
     integration_type: str  # "source", "sink", "bidirectional"
     category: str
-    base_url: str
+    base_url: str = ""
     auth_config: dict | None = None
     project_mapping: dict[str, str] | None = None
     enabled: bool = True
     labels: dict[str, str] | None = None
+
+
+class EventRoutingUpdate(BaseModel):
+    routing: dict[str, list[str]]  # e.g. {"approval.created": ["slack", "teams"]}
 
 
 class IntegrationEndpointUpdate(BaseModel):
@@ -214,6 +218,171 @@ async def test_integration(
     service = IntegrationService(registry)
     result = await service.test_endpoint(endpoint_id)
     return result
+
+
+# --- Org-level routes (project_id = NULL) ---
+
+
+@router.get("/integrations", status_code=200)
+async def list_org_integrations(
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """List all org-level integration endpoints (project_id is NULL)."""
+    repo = IntegrationEndpointRepository(db)
+    rows = await repo.list_org_wide()
+    # Exclude internal routing_config rows from the main list
+    return [_row_to_dict(r) for r in rows if r.adapter_type != "routing_config"]
+
+
+@router.post("/integrations", status_code=201)
+async def create_org_integration(
+    body: IntegrationEndpointCreate,
+    db: AsyncSession = Depends(get_db),
+    trace_id: str = Depends(get_trace_id),
+) -> dict:
+    """Register a new org-level integration endpoint."""
+    repo = IntegrationEndpointRepository(db)
+
+    # Check name uniqueness at org level
+    existing = await repo.get_org_by_name(body.name)
+    if existing:
+        raise ValidationError(
+            f"Integration '{body.name}' already exists at org level",
+            details={"endpoint_id": existing.endpoint_id},
+        )
+
+    endpoint_id = generate_id("intg_")
+    row = await repo.create(
+        endpoint_id=endpoint_id,
+        project_id=None,
+        name=body.name,
+        adapter_type=body.adapter_type,
+        integration_type=body.integration_type,
+        category=body.category,
+        base_url=body.base_url,
+        auth_config=body.auth_config,
+        project_mapping=body.project_mapping,
+        enabled=body.enabled,
+        labels=body.labels,
+    )
+    await db.commit()
+    return _row_to_dict(row)
+
+
+@router.put("/integrations/{endpoint_id}", status_code=200)
+async def update_org_integration(
+    endpoint_id: str,
+    body: IntegrationEndpointUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Update an org-level integration endpoint."""
+    repo = IntegrationEndpointRepository(db)
+    row = await repo.get(endpoint_id)
+    if not row or row.project_id is not None:
+        raise NotFoundError("IntegrationEndpoint", endpoint_id)
+
+    updates = {}
+    for field in ("name", "base_url", "auth_config", "project_mapping", "enabled", "labels"):
+        value = getattr(body, field)
+        if value is not None:
+            updates[field] = value
+
+    if updates:
+        await repo.update(row, **updates)
+        await db.commit()
+
+    return _row_to_dict(row)
+
+
+@router.delete("/integrations/{endpoint_id}", status_code=200)
+async def delete_org_integration(
+    endpoint_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Delete an org-level integration endpoint."""
+    repo = IntegrationEndpointRepository(db)
+    row = await repo.get(endpoint_id)
+    if not row or row.project_id is not None:
+        raise NotFoundError("IntegrationEndpoint", endpoint_id)
+
+    await repo.update(row, enabled=False)
+    await db.commit()
+    return {"endpoint_id": endpoint_id, "enabled": False}
+
+
+@router.post("/integrations/{endpoint_id}/test", status_code=200)
+async def test_org_integration(
+    endpoint_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Test connectivity to an org-level integration endpoint."""
+    repo = IntegrationEndpointRepository(db)
+    row = await repo.get(endpoint_id)
+    if not row or row.project_id is not None:
+        raise NotFoundError("IntegrationEndpoint", endpoint_id)
+
+    from pearl.integrations.config import AuthConfig, IntegrationEndpoint, IntegrationRegistry
+    from pearl.integrations.service import IntegrationService
+
+    try:
+        endpoint = IntegrationEndpoint(
+            endpoint_id=row.endpoint_id,
+            name=row.name,
+            adapter_type=row.adapter_type,
+            integration_type=row.integration_type,
+            category=row.category,
+            base_url=row.base_url,
+            auth=AuthConfig(**(row.auth_config or {})),
+            project_mapping=row.project_mapping,
+            enabled=row.enabled,
+            labels=row.labels,
+        )
+    except pydantic.ValidationError as exc:
+        raise ValidationError(f"Stored integration config is invalid: {exc}") from exc
+
+    registry = IntegrationRegistry(endpoints=[endpoint])
+    service = IntegrationService(registry)
+    result = await service.test_endpoint(endpoint_id)
+    return result
+
+
+@router.get("/integrations/event-routing", status_code=200)
+async def get_event_routing(
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get the org-wide event routing configuration."""
+    repo = IntegrationEndpointRepository(db)
+    row = await repo.get_org_by_adapter_type("routing_config")
+    if not row or not row.auth_config:
+        return {"routing": {}}
+    return {"routing": row.auth_config.get("routing", {})}
+
+
+@router.post("/integrations/event-routing", status_code=200)
+async def save_event_routing(
+    body: EventRoutingUpdate,
+    db: AsyncSession = Depends(get_db),
+    trace_id: str = Depends(get_trace_id),
+) -> dict:
+    """Upsert the org-wide event routing configuration."""
+    repo = IntegrationEndpointRepository(db)
+    row = await repo.get_org_by_adapter_type("routing_config")
+    if row:
+        await repo.update(row, auth_config={"routing": body.routing})
+    else:
+        await repo.create(
+            endpoint_id=generate_id("intg_"),
+            project_id=None,
+            name="Event Routing Config",
+            adapter_type="routing_config",
+            integration_type="sink",
+            category="notification_channels",
+            base_url="",
+            auth_config={"routing": body.routing},
+            enabled=True,
+        )
+    await db.commit()
+    return {"routing": body.routing}
 
 
 @router.post(

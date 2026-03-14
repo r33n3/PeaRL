@@ -55,7 +55,7 @@ async def compile_context(
         raise ValidationError(f"Project '{project_id}' not found")
 
     baseline_repo = OrgBaselineRepository(session)
-    baseline = await baseline_repo.get_by_project(project_id)
+    baseline = await baseline_repo.get_for_project(project_id)
     if not baseline:
         raise ValidationError(f"Org baseline not found for project '{project_id}'")
 
@@ -72,6 +72,18 @@ async def compile_context(
     defaults = baseline.defaults
     spec = app_spec.full_spec
 
+    # Build effective scope exclusions: project may exclude aspirational controls,
+    # but NOT mandatory controls listed in environment_requirements.
+    raw_exclusions = set(spec.get("policy_scope_exclusions") or [])
+    mandatory: set[str] = set()
+    if baseline.environment_defaults:
+        env_reqs = baseline.environment_defaults.get("environment_requirements", {})
+        if isinstance(env_reqs, dict):
+            for env_list in env_reqs.values():
+                if isinstance(env_list, list):
+                    mandatory.update(env_list)
+    effective_exclusions = raw_exclusions - mandatory
+
     # Build autonomy policy from environment profile
     autonomy_policy = AutonomyPolicy(
         mode=env_profile.autonomy_mode,
@@ -82,7 +94,7 @@ async def compile_context(
 
     # Build security requirements
     security_requirements = SecurityRequirements(
-        required_controls=_build_required_controls(defaults, spec),
+        required_controls=_build_required_controls(defaults, spec, effective_exclusions),
         prohibited_patterns=_build_prohibited_patterns(defaults),
     )
 
@@ -263,26 +275,32 @@ async def compile_context(
     canonical = json.dumps(pkg_dict_for_hash, sort_keys=True, separators=(",", ":"))
     package.package_metadata.integrity.hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
+    # ACoP §4.3: embed integrity_hash as "sha256-{hex}" in the contract object itself
+    integrity_hash_value = f"sha256-{package.package_metadata.integrity.hash}"
+
     # Store compiled package
     pkg_repo = CompiledPackageRepository(session)
     pkg_data = package.model_dump(mode="json", exclude_none=True)
+    pkg_data["integrity_hash"] = integrity_hash_value  # ACoP CIH embedded in contract
     await pkg_repo.create(
         package_id=package_id,
         project_id=project_id,
         environment=env_profile.environment,
         package_data=pkg_data,
         integrity=pkg_data.get("package_metadata", {}).get("integrity"),
+        integrity_hash=integrity_hash_value,
     )
 
     return package
 
 
-def _build_required_controls(defaults: dict, spec: dict) -> list[str]:
+def _build_required_controls(defaults: dict, spec: dict, exclusions: set[str] | None = None) -> list[str]:
+    exclusions = exclusions or set()
     controls = []
     if defaults.get("coding", {}).get("secure_coding_standard_required"):
         controls.extend(["authz_checks", "input_validation"])
     controls.extend(["tool_call_allowlisting", "audit_logging", "output_filtering"])
-    return controls
+    return [c for c in controls if c not in exclusions]
 
 
 def _build_prohibited_patterns(defaults: dict) -> list[str]:

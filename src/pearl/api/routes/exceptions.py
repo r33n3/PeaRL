@@ -1,6 +1,7 @@
-"""Policy exception API route."""
+"""Policy exception API routes."""
 
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from pydantic import BaseModel
@@ -14,6 +15,29 @@ from pearl.repositories.exception_repo import ExceptionRepository
 router = APIRouter(tags=["Exceptions"])
 
 
+def _serialize_exception(e) -> dict:
+    return {
+        "exception_id": e.exception_id,
+        "project_id": e.project_id,
+        "exception_type": getattr(e, "exception_type", "exception"),
+        "title": getattr(e, "title", None),
+        "risk_rating": getattr(e, "risk_rating", None),
+        "scope": e.scope,
+        "status": e.status,
+        "requested_by": e.requested_by,
+        "rationale": e.rationale,
+        "remediation_plan": getattr(e, "remediation_plan", None),
+        "compensating_controls": e.compensating_controls,
+        "approved_by": e.approved_by,
+        "finding_ids": getattr(e, "finding_ids", None),
+        "board_briefing": getattr(e, "board_briefing", None),
+        "start_at": e.start_at.isoformat() if e.start_at else None,
+        "expires_at": e.expires_at.isoformat() if e.expires_at else None,
+        "created_at": e.created_at.isoformat() if hasattr(e, "created_at") and e.created_at else None,
+        "updated_at": e.updated_at.isoformat() if hasattr(e, "updated_at") and e.updated_at else None,
+    }
+
+
 @router.get("/projects/{project_id}/exceptions", status_code=200)
 async def list_project_exceptions(
     project_id: str,
@@ -21,22 +45,7 @@ async def list_project_exceptions(
 ) -> list[dict]:
     repo = ExceptionRepository(db)
     exceptions = await repo.list_by_project(project_id)
-    return [
-        {
-            "exception_id": e.exception_id,
-            "project_id": e.project_id,
-            "scope": e.scope,
-            "status": e.status,
-            "requested_by": e.requested_by,
-            "rationale": e.rationale,
-            "compensating_controls": e.compensating_controls,
-            "approved_by": e.approved_by,
-            "start_at": e.start_at.isoformat() if e.start_at else None,
-            "expires_at": e.expires_at.isoformat() if e.expires_at else None,
-            "created_at": e.created_at.isoformat() if hasattr(e, "created_at") and e.created_at else None,
-        }
-        for e in exceptions
-    ]
+    return [_serialize_exception(e) for e in exceptions]
 
 
 @router.post("/exceptions", status_code=201)
@@ -61,7 +70,7 @@ async def create_exception(
             "already_existed": True,
         }
 
-    await repo.create(
+    row = await repo.create(
         exception_id=exception.exception_id,
         project_id=exception.project_id,
         scope=scope_dict,
@@ -74,6 +83,11 @@ async def create_exception(
         expires_at=exception.expires_at,
         review_cadence_days=exception.review_cadence_days,
         trace_id=exception.trace_id,
+        exception_type=exception.exception_type,
+        title=exception.title,
+        risk_rating=exception.risk_rating,
+        remediation_plan=exception.remediation_plan,
+        finding_ids=exception.finding_ids,
     )
     await db.commit()
 
@@ -92,22 +106,6 @@ async def create_exception(
     return exception.model_dump(mode="json", exclude_none=True)
 
 
-def _serialize_exception(e) -> dict:
-    return {
-        "exception_id": e.exception_id,
-        "project_id": e.project_id,
-        "scope": e.scope,
-        "status": e.status,
-        "requested_by": e.requested_by,
-        "rationale": e.rationale,
-        "compensating_controls": e.compensating_controls,
-        "approved_by": e.approved_by,
-        "start_at": e.start_at.isoformat() if e.start_at else None,
-        "expires_at": e.expires_at.isoformat() if e.expires_at else None,
-        "created_at": e.created_at.isoformat() if hasattr(e, "created_at") and e.created_at else None,
-    }
-
-
 @router.get("/exceptions/pending", status_code=200)
 async def list_pending_exceptions(
     db: AsyncSession = Depends(get_db),
@@ -115,6 +113,16 @@ async def list_pending_exceptions(
     """Return all exceptions with status 'pending' across all projects."""
     repo = ExceptionRepository(db)
     exceptions = await repo.list_pending()
+    return [_serialize_exception(e) for e in exceptions]
+
+
+@router.get("/exceptions", status_code=200)
+async def list_all_exceptions(
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """Return all exceptions across all projects (for governance overview)."""
+    repo = ExceptionRepository(db)
+    exceptions = await repo.list_all()
     return [_serialize_exception(e) for e in exceptions]
 
 
@@ -150,3 +158,98 @@ async def decide_exception(
 
     await db.commit()
     return _serialize_exception(exc)
+
+
+class ExceptionRevoke(BaseModel):
+    revoked_by: str
+    reason: str = ""
+
+
+@router.post("/exceptions/{exception_id}/revoke", status_code=200)
+async def revoke_exception(
+    exception_id: str,
+    body: ExceptionRevoke,
+    db: AsyncSession = Depends(get_db),
+    _reviewer: dict = RequireReviewer,
+) -> dict:
+    """Revoke an active exception — re-activates the gate rule it was covering."""
+    repo = ExceptionRepository(db)
+    exc = await repo.get(exception_id)
+    if not exc:
+        raise NotFoundError("Exception", exception_id)
+
+    exc.status = "revoked"
+    await db.commit()
+    return _serialize_exception(exc)
+
+
+class ExceptionBoardBriefingUpdate(BaseModel):
+    board_briefing: str
+
+
+@router.put("/exceptions/{exception_id}/board-briefing", status_code=200)
+async def update_board_briefing(
+    exception_id: str,
+    body: ExceptionBoardBriefingUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Store (or update) the AI-generated board briefing for an exception."""
+    repo = ExceptionRepository(db)
+    exc = await repo.get(exception_id)
+    if not exc:
+        raise NotFoundError("Exception", exception_id)
+
+    exc.board_briefing = body.board_briefing
+    await db.commit()
+    return _serialize_exception(exc)
+
+
+@router.get("/exceptions/{exception_id}/audit-thread", status_code=200)
+async def get_exception_audit_thread(
+    exception_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return a structured audit thread for a single exception record."""
+    repo = ExceptionRepository(db)
+    exc = await repo.get(exception_id)
+    if not exc:
+        raise NotFoundError("Exception", exception_id)
+
+    events = []
+
+    if exc.created_at:
+        events.append({
+            "event": "filed",
+            "at": exc.created_at.isoformat(),
+            "by": exc.requested_by,
+            "detail": exc.rationale,
+        })
+
+    if exc.status in ("active",) and exc.start_at:
+        events.append({
+            "event": "approved",
+            "at": exc.start_at.isoformat(),
+            "by": (exc.approved_by or ["unknown"])[0],
+            "detail": f"Exception approved — active until {exc.expires_at.isoformat() if exc.expires_at else 'no expiry'}",
+        })
+
+    if exc.status == "rejected":
+        events.append({
+            "event": "rejected",
+            "at": exc.updated_at.isoformat() if exc.updated_at else None,
+            "by": "reviewer",
+            "detail": "Exception request was rejected.",
+        })
+
+    if exc.status == "revoked":
+        events.append({
+            "event": "revoked",
+            "at": exc.updated_at.isoformat() if exc.updated_at else None,
+            "by": "reviewer",
+            "detail": "Exception was revoked — gate rule re-activated.",
+        })
+
+    return {
+        "exception": _serialize_exception(exc),
+        "audit_thread": events,
+    }

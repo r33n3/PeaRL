@@ -122,6 +122,42 @@ async def decide_approval(
                     approved_by=[decision.decided_by],
                 )
 
+    # If approving a promotion gate, write promotion history and advance the project environment
+    if decision.decision == "approve" and approval.request_type == "promotion_gate":
+        from pearl.repositories.promotion_repo import PromotionHistoryRepository
+        from pearl.repositories.project_repo import ProjectRepository
+
+        req_data = approval.request_data or {}
+        source_env = req_data.get("source_environment") or approval.environment or "unknown"
+        target_env = req_data.get("target_environment") or req_data.get("environment") or "unknown"
+        evaluation_id = req_data.get("evaluation_id", approval_request_id)
+        now = datetime.now(timezone.utc)
+        history_repo = PromotionHistoryRepository(db)
+        await history_repo.create(
+            history_id=generate_id("hist_"),
+            project_id=approval.project_id,
+            source_environment=source_env,
+            target_environment=target_env,
+            evaluation_id=evaluation_id,
+            promoted_by=decision.decided_by,
+            promoted_at=now,
+            details={
+                "approval_request_id": approval_request_id,
+                "reason": decision.reason,
+                "trace_id": trace_id,
+            },
+        )
+        proj_repo = ProjectRepository(db)
+        proj = await proj_repo.get(approval.project_id)
+        if proj:
+            await proj_repo.update(proj, current_environment=target_env)
+        # Update environment_profile so the dashboard picks up the new environment
+        from pearl.repositories.environment_profile_repo import EnvironmentProfileRepository
+        ep_repo = EnvironmentProfileRepository(db)
+        ep = await ep_repo.get_by_project(approval.project_id)
+        if ep:
+            ep.environment = target_env
+
     await db.commit()
 
     # Publish real-time event so dashboard and developer console update

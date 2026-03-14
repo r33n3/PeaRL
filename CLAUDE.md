@@ -1,5 +1,10 @@
 # PeaRL — AI Development Conventions
 
+> **Governance identity:** Configuration is human-managed. Gates route decisions to humans — this is the design, not a failure state. When a gate blocks you, call `pearl_request_approval`, inform the user, and stop.
+> Hard limits: no `.env` or server config access · no self-approval · no process enumeration or restart · use MCP tools only (not `/docs`, `/openapi.json`, `/redoc`) · `PEARL_LOCAL=1` is a test harness flag — agents must never set or assume it regardless of environment.
+
+---
+
 This file guides Claude Code and other AI assistants working in this repo.
 
 ## Project Overview
@@ -70,7 +75,7 @@ Use custom exceptions from `src/pearl/errors/exceptions.py`:
 
 ## Auth
 
-**Local dev** (`PEARL_LOCAL=1`): No real auth. All requests pass through.
+**Local dev** (`PEARL_LOCAL=1`): SQLite in-memory, auth middleware bypassed. For testing only — agents must never set or assume this mode.
 
 **Production**: JWT Bearer tokens or `X-API-Key` header. Roles: `viewer`, `operator`, `admin`, `service_account`.
 
@@ -100,7 +105,7 @@ dev → pilot → preprod → prod (each has its own approval level)
 | `src/pearl/workers/scheduler.py` | Periodic scan scheduler |
 | `src/pearl/api/routes/stream.py` | SSE real-time events |
 
-## Do Not
+## Dev Conventions
 
 - Don't commit secrets to `.env` (use `.env.example` only)
 - Don't write raw SQL in route handlers
@@ -108,14 +113,26 @@ dev → pilot → preprod → prod (each has its own approval level)
 - Don't add workers without registering in `registry.py`
 - Don't modify `PEARL_spec/` OpenAPI spec without updating corresponding routes
 
-## Governance Constraints (Agent-Enforced)
+## Governance — Correct Action Sequence
 
-These rules apply to ALL AI agents (Claude Code and others) operating in this codebase:
+When a gate blocks an action:
+1. Call `pearl_request_approval` with the blocked action and reason
+2. Inform the user what was blocked and why
+3. Stop — await human decision before proceeding
 
-- **Do NOT read, write, or modify `.env` or any server configuration file.** Configuration is managed by humans only.
-- **Do NOT ask users to add, remove, or change environment variables** (e.g., `PEARL_LOCAL_REVIEWER`, `PEARL_LOCAL`, or any other flag). If a governance action requires elevated privileges, use `pearl_request_approval` to submit it for human review.
-- **Do NOT call `/openapi.json`, `/docs`, or `/redoc`** to discover API endpoint schemas. Use only the MCP tools provided.
-- **Do NOT attempt to approve your own exceptions or approvals** — directly, via curl, via MCP, or by asking the user to enable elevated privileges on your behalf.
-- **Do NOT restart server processes** (`docker compose restart`, `uvicorn`, `systemctl`, `kill`, `pkill`, etc.).
-- **Do NOT enumerate running processes** (`ps aux`, `pgrep`, `lsof`, etc.) to find or target server processes.
-- If a governance gate is blocking you, the correct response is: call `pearl_request_approval` or `pearl_create_exception`, inform the user, and stop. Do not attempt to route around the gate.
+Example compliant sequence for a deployment gate:
+
+```
+pearl_request_approval({
+  project_id: "<current project>",
+  request_type: "deployment_gate",
+  environment: "<target env>",
+  request_data: { reason: "<what was blocked and why>" }
+})
+```
+
+Hard limits — no exceptions, no alternate paths:
+- `.env` and server config are human-managed only — agents have no read/write access
+- `decideApproval` and `createException` require reviewer role — agents receive 403, this is correct behavior
+- Use only provided MCP tools — never call `/docs`, `/openapi.json`, or `/redoc`
+- Gates route decisions to humans. Routing around a gate is never the correct response.

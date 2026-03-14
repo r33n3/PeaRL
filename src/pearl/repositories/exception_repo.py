@@ -23,8 +23,10 @@ class ExceptionRepository(BaseRepository):
         return list(result.scalars().all())
 
     async def list_by_project(self, project_id: str) -> list[ExceptionRecordRow]:
-        stmt = select(ExceptionRecordRow).where(
-            ExceptionRecordRow.project_id == project_id,
+        stmt = (
+            select(ExceptionRecordRow)
+            .where(ExceptionRecordRow.project_id == project_id)
+            .order_by(ExceptionRecordRow.created_at.desc())
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
@@ -43,5 +45,10 @@ class ExceptionRepository(BaseRepository):
             .where(ExceptionRecordRow.status == "pending")
             .order_by(ExceptionRecordRow.created_at.asc())
         )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_all(self) -> list[ExceptionRecordRow]:
+        stmt = select(ExceptionRecordRow).order_by(ExceptionRecordRow.created_at.desc())
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

@@ -5,6 +5,10 @@ import type {
   ApprovalRequest,
   ApprovalThread,
   Notification,
+  OrgBaseline,
+  PortfolioMetrics,
+  ProjectGovernanceMetrics,
+  ProjectBaselineStatus,
 } from "@/lib/types";
 
 export function useProjects() {
@@ -20,6 +24,16 @@ export function useProjectOverview(projectId: string) {
     queryKey: ["dashboard", "project", projectId],
     queryFn: () => apiFetch<Record<string, unknown>>(`/dashboard/projects/${projectId}/overview`),
     enabled: !!projectId,
+  });
+}
+
+export function useProjectGovernance(projectId: string) {
+  return useQuery({
+    queryKey: ["dashboard", "project", projectId, "governance"],
+    queryFn: () =>
+      apiFetch<ProjectGovernanceMetrics>(`/dashboard/projects/${projectId}/governance`),
+    enabled: !!projectId,
+    staleTime: 5 * 60 * 1000,
   });
 }
 
@@ -48,6 +62,30 @@ export function useNotifications() {
   });
 }
 
+export function usePortfolioMetrics() {
+  return useQuery({
+    queryKey: ["dashboard", "metrics"],
+    queryFn: () => apiFetch<PortfolioMetrics>("/dashboard/metrics"),
+    refetchInterval: 60000,
+  });
+}
+
+export function usePolicyBaselines() {
+  return useQuery({
+    queryKey: ["dashboard", "policy", "baselines"],
+    queryFn: () => apiFetch<ProjectBaselineStatus[]>("/dashboard/policy/baselines"),
+    staleTime: 2 * 60 * 1000,
+  });
+}
+
+export function useOrgBaseline() {
+  return useQuery({
+    queryKey: ["org", "baseline"],
+    queryFn: () => apiFetch<OrgBaseline>("/org/baseline"),
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
 export function useMarkNotificationRead() {
   const qc = useQueryClient();
   return useMutation({
@@ -55,6 +93,32 @@ export function useMarkNotificationRead() {
       apiFetch(`/dashboard/notifications/${notificationId}/read`, { method: "POST" }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["dashboard", "notifications"] });
+    },
+  });
+}
+
+export function useDeleteProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (projectId: string) =>
+      apiFetch(`/admin/projects/${projectId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["dashboard", "projects"] });
+    },
+  });
+}
+
+export function useDeleteAllProjects() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiFetch("/admin/projects", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: true }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["dashboard", "projects"] });
     },
   });
 }

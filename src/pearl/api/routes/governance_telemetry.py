@@ -1,11 +1,15 @@
 """Governance telemetry push endpoints — receive audit + cost data from clients."""
 
+import hashlib
+import hmac
+import json
 from datetime import datetime
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pearl.config import settings
 from pearl.dependencies import get_db, get_trace_id
 from pearl.errors.exceptions import NotFoundError
 from pearl.repositories.governance_telemetry_repo import (
@@ -14,6 +18,16 @@ from pearl.repositories.governance_telemetry_repo import (
 )
 from pearl.repositories.project_repo import ProjectRepository
 from pearl.services.id_generator import generate_id
+
+
+def _sign_audit_event(event_dict: dict) -> str:
+    """Return HMAC-SHA256 hex digest over canonical JSON of the event fields."""
+    canonical = json.dumps(event_dict, sort_keys=True, separators=(",", ":"), default=str)
+    return hmac.new(
+        settings.audit_hmac_key.encode(),
+        canonical.encode(),
+        hashlib.sha256,
+    ).hexdigest()
 
 router = APIRouter(tags=["Governance Telemetry"])
 
@@ -68,6 +82,31 @@ async def _ensure_project_exists(project_id: str, db: AsyncSession):
 # --- Routes ---
 
 
+@router.get("/projects/{project_id}/audit-events")
+async def list_audit_events(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """List client audit events for a project (newest first)."""
+    await _ensure_project_exists(project_id, db)
+    repo = ClientAuditEventRepository(db)
+    rows = await repo.list_by_project(project_id)
+    return [
+        {
+            "event_id": r.event_id,
+            "timestamp": r.timestamp.isoformat() if r.timestamp else None,
+            "event_type": r.event_type,
+            "action": r.action,
+            "decision": r.decision,
+            "reason": r.reason,
+            "tool_name": r.tool_name,
+            "source": r.source,
+            "signature": r.signature,
+        }
+        for r in rows
+    ]
+
+
 @router.post("/projects/{project_id}/audit-events", status_code=201)
 async def push_audit_events(
     project_id: str,
@@ -81,10 +120,21 @@ async def push_audit_events(
     repo = ClientAuditEventRepository(db)
     rows = []
     for evt in body.events:
-        rows.append({
-            "event_id": generate_id("cae_"),
+        event_id = generate_id("cae_")
+        timestamp_dt = datetime.fromisoformat(evt.timestamp)
+        # Fields used for HMAC signature (canonical subset — no mutable DB fields)
+        signable = {
+            "event_id": event_id,
             "project_id": project_id,
-            "timestamp": datetime.fromisoformat(evt.timestamp),
+            "timestamp": timestamp_dt.isoformat(),  # normalized — must match verify endpoint
+            "event_type": evt.event_type,
+            "action": evt.action,
+            "decision": evt.decision,
+        }
+        rows.append({
+            "event_id": event_id,
+            "project_id": project_id,
+            "timestamp": timestamp_dt,
             "event_type": evt.event_type,
             "action": evt.action,
             "decision": evt.decision,
@@ -92,6 +142,7 @@ async def push_audit_events(
             "tool_name": evt.tool_name,
             "details": evt.details,
             "source": evt.source,
+            "signature": _sign_audit_event(signable),
         })
 
     created = await repo.bulk_create(rows)
@@ -131,3 +182,40 @@ async def push_governance_costs(
     created = await repo.bulk_create(rows)
     await db.commit()
     return {"received": len(body.entries), "created": created}
+
+
+@router.get("/projects/{project_id}/audit-events/{event_id}/verify")
+async def verify_audit_event(
+    project_id: str,
+    event_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Verify the HMAC signature of a stored audit event (ACoP §9.1 immutable log check)."""
+    repo = ClientAuditEventRepository(db)
+    row = await repo.get_by_id("event_id", event_id)
+    if not row or row.project_id != project_id:
+        raise NotFoundError("Audit event", event_id)
+
+    if not row.signature:
+        return {
+            "event_id": event_id,
+            "valid": None,
+            "reason": "no_signature — event predates ACoP audit signing",
+        }
+
+    signable = {
+        "event_id": row.event_id,
+        "project_id": row.project_id,
+        "timestamp": row.timestamp.isoformat(),
+        "event_type": row.event_type,
+        "action": row.action,
+        "decision": row.decision,
+    }
+    expected = _sign_audit_event(signable)
+    valid = hmac.compare_digest(expected, row.signature)
+
+    return {
+        "event_id": event_id,
+        "valid": valid,
+        "reason": "signature_match" if valid else "signature_mismatch — possible tampering",
+    }
