@@ -219,7 +219,7 @@ async def approve_finding_resolution(
 
     now = datetime.now(timezone.utc)
     resolution.approval_status = "approved"
-    resolution.approved_by = body.decided_by
+    resolution.approved_by = current_user.get("sub")
     resolution.approved_at = now
     finding.status = "resolved"
     finding.resolved_at = now
@@ -293,6 +293,7 @@ async def ingest_findings(
     request: FindingsIngestRequest,
     db: AsyncSession = Depends(get_db),
     trace_id: str = Depends(get_trace_id),
+    _current_user: dict = Depends(get_current_user),
 ) -> dict:
     batch_id = request.source_batch.batch_id
     accepted = 0

@@ -7,7 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pearl.dependencies import get_db, get_trace_id, RequireReviewer
+from pearl.dependencies import get_current_user, get_db, get_trace_id, RequireReviewer
 from pearl.errors.exceptions import NotFoundError
 from pearl.models.exception import ExceptionRecord
 from pearl.repositories.exception_repo import ExceptionRepository
@@ -55,6 +55,7 @@ async def create_exception(
     request: Request,
     db: AsyncSession = Depends(get_db),
     trace_id: str = Depends(get_trace_id),
+    _current_user: dict = Depends(get_current_user),
 ) -> dict:
     repo = ExceptionRepository(db)
 
@@ -149,7 +150,7 @@ async def decide_exception(
     if body.decision == "approve":
         exc.status = "active"
         exc.start_at = now
-        exc.approved_by = [body.decided_by]
+        exc.approved_by = [_reviewer.get("sub")]
     elif body.decision == "reject":
         exc.status = "rejected"
     else:

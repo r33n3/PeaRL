@@ -99,7 +99,7 @@ async def decide_approval(
     await dec_repo.create(
         approval_request_id=approval_request_id,
         decision=decision.decision,
-        decided_by=decision.decided_by,
+        decided_by=_reviewer.get("sub"),
         decider_role=decision.decider_role,
         reason=decision.reason,
         conditions=decision.conditions,
@@ -119,7 +119,7 @@ async def decide_approval(
                     exc,
                     status="active",
                     start_at=now,
-                    approved_by=[decision.decided_by],
+                    approved_by=[_reviewer.get("sub")],
                 )
 
     # If approving a promotion gate, write promotion history and advance the project environment
@@ -139,7 +139,7 @@ async def decide_approval(
             source_environment=source_env,
             target_environment=target_env,
             evaluation_id=evaluation_id,
-            promoted_by=decision.decided_by,
+            promoted_by=_reviewer.get("sub"),
             promoted_at=now,
             details={
                 "approval_request_id": approval_request_id,
