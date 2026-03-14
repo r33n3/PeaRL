@@ -60,18 +60,23 @@ def _make_tokens(user_id: str, roles: list[str]) -> tuple[str, str]:
 
 def _hash_password(password: str) -> str:
     import hashlib
-    salt = secrets.token_hex(16)
-    h = hashlib.sha256(f"{salt}:{password}".encode()).hexdigest()
-    return f"{salt}:{h}"
+    salt = secrets.token_bytes(16)
+    h = hashlib.scrypt(password.encode(), salt=salt, n=2**14, r=8, p=1)
+    return f"{salt.hex()}:{h.hex()}"
 
 
 def _verify_password(password: str, hashed: str) -> bool:
+    import hashlib
     parts = hashed.split(":", 1)
     if len(parts) != 2:
         return False
-    salt, stored = parts
-    h = hashlib.sha256(f"{salt}:{password}".encode()).hexdigest()
-    return secrets.compare_digest(h, stored)
+    salt_hex, stored = parts
+    try:
+        salt = bytes.fromhex(salt_hex)
+    except ValueError:
+        return False
+    h = hashlib.scrypt(password.encode(), salt=salt, n=2**14, r=8, p=1)
+    return secrets.compare_digest(h.hex(), stored)
 
 
 def _hash_api_key(raw_key: str) -> str:
