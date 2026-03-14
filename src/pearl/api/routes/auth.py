@@ -107,6 +107,9 @@ async def refresh_token(request: Request, db: AsyncSession = Depends(get_db)):
 
     import jwt as pyjwt
     try:
+        header = pyjwt.get_unverified_header(token)
+        if "crit" in header:
+            raise AuthenticationError("Token contains unsupported critical header extensions")
         payload = pyjwt.decode(
             token,
             settings.jwt_secret,

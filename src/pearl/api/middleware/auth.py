@@ -31,6 +31,11 @@ def _decode_jwt(token: str) -> dict:
     import jwt as pyjwt
 
     try:
+        # Reject tokens with unsupported critical header extensions (RFC 7515 §4.1.11).
+        # PyJWT does not validate the `crit` parameter, so we must enforce it manually.
+        header = pyjwt.get_unverified_header(token)
+        if "crit" in header:
+            raise ValueError("Token contains unsupported critical header extensions")
         return pyjwt.decode(
             token,
             settings.jwt_secret,
