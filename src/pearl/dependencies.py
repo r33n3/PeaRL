@@ -7,8 +7,16 @@ from fastapi import Depends, Request
 
 from pearl.errors.exceptions import AuthenticationError, AuthorizationError
 
-# Roles authorized to make approval/exception decisions
-REVIEWER_ROLES = ("security_reviewer", "security_analyst", "security_manager", "governance", "admin")
+# Canonical role set — ordered from least to most privileged.
+# service_account: machine callers (scanners, CI) — same permissions as operator
+# operator:        human developers — submit work, ingest findings, request approvals
+# reviewer:        security/governance reviewers — approve/reject gates and exceptions
+# admin:           platform admins — user management, baseline config, bulk operations
+CANONICAL_ROLES = ("viewer", "operator", "service_account", "reviewer", "admin")
+
+# Roles that can make approval/exception decisions (reviewer is the single canonical role;
+# admin is always a superset)
+REVIEWER_ROLES = ("reviewer", "admin")
 
 
 async def get_db(request: Request) -> AsyncGenerator:
@@ -34,11 +42,11 @@ async def get_current_user(request: Request) -> dict:
 
     user = getattr(request.state, "user", {})
 
-    # Local reviewer mode: grant reviewer roles without full local_mode (dev/demo use only)
+    # Local reviewer mode: full admin access without real auth (dev/demo only)
     if settings.local_reviewer_mode and (not user or user.get("sub") in ("anonymous", "")):
         return {
             "sub": "local_admin",
-            "roles": list(REVIEWER_ROLES) + ["operator"],
+            "roles": list(CANONICAL_ROLES),  # all roles in local reviewer mode
             "scopes": ["*"],
         }
     if settings.local_mode and (not user or user.get("sub") in ("anonymous", "")):
@@ -72,6 +80,9 @@ DBSession = Annotated[object, Depends(get_db)]
 RedisConn = Annotated[object, Depends(get_redis)]
 TraceId = Annotated[str, Depends(get_trace_id)]
 CurrentUser = Annotated[dict, Depends(get_current_user)]
-RequireAdmin = Depends(require_role("admin"))
-RequireOperator = Depends(require_role("operator", "admin"))
+
+# Role-gated dependency shortcuts
+RequireViewer = Depends(require_role(*CANONICAL_ROLES))           # any authenticated role
+RequireOperator = Depends(require_role("operator", "service_account", "admin"))
 RequireReviewer = Depends(require_role(*REVIEWER_ROLES))
+RequireAdmin = Depends(require_role("admin"))

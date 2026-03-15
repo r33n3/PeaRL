@@ -42,7 +42,7 @@ def _approval_decision_payload(approval_id: str, decision: str = "approve") -> d
         "approval_request_id": approval_id,
         "decision": decision,
         "decided_by": "attacker@example.com",
-        "decider_role": "security_reviewer",
+        "decider_role": "reviewer",
         "decided_at": datetime.now(timezone.utc).isoformat(),
         "trace_id": generate_id("trace_"),
     }

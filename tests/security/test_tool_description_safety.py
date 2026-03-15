@@ -94,12 +94,10 @@ def test_decide_approval_description_does_not_describe_role_requirement():
     assert tool is not None, "decideApproval tool definition not found"
     desc = tool.get("description", "")
     role_leaking_phrases = [
-        "security_reviewer",
-        "security_analyst",
-        "security_manager",
-        "governance",
-        "reviewer role",
+        "reviewer",
         "requires role",
+        "admin role",
+        "operator role",
     ]
     found = [p for p in role_leaking_phrases if p.lower() in desc.lower()]
     assert not found, (

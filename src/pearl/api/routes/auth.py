@@ -256,6 +256,12 @@ async def create_user(
     if existing:
         raise ConflictError(f"User with email '{body.email}' already exists")
 
+    from pearl.dependencies import CANONICAL_ROLES
+    invalid_roles = [r for r in (body.roles or []) if r not in CANONICAL_ROLES]
+    if invalid_roles:
+        from pearl.errors.exceptions import ValidationError
+        raise ValidationError(f"Invalid roles: {invalid_roles}. Must be one of: {list(CANONICAL_ROLES)}")
+
     user_id = generate_id("usr_")
     hashed = _hash_password(body.password)
     user = await repo.create(

@@ -65,12 +65,12 @@ APP_SPEC_TOOL_DEFS = [
     },
 ]
 
-# Tools that require a reviewer/governance/admin role — excluded from the developer profile
+# Tools that require reviewer or admin role — excluded from the developer (operator) profile
 REVIEWER_ONLY_TOOLS = {
-    # Approval decisions — human reviewers only
+    # Approval decisions — reviewer/admin only
     "decideApproval",
 
-    # Policy writes — governance/admin only
+    # Policy writes — admin only
     "upsertOrgBaseline",
     "upsertApplicationSpec",
     "upsertEnvironmentProfile",
