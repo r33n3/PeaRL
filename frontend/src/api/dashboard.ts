@@ -86,6 +86,34 @@ export function useOrgBaseline() {
   });
 }
 
+export interface BaselineControlsData {
+  controls: Record<string, string>;
+  mandatory: {
+    essential: string[];
+    ai_standard: string[];
+    ai_comprehensive: string[];
+  };
+}
+
+export function useBaselineControls() {
+  return useQuery({
+    queryKey: ["org", "baseline", "controls"],
+    queryFn: () => apiFetch<BaselineControlsData>("/org/baseline/controls"),
+    staleTime: Infinity,
+  });
+}
+
+export function useSaveOrgBaseline() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Record<string, unknown>) =>
+      apiFetch("/org/baseline", { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["org", "baseline"] });
+    },
+  });
+}
+
 export function useMarkNotificationRead() {
   const qc = useQueryClient();
   return useMutation({

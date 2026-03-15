@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pearl.dependencies import get_db
+from pearl.dependencies import RequireAdmin, get_current_user, get_db
 from pearl.errors.exceptions import NotFoundError
 from pearl.models.org_baseline import OrgBaseline
 from pearl.repositories.org_baseline_repo import OrgBaselineRepository
@@ -29,10 +29,40 @@ async def get_org_baseline(db: AsyncSession = Depends(get_db)) -> dict:
     }
 
 
+@router.get("/baseline/controls")
+async def get_baseline_controls(_current_user: dict = Depends(get_current_user)) -> dict:
+    """Return the full AIUC1 control registry with labels and mandatory sets per tier."""
+    from pearl.scanning.baseline_package import (
+        AIUC1_CONTROLS,
+        ESSENTIAL_BASELINE,
+        AI_STANDARD_BASELINE,
+        AI_COMPREHENSIVE_BASELINE,
+    )
+
+    def mandatory_set(baseline: dict) -> list[str]:
+        """Return control keys (domain.control_id) that are True in this baseline tier."""
+        result = []
+        for domain, controls in baseline.get("defaults", {}).items():
+            for ctrl_id, enabled in controls.items():
+                if enabled is True:
+                    result.append(f"{domain}.{ctrl_id}")
+        return result
+
+    return {
+        "controls": AIUC1_CONTROLS,
+        "mandatory": {
+            "essential": mandatory_set(ESSENTIAL_BASELINE),
+            "ai_standard": mandatory_set(AI_STANDARD_BASELINE),
+            "ai_comprehensive": mandatory_set(AI_COMPREHENSIVE_BASELINE),
+        },
+    }
+
+
 @router.post("/baseline")
 async def upsert_org_baseline(
     baseline: OrgBaseline,
     db: AsyncSession = Depends(get_db),
+    _admin: dict = RequireAdmin,
 ) -> dict:
     """Upsert the org-wide baseline (project_id = None, org_id = 'default')."""
     repo = OrgBaselineRepository(db)
