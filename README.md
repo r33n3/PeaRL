@@ -29,7 +29,7 @@ PeaRL sits between your AI agents and production, enforcing governance gates, ap
 - **Workers** — async background jobs: compile context, scan, normalize, remediate, report
 - **Scheduler** — polls scan targets and enqueues periodic scans (Redis distributed lock)
 - **MCP Server** — exposes 39 PeaRL tools for Claude and other AI agents
-- **Frontend** (`frontend/`) — React + TypeScript dashboard (10 pages)
+- **Frontend** (`frontend/`) — React + TypeScript dashboard with JWT login (12 pages). Org baseline editing lives in **Policy**, not Configuration.
 - **Security Controls** — 7-level autonomous agent attack chain blocked in production
 
 ---
@@ -52,13 +52,15 @@ docker compose up --build
 
 | Service | URL |
 |---|---|
-| Dashboard | http://localhost:5174 |
+| Dashboard | http://localhost:5177 |
 | API | http://localhost:8080/api/v1 |
 | MinIO console | http://localhost:9001 |
 
 **Bootstrap credentials**
 - Login: `admin@pearl.dev` / `PeaRL-admin-2026`
 - API key: `pearl-KYQXqnybaMaul7PoKJLsT4PZpZSFj0FIaVE2IPrQJNk`
+
+The bootstrap admin user is seeded automatically on first startup. Navigate to the dashboard and sign in with the credentials above. The admin account has all four roles: `admin`, `reviewer`, `operator`, `viewer`.
 
 > **Note:** The Postgres volume starts empty. You need to create your first project (see [Your First Project](#your-first-project) below).
 
@@ -202,6 +204,16 @@ All endpoints at `/api/v1`. Docs at http://localhost:8081/docs (local mode only)
 | `POST` | `/users` | Create user (admin only) |
 | `GET` | `/users/me` | Current user profile |
 | `POST` | `/users/me/api-keys` | Create API key |
+
+**Canonical roles** (set per user, multiple allowed):
+
+| Role | Intent |
+|---|---|
+| `viewer` | Read-only access |
+| `operator` | Submit work, ingest findings |
+| `service_account` | Machine callers (scanners, CI) via API key |
+| `reviewer` | Approve/reject gates and exceptions — human only |
+| `admin` | User management, baseline config, bulk operations |
 
 ### Projects & Governance
 | Method | Path | Description |
