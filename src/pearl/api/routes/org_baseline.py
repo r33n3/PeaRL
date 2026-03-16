@@ -19,6 +19,7 @@ async def get_org_baseline(db: AsyncSession = Depends(get_db)) -> dict:
     if not row:
         raise NotFoundError("OrgBaseline", "org-wide")
     return {
+        "kind": "PearlOrgBaseline",
         "baseline_id": row.baseline_id,
         "project_id": row.project_id,
         "org_id": row.org_id,
