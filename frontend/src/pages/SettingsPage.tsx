@@ -21,7 +21,6 @@ import {
   useEventRouting,
   useSaveEventRouting,
 } from "@/api/integrations";
-import { useOrgBaseline, useSaveOrgBaseline, useOrgBaselineGlobal, useSaveOrgBaselineGlobal } from "@/api/settings";
 import { useDefaultPipeline, useUpdatePipeline } from "@/api/pipelines";
 import type { PipelineStage } from "@/api/pipelines";
 import { useProjects } from "@/api/dashboard";
@@ -31,7 +30,6 @@ import type { IntegrationEndpoint } from "@/lib/types";
 import {
   Plug,
   ShieldCheck,
-  FileCode,
   Bell,
   RefreshCw,
   Trash2,
@@ -40,9 +38,7 @@ import {
   Plus,
   ChevronDown,
   ChevronRight,
-  Check,
   X,
-  Minus,
   Save,
   Edit2,
   Info,
@@ -58,11 +54,10 @@ import {
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
-type Tab = "gates" | "baseline" | "environments" | "business_units" | "integrations" | "project_data";
+type Tab = "gates" | "environments" | "business_units" | "integrations" | "project_data";
 
 const TABS: { key: Tab; icon: typeof Plug; label: string }[] = [
   { key: "gates", icon: ShieldCheck, label: "Gate Rules" },
-  { key: "baseline", icon: FileCode, label: "Baselines" },
   { key: "environments", icon: Layers, label: "Environments" },
   { key: "business_units", icon: Building2, label: "Business Units" },
   { key: "integrations", icon: Plug, label: "Integrations" },
@@ -604,8 +599,6 @@ interface LocalGateState {
   dirty: boolean;
 }
 
-/** @deprecated Use FRAMEWORK_CONTROLS.aiuc1 from frameworkControls.ts instead.
- *  Kept temporarily so fieldKeyToAiuc1Label calls in BaselineTab still compile. */
 const AIUC1_CONTROLS: Record<string, string[]> = {
   data_privacy: [
     "a001_1_policy_documentation",
@@ -1424,52 +1417,7 @@ function GateRulesTab() {
   );
 }
 
-/* ================================================================== */
-/*  TAB 3 -- Org Baseline                                             */
-/* ================================================================== */
-
-/** AIUC-1 standard domain keys — the 6 required categories */
-const BASELINE_CATEGORIES = [
-  "data_privacy",
-  "security",
-  "safety",
-  "reliability",
-  "accountability",
-  "society",
-] as const;
-
-type BaselineCategory = (typeof BASELINE_CATEGORIES)[number];
-
-/** Human label and description for each AIUC-1 domain */
-const CATEGORY_META: Record<BaselineCategory, { label: string; description: string }> = {
-  data_privacy: {
-    label: "A. Data & Privacy",
-    description: "Protect against data leakage, IP leakage, and training on user data without consent",
-  },
-  security: {
-    label: "B. Security",
-    description: "Protect against adversarial attacks, jailbreaks, prompt injections, and unauthorized tool calls",
-  },
-  safety: {
-    label: "C. Safety",
-    description: "Keep customers safe by mitigating harmful AI outputs and protecting brand reputation",
-  },
-  reliability: {
-    label: "D. Reliability",
-    description: "Prevent unreliable AI outputs through testing against hallucinations and unsafe tool calls",
-  },
-  accountability: {
-    label: "E. Accountability",
-    description: "Enforce governance through failure plans, vendor due diligence, and oversight mechanisms",
-  },
-  society: {
-    label: "F. Society",
-    description: "Prevent AI from enabling catastrophic societal harm through cyber exploitation and CBRN misuse",
-  },
-};
-
 /** Fallback environments used when pipeline hasn't loaded */
-const FALLBACK_ENVS = ["sandbox", "dev", "preprod", "prod"];
 
 /**
  * Convert a snake_case field key like "b001_1_adversarial_testing_report"
@@ -1486,386 +1434,6 @@ function fieldKeyToAiuc1Label(fieldKey: string): string {
   const name = rest.replace(/_/g, " ");
   return `${id}: ${name.charAt(0).toUpperCase()}${name.slice(1)}`;
 }
-
-/** Extract just the AIUC-1 ID part, e.g. "b001_1_..." → "B001.1" */
-function fieldKeyToAiuc1Id(fieldKey: string): string {
-  const match = fieldKey.match(/^([a-f])(\d{3})_(\d+)/);
-  if (!match) return fieldKey.toUpperCase();
-  const letter = match[1]!;
-  const controlNum = match[2]!;
-  const subNum = match[3]!;
-  return `${letter.toUpperCase()}${controlNum}.${subNum}`;
-}
-
-function BaselineTab() {
-  const [editMode, setEditMode] = useState(false);
-  const [editedDefaults, setEditedDefaults] = useState<
-    Record<string, Record<string, unknown>> | null
-  >(null);
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set()
-  );
-  const [reqExpanded, setReqExpanded] = useState(false);
-  const [activeReqEnv, setActiveReqEnv] = useState<string>("prod");
-
-  const { data: pipeline } = useDefaultPipeline();
-  const { data: gates } = useGates();
-  // Ordered stage keys from the pipeline, falling back to the static list
-  const promotionEnvs = useMemo(() => {
-    if (pipeline?.stages && pipeline.stages.length > 0) {
-      return [...pipeline.stages]
-        .sort((a, b) => a.order - b.order)
-        .map((s) => s.key);
-    }
-    return FALLBACK_ENVS;
-  }, [pipeline]);
-
-  // Derive AIUC-1 requirements per target env from aiuc1_control_required gate rules.
-  // This is the single source of truth — no separate environment_requirements needed.
-  const requirementsByEnv = useMemo(() => {
-    const map: Record<string, { category: string; control: string; gateLabel: string }[]> = {};
-    for (const gate of gates ?? []) {
-      const tgt = gate.target_environment;
-      for (const rule of gate.rules ?? []) {
-        if (rule.rule_type === "aiuc1_control_required" && rule.parameters) {
-          const cat = rule.parameters["category"] as string | undefined;
-          const ctrl = rule.parameters["control"] as string | undefined;
-          if (cat && ctrl) {
-            if (!map[tgt]) map[tgt] = [];
-            map[tgt].push({ category: cat, control: ctrl, gateLabel: `${gate.source_environment} → ${tgt}` });
-          }
-        }
-      }
-    }
-    return map;
-  }, [gates]);
-
-  const { data: baseline, isLoading, isError } = useOrgBaselineGlobal();
-  const saveMut = useSaveOrgBaselineGlobal();
-
-  // Reset edit state when baseline changes
-  useEffect(() => {
-    setEditMode(false);
-    setEditedDefaults(null);
-  }, [baseline]);
-
-  const toggleSection = (cat: string) => {
-    setExpandedSections((prev) => {
-      const next = new Set(prev);
-      if (next.has(cat)) next.delete(cat);
-      else next.add(cat);
-      return next;
-    });
-  };
-
-  const enterEditMode = () => {
-    if (!baseline) return;
-    setEditedDefaults(
-      JSON.parse(JSON.stringify(baseline.defaults)) as Record<
-        string,
-        Record<string, unknown>
-      >
-    );
-    setEditMode(true);
-  };
-
-  const handleFieldChange = (
-    category: string,
-    field: string,
-    value: boolean | null
-  ) => {
-    setEditedDefaults((prev) => {
-      if (!prev) return prev;
-      return { ...prev, [category]: { ...prev[category], [field]: value } };
-    });
-  };
-
-  const handleSave = () => {
-    if (!baseline || !editedDefaults) return;
-    saveMut.mutate(
-      {
-        schema_version: "1.1",
-        kind: "PearlOrgBaseline",
-        baseline_id: baseline.baseline_id,
-        org_name: baseline.org_name,
-        defaults: editedDefaults,
-      },
-      {
-        onSuccess: () => {
-          setEditMode(false);
-          setEditedDefaults(null);
-        },
-      }
-    );
-  };
-
-  const currentDefaults =
-    editMode && editedDefaults ? editedDefaults : baseline?.defaults;
-
-  const categories = useMemo(() => {
-    if (!currentDefaults) return [];
-    return BASELINE_CATEGORIES.filter((c) => c in currentDefaults);
-  }, [currentDefaults]);
-
-  function renderValue(val: unknown) {
-    if (val === true) return <Check size={14} className="text-cold-teal" />;
-    if (val === false)
-      return <X size={14} className="text-dried-blood-bright" />;
-    return <Minus size={14} className="text-bone-dim" />;
-  }
-
-  function triStateNext(current: unknown): boolean | null {
-    if (current === true) return false;
-    if (current === false) return null;
-    return true;
-  }
-
-  return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="font-heading font-semibold text-bone">Organizational Baseline</h2>
-          {baseline && <p className="text-[10px] font-mono text-bone-dim mt-0.5">{baseline.org_name} · {baseline.baseline_id} · applies to all projects</p>}
-        </div>
-        {baseline && !editMode && (
-          <button
-            className="btn-ghost text-sm flex items-center gap-1.5"
-            onClick={enterEditMode}
-          >
-            <Edit2 size={14} />
-            Edit
-          </button>
-        )}
-        {editMode && (
-          <div className="flex items-center gap-2">
-            <button
-              className="btn-ghost text-sm"
-              onClick={() => {
-                setEditMode(false);
-                setEditedDefaults(null);
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              className="btn-teal text-sm flex items-center gap-1.5"
-              disabled={saveMut.isPending}
-              onClick={handleSave}
-            >
-              {saveMut.isPending ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <Save size={14} />
-              )}
-              Save Baseline
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Content */}
-      {isLoading ? (
-        <div className="flex items-center gap-2 text-bone-muted text-sm font-mono py-6 justify-center">
-          <Loader2 size={16} className="animate-spin" /> Loading baseline...
-        </div>
-      ) : isError || !baseline ? (
-        <VaultCard className="text-center py-8">
-          <FileCode size={24} className="text-bone-dim mx-auto mb-2" />
-          <p className="text-bone-dim font-mono text-sm">
-            No org-wide baseline configured. Use the API or MCP to create one.
-          </p>
-        </VaultCard>
-      ) : (
-        <div className="space-y-3">
-          {/* ---- AIUC-1 domain control cards ---- */}
-          {categories.map((cat) => {
-            const fields = currentDefaults?.[cat] ?? {};
-            const isExpanded = expandedSections.has(cat);
-            const meta = CATEGORY_META[cat];
-            const trueCount = Object.values(fields).filter(
-              (v) => v === true
-            ).length;
-            const totalCount = Object.keys(fields).length;
-            return (
-              <VaultCard key={cat}>
-                <div
-                  className="flex items-start gap-2 cursor-pointer select-none"
-                  onClick={() => toggleSection(cat)}
-                >
-                  <div className="mt-0.5 shrink-0">
-                    {isExpanded ? (
-                      <ChevronDown size={14} className="text-bone-muted" />
-                    ) : (
-                      <ChevronRight size={14} className="text-bone-muted" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="vault-heading text-xs">{meta.label}</h3>
-                    <p className="text-[10px] text-bone-muted font-mono mt-0.5 leading-relaxed">
-                      {meta.description}
-                    </p>
-                  </div>
-                  <div className="text-right shrink-0 ml-4">
-                    <span className="text-[10px] text-cold-teal font-mono">
-                      {trueCount}
-                    </span>
-                    <span className="text-[10px] text-bone-dim font-mono">
-                      /{totalCount}
-                    </span>
-                    <div className="text-[9px] text-bone-dim font-mono">
-                      enabled
-                    </div>
-                  </div>
-                </div>
-
-                {isExpanded && (
-                  <div className="mt-3 space-y-1">
-                    {Object.entries(fields).map(([fieldKey, fieldVal]) => (
-                      <div
-                        key={fieldKey}
-                        className="flex items-center justify-between px-3 py-2 bg-vault-black/50 rounded gap-3"
-                      >
-                        <span className="text-xs text-bone font-mono flex-1 min-w-0 truncate">
-                          {fieldKeyToAiuc1Label(fieldKey)}
-                        </span>
-                        {editMode ? (
-                          <button
-                            className="p-1 rounded hover:bg-charcoal transition-colors shrink-0"
-                            onClick={() =>
-                              handleFieldChange(
-                                cat,
-                                fieldKey,
-                                triStateNext(fieldVal)
-                              )
-                            }
-                            title="Click to cycle: enabled → disabled → not assessed"
-                          >
-                            {renderValue(fieldVal)}
-                          </button>
-                        ) : (
-                          <span className="shrink-0">
-                            {renderValue(fieldVal)}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </VaultCard>
-            );
-          })}
-
-          {/* ---- Promotion Requirements (derived from gate rules) ---- */}
-          <VaultCard>
-            <div
-              className="flex items-center gap-2 cursor-pointer select-none"
-              onClick={() => setReqExpanded((v) => !v)}
-            >
-              {reqExpanded ? (
-                <ChevronDown size={14} className="text-bone-muted" />
-              ) : (
-                <ChevronRight size={14} className="text-bone-muted" />
-              )}
-              <div className="flex-1">
-                <h3 className="vault-heading text-xs">Promotion Requirements</h3>
-                <p className="text-[10px] text-bone-muted font-mono mt-0.5">
-                  AIUC-1 controls enforced by gate rules — manage in Gate Rules tab
-                </p>
-              </div>
-              <span className="text-[10px] text-bone-dim font-mono shrink-0">
-                {promotionEnvs.map((e) => {
-                  const count = requirementsByEnv[e]?.length ?? 0;
-                  return count > 0 ? (
-                    <span key={e} className="ml-2">
-                      <span className="text-clinical-cyan">{e}</span>: {count}
-                    </span>
-                  ) : null;
-                })}
-              </span>
-            </div>
-
-            {reqExpanded && (
-              <div className="mt-4 space-y-3">
-                {/* Env selector tabs */}
-                <div className="flex gap-0 border-b border-slate-border/50 flex-wrap">
-                  {promotionEnvs.map((env) => {
-                    const count = requirementsByEnv[env]?.length ?? 0;
-                    return (
-                      <button
-                        key={env}
-                        onClick={() => setActiveReqEnv(env)}
-                        className={`px-4 py-2 text-xs font-mono border-b-2 -mb-px transition-colors ${
-                          activeReqEnv === env
-                            ? "border-cold-teal text-cold-teal"
-                            : "border-transparent text-bone-muted hover:text-bone"
-                        }`}
-                      >
-                        {env}
-                        {count > 0 && (
-                          <span className="ml-1.5 text-[9px] bg-charcoal px-1 py-0.5 rounded">
-                            {count}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Requirements for active env — read-only, derived from gates */}
-                {(() => {
-                  const reqs = requirementsByEnv[activeReqEnv] ?? [];
-                  if (reqs.length === 0) {
-                    return (
-                      <p className="text-xs text-bone-dim font-mono py-4 text-center">
-                        No AIUC-1 controls required by any gate targeting{" "}
-                        <span className="text-bone">{activeReqEnv}</span>.
-                        Add an{" "}
-                        <span className="text-clinical-cyan font-semibold">
-                          AIUC-1 Control Required
-                        </span>{" "}
-                        rule to a gate in the Gate Rules tab.
-                      </p>
-                    );
-                  }
-                  // Group by category
-                  const grouped: Record<string, typeof reqs> = {};
-                  for (const req of reqs) {
-                    if (!grouped[req.category]) grouped[req.category] = [];
-                    grouped[req.category]!.push(req);
-                  }
-                  return (
-                    <div className="space-y-3">
-                      {Object.entries(grouped).map(([cat, items]) => (
-                        <div key={cat}>
-                          <div className="text-[10px] font-mono text-clinical-cyan font-semibold uppercase tracking-wider mb-1.5">
-                            {CATEGORY_META[cat as BaselineCategory]?.label ?? cat}
-                          </div>
-                          <div className="flex flex-wrap gap-1.5">
-                            {items.map((item) => (
-                              <span
-                                key={item.control}
-                                className="text-[10px] font-mono bg-charcoal border border-slate-border/40 text-bone-muted px-2 py-0.5 rounded"
-                                title={`${fieldKeyToAiuc1Label(item.control)} — enforced by ${item.gateLabel} gate`}
-                              >
-                                {fieldKeyToAiuc1Id(item.control)}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-          </VaultCard>
-        </div>
-      )}
-    </div>
-  );
-}
-
 
 /* ================================================================== */
 /*  TAB 5 — Environments                                              */
@@ -2230,7 +1798,6 @@ export function SettingsPage() {
 
       {/* Tab content */}
       {activeTab === "gates" && <GateRulesTab />}
-      {activeTab === "baseline" && <BaselineTab />}
       {activeTab === "environments" && <EnvironmentsTab />}
       {activeTab === "business_units" && <AdminBusinessUnitsPage />}
       {activeTab === "integrations" && <IntegrationsTab />}

@@ -1,20 +1,23 @@
 const BASE_URL = "/api/v1";
 
-// Bootstrap API key — set VITE_API_KEY in .env.local or docker-compose environment
-const API_KEY = (import.meta.env.VITE_API_KEY as string) || undefined;
+// Bootstrap API key — fallback when no JWT session is active
+const BOOTSTRAP_API_KEY = (import.meta.env.VITE_API_KEY as string) || undefined;
+
+function getAuthHeaders(): Record<string, string> {
+  const token = localStorage.getItem("pearl_access_token");
+  if (token) return { Authorization: `Bearer ${token}` };
+  if (BOOTSTRAP_API_KEY) return { "X-API-Key": BOOTSTRAP_API_KEY };
+  return {};
+}
 
 export async function apiFetch<T>(
   path: string,
   options?: RequestInit,
 ): Promise<T> {
-  const authHeaders: Record<string, string> = API_KEY
-    ? { "X-API-Key": API_KEY }
-    : {};
-
   const res = await fetch(`${BASE_URL}${path}`, {
     headers: {
       "Content-Type": "application/json",
-      ...authHeaders,
+      ...getAuthHeaders(),
       ...options?.headers,
     },
     ...options,

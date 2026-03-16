@@ -20,6 +20,53 @@ configure_logging(log_level=settings.log_level, json_output=_json_logs)
 logger = logging.getLogger(__name__)
 
 
+async def _seed_bootstrap_admin(session: AsyncSession) -> None:
+    """Create the bootstrap admin user + API key if they don't exist (idempotent)."""
+    import hashlib
+    import secrets
+
+    from sqlalchemy import select
+
+    from pearl.db.models.user import ApiKeyRow, UserRow
+
+    ADMIN_USER_ID = "usr_bootstrap_admin"
+    ADMIN_EMAIL = "admin@pearl.dev"
+    ADMIN_PASSWORD = "PeaRL-admin-2026"
+    ADMIN_API_KEY_RAW = "pearl-KYQXqnybaMaul7PoKJLsT4PZpZSFj0FIaVE2IPrQJNk"
+    ADMIN_KEY_ID = "key_bootstrap_admin"
+
+    existing = (await session.execute(
+        select(UserRow).where(UserRow.user_id == ADMIN_USER_ID)
+    )).scalar_one_or_none()
+
+    if not existing:
+        salt = secrets.token_bytes(16)
+        h = hashlib.scrypt(ADMIN_PASSWORD.encode(), salt=salt, n=2**14, r=8, p=1)
+        hashed_pw = f"{salt.hex()}:{h.hex()}"
+
+        session.add(UserRow(
+            user_id=ADMIN_USER_ID,
+            email=ADMIN_EMAIL,
+            display_name="PeaRL Admin",
+            hashed_password=hashed_pw,
+            roles=["admin", "reviewer", "operator", "viewer"],
+            org_id="org_default",
+            is_active=True,
+        ))
+        await session.flush()  # persist user before FK reference
+
+        key_hash = hashlib.sha256(ADMIN_API_KEY_RAW.encode()).hexdigest()
+        session.add(ApiKeyRow(
+            key_id=ADMIN_KEY_ID,
+            user_id=ADMIN_USER_ID,
+            key_hash=key_hash,
+            name="Bootstrap admin key",
+            scopes=[],
+            is_active=True,
+        ))
+        logger.info("Seeded bootstrap admin user (admin@pearl.dev)")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application startup and shutdown resources."""
@@ -95,6 +142,7 @@ async def lifespan(app: FastAPI):
     async with async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)() as seed_session:
         created = await seed_default_gates(seed_session)
         await seed_demo_data(seed_session)
+        await _seed_bootstrap_admin(seed_session)
         await seed_session.commit()
         if created:
             logger.info("Seeded %d default promotion gates", created)

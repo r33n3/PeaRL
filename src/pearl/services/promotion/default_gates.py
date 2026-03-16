@@ -19,7 +19,7 @@ def _rule(rule_type: str, description: str, ai_only: bool = False, threshold: fl
     return r
 
 
-# ─── sandbox → dev (7 rules) ──────────────────────────────────
+# ─── sandbox → dev (8 rules) ──────────────────────────────────
 
 SANDBOX_TO_DEV = {
     "gate_id": "gate_sandbox_to_dev",
