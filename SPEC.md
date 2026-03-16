@@ -2,18 +2,19 @@
 
 > Last updated: 2026-03-16
 > Status: Active
+> Context: Open-source research platform — ease of setup is a first-class requirement
 
 ## Overview
 
-PeaRL (Policy-enforced Autonomous Risk Layer) is an API-first risk orchestration platform that enforces governance gates between AI agents and production deployments. It serves platform engineering and security teams who need human-in-the-loop control over AI-driven changes. This document is a security-focused specification identifying implemented controls, known weaknesses, and required remediations before production deployment.
+PeaRL (Policy-enforced Autonomous Risk Layer) is an open-source research platform that enforces governance gates between AI agents and production deployments. It serves researchers, platform engineers, and security teams studying human-in-the-loop AI control. As a research/OSS project, the design prioritises `git clone` → `docker compose up` → working demo over enterprise hardening. Security findings are triaged accordingly: **setup-convenience items are by design; code-quality and runtime-stability issues are not**.
 
 ## Goals
 
 - Enforce RBAC-gated governance decisions (reviewer role required for approvals and exceptions)
-- Provide a tamper-evident audit trail for all governance actions
+- Provide a tamper-evident audit trail for all governance actions — valuable for AI behaviour research
 - Block autonomous agent attack chains at the API and MCP layers
-- Protect multi-tenant data isolation across orgs and projects
-- Achieve OWASP Top 10 (2023) compliance before first production deployment
+- Ship a working demo with zero manual config (`docker compose up` is the entire setup)
+- Fix genuine code defects and runtime stability issues regardless of deployment context
 
 ## Constraints
 
@@ -21,7 +22,7 @@ PeaRL (Policy-enforced Autonomous Risk Layer) is an API-first risk orchestration
 - Governance gates must route to humans — agents must never self-approve
 - `PEARL_LOCAL=1` is a test harness only — never enabled in staging or prod
 - No `.env` or server config access from within agent sessions
-- All secrets must be externalized (env vars / secrets manager) — no hardcoded values in source
+- **OSS default credentials are intentional** — documented, expected, and consistent with tools like Grafana and Gitea
 
 ## Out of Scope (this version)
 
@@ -30,6 +31,8 @@ PeaRL (Policy-enforced Autonomous Risk Layer) is an API-first risk orchestration
 - Hardware security module (HSM) key storage
 - SOC 2 / ISO 27001 certification audit trail
 - End-to-end encryption at rest for finding/report payloads
+- Hardening default credentials / secrets for production deployment (OSS users deploying to prod own this)
+- HTTPS enforcement in compose stack (handled by operator's reverse proxy)
 
 ---
 
@@ -305,23 +308,31 @@ JWT login page, AuthContext with token persistence, RequireAuth route guard, use
 
 ## Known Tech Debt
 
+### By Design — OSS/Research Setup Convenience (not action items)
+
+| Area | Notes |
+|---|---|
+| `src/pearl/main.py:34-36` — hardcoded bootstrap credentials | Intentional first-boot seed. Standard OSS practice (cf. Grafana, Portainer). Documented in README. |
+| `docker-compose.yaml:13` — default JWT secret | Dev compose config. Users deploying to prod are expected to override via env var. |
+| `docker-compose.yaml:80` — API key in frontend env | Dev convenience fallback; login flow takes precedence when JWT is present. |
+| `src/pearl/api/routes/exceptions.py:52` — exception creation requires only auth | Design choice: operators can *request* exceptions; reviewers *decide*. Gate is on the decide endpoint. |
+| `src/pearl/config.py:74` — default audit HMAC key | Dev default consistent with JWT secret pattern. Prod operators override. |
+| MinIO `minioadmin` defaults | MinIO's own default; compose users expect it. |
+
+### Real Issues — Fix Regardless of Deployment Context
+
 | Area | Issue | Severity |
 |---|---|---|
-| `src/pearl/main.py:34-36` | Hardcoded admin password + API key in source | Critical |
-| `docker-compose.yaml:13,80` | JWT secret + API key hardcoded in compose file | Critical |
-| `src/pearl/api/routes/admin.py:47,58,64,75,81` | Dynamic table names via f-strings in raw SQL | High |
-| `src/pearl/api/routes/exceptions.py:52` | Exception creation requires only auth, not reviewer | High |
-| `src/pearl/main.py:194-200` | CORS `allow_methods=["*"]` and `allow_headers=["*"]` | High |
-| `src/pearl/api/middleware/rate_limit.py:45` | Missing slowapi silently disables rate limiting | Medium |
-| `src/pearl/api/routes/audit.py` | No HMAC verification on audit reads | Medium |
-| `src/pearl/api/routes/auth.py` | No audit events on user/API key creation | Medium |
-| `frontend/src/context/AuthContext.tsx:61` | JWT tokens in localStorage (XSS surface) | Medium |
-| `src/pearl/config.py:25,74` | Weak default values for JWT secret and audit HMAC key | Medium |
-| `src/pearl/api/routes/auth.py:143` | Refresh tokens not rotated on refresh | Medium |
+| `src/pearl/api/routes/admin.py:47,58,64,75,81` | Dynamic table names via f-strings in raw SQL — injection risk if list ever expands | High |
+| `src/pearl/main.py:194-200` | CORS `allow_methods=["*"]` and `allow_headers=["*"]` — affects all users, two-line fix | High |
+| `src/pearl/api/middleware/rate_limit.py:45` | Missing `slowapi` silently disables rate limiting with no warning — a bug, not a config choice | Medium |
+| `src/pearl/api/routes/audit.py` | No HMAC verification on audit reads — research value of audit trail undermined | Medium |
+| `src/pearl/api/routes/auth.py` | No audit events on user/API key creation — gaps in research observability | Medium |
+| `frontend/src/context/AuthContext.tsx:61` | JWT in localStorage — acceptable for research, worth noting for any user-facing deployment | Low |
+| `src/pearl/api/routes/auth.py:143` | Refresh tokens not rotated on refresh | Low |
 
 ## Open Questions
 
-- [ ] Should bootstrap credentials be generated randomly per deployment, or remain static for demo purposes?
-- [ ] HttpOnly cookie vs. sessionStorage migration for token storage — which before v1.0?
-- [ ] Multi-tenant project ACL: is per-org data isolation required before first customer?
 - [ ] Should the Dependabot high-severity alert (currently flagged on GitHub) be resolved before next release?
+- [ ] Multi-tenant project ACL: is per-org data isolation required, or is single-org sufficient for research use?
+- [ ] HttpOnly cookie migration for token storage — is this needed before any public-facing deployment?
