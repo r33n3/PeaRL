@@ -29,6 +29,9 @@ LOCAL_TOOL_NAMES = {t["name"] for t in LOCAL_TOOL_DEFS}
 # New developer-accessible app-spec tools handled directly by PearlUnifiedMCPServer
 APP_SPEC_TOOL_NAMES = {"analyzeProjectForAppSpec", "registerAppSpec"}
 
+# MASS 2.0 on-demand scan tool — handled directly by PearlUnifiedMCPServer
+MASS_TOOL_NAMES = {"run_mass_scan"}
+
 # Tool definitions for app-spec tools
 APP_SPEC_TOOL_DEFS = [
     {
@@ -61,6 +64,37 @@ APP_SPEC_TOOL_DEFS = [
                 },
             },
             "required": ["spec"],
+        },
+    },
+]
+
+# Tool definitions for MASS on-demand scan tool
+MASS_TOOL_DEFS = [
+    {
+        "name": "run_mass_scan",
+        "description": (
+            "Trigger a MASS 2.0 security scan on an AI system endpoint. "
+            "Use for on-demand security validation during approval workflows or code review. "
+            "Submits the scan, waits for completion, and returns a summary."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "target_url": {
+                    "type": "string",
+                    "description": "URL of the AI system to scan.",
+                },
+                "project_id": {
+                    "type": "string",
+                    "description": "PeaRL project ID to associate findings with.",
+                },
+                "scan_type": {
+                    "type": "string",
+                    "enum": ["full", "quick", "redteam"],
+                    "description": "Scan profile — 'full', 'quick', or 'redteam'. Default 'full'.",
+                },
+            },
+            "required": ["target_url", "project_id"],
         },
     },
 ]
@@ -157,6 +191,8 @@ class PearlUnifiedMCPServer:
         tools = list(LOCAL_TOOL_DEFS)
         # App-spec discovery/registration tools are always available to developer profile
         tools.extend(APP_SPEC_TOOL_DEFS)
+        # MASS 2.0 on-demand scan tool
+        tools.extend(MASS_TOOL_DEFS)
 
         try:
             api_server = self._get_api_server()
@@ -166,6 +202,7 @@ class PearlUnifiedMCPServer:
                 {t["name"] for t in api_tools}
                 - LOCAL_TOOL_NAMES
                 - APP_SPEC_TOOL_NAMES
+                - MASS_TOOL_NAMES
                 - self._excluded_tools
             )
             for t in api_tools:
@@ -183,6 +220,13 @@ class PearlUnifiedMCPServer:
                 return self._handle_analyze_project_for_app_spec()
             elif tool_name == "registerAppSpec":
                 return self._handle_register_app_spec(arguments.get("spec", {}))
+        elif tool_name in MASS_TOOL_NAMES:
+            if tool_name == "run_mass_scan":
+                return asyncio.run(self._handle_run_mass_scan(
+                    target_url=arguments.get("target_url", ""),
+                    project_id=arguments.get("project_id", ""),
+                    scan_type=arguments.get("scan_type", "full"),
+                ))
         elif tool_name in LOCAL_TOOL_NAMES:
             try:
                 dev = self._get_dev_server()
@@ -424,6 +468,49 @@ class PearlUnifiedMCPServer:
                 "success": False,
                 "error": f"HTTP error contacting PeaRL API at {self._api_url}: {e}",
             }
+
+    # ── MASS 2.0 scan tool ──────────────────────────────────────────────
+
+    async def _handle_run_mass_scan(
+        self,
+        target_url: str,
+        project_id: str,
+        scan_type: str = "full",
+    ) -> dict[str, Any]:
+        """Trigger a MASS 2.0 security scan and return a summary."""
+        from pearl.config import settings
+        from pearl.scanning.mass_bridge import MassClient
+
+        if not settings.mass_url:
+            return {"error": "MASS 2.0 is not configured. Set PEARL_MASS_URL and PEARL_MASS_API_KEY."}
+        if not target_url:
+            return {"error": "target_url is required."}
+        if not project_id:
+            return {"error": "project_id is required."}
+
+        client = MassClient(
+            base_url=settings.mass_url,
+            api_key=settings.mass_api_key,
+        )
+        try:
+            scan_id = await client.create_scan(
+                target_url=target_url,
+                target_type=scan_type,
+                project_id=project_id,
+            )
+            report = await client.wait_for_completion(
+                scan_id,
+                timeout=settings.mass_scan_timeout,
+            )
+            return {
+                "scan_id": scan_id,
+                "status": report.get("status"),
+                "risk_score": report.get("risk_score"),
+                "finding_count": len(report.get("findings") or []),
+                "report_url": f"{settings.mass_url.rstrip('/')}/scans/{scan_id}/report",
+            }
+        except Exception as exc:
+            return {"error": f"MASS scan failed: {exc}"}
 
     # ── JSON-RPC 2.0 stdio loop ─────────────────────────────────────────
 

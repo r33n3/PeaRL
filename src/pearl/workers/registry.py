@@ -5,6 +5,7 @@ from pearl.workers.base import BaseWorker
 
 def _build_registry() -> dict[str, type[BaseWorker]]:
     from pearl.workers.compile_worker import CompileContextWorker
+    from pearl.workers.mass_scan_worker import MassScanWorker
     from pearl.workers.normalize_worker import NormalizeFindingsWorker
     from pearl.workers.remediation_worker import GenerateRemediationWorker
     from pearl.workers.report_worker import GenerateReportWorker
@@ -13,6 +14,7 @@ def _build_registry() -> dict[str, type[BaseWorker]]:
     return {
         "compile_context": CompileContextWorker,
         "scan_source": ScanWorker,
+        "mass_scan": MassScanWorker,
         "normalize_findings": NormalizeFindingsWorker,
         "generate_remediation_spec": GenerateRemediationWorker,
         "report": GenerateReportWorker,

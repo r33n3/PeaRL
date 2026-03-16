@@ -59,18 +59,34 @@ async def _schedule_due_scans(session_factory, redis) -> int:
                     continue
 
             try:
-                job = await enqueue_job(
-                    session=session,
-                    job_type="scan_source",
-                    project_id=target.project_id,
-                    trace_id=f"scheduler_{target.scan_target_id}",
-                    payload={
-                        "project_id": target.project_id,
-                        "scan_target_id": target.scan_target_id,
-                        "environment": (target.environment_scope or ["dev"])[0],
-                    },
-                    redis=redis,
-                )
+                if target.tool_type == "mass":
+                    job = await enqueue_job(
+                        session=session,
+                        job_type="mass_scan",
+                        project_id=target.project_id,
+                        trace_id=f"scheduler_{target.scan_target_id}",
+                        payload={
+                            "project_id": target.project_id,
+                            "scan_target_id": target.scan_target_id,
+                            "target_url": target.repo_url,
+                            "target_type": "full",
+                            "environment": (target.environment_scope or ["dev"])[0],
+                        },
+                        redis=redis,
+                    )
+                else:
+                    job = await enqueue_job(
+                        session=session,
+                        job_type="scan_source",
+                        project_id=target.project_id,
+                        trace_id=f"scheduler_{target.scan_target_id}",
+                        payload={
+                            "project_id": target.project_id,
+                            "scan_target_id": target.scan_target_id,
+                            "environment": (target.environment_scope or ["dev"])[0],
+                        },
+                        redis=redis,
+                    )
                 enqueued += 1
                 logger.info(
                     "Scheduled scan for target %s (project=%s, job=%s)",

@@ -83,6 +83,11 @@ class Settings(BaseSettings):
     # Defaults to auto-detected path relative to this file (works for dev installs).
     pearl_src_path: str = ""
 
+    # MASS 2.0 integration
+    mass_url: str = ""             # MASS 2.0 API base URL
+    mass_api_key: str = ""         # MASS API key for authentication
+    mass_scan_timeout: int = 600   # seconds to wait for MASS scan completion
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",
