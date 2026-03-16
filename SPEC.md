@@ -54,11 +54,14 @@ Browser / AI Agent
       │        └──▶ MinIO / S3 (artifact storage)
       │
       └──▶ MCP Server (src/pearl/mcp/)
-               39 tools, JSON Schema validated
+               43 tools, JSON Schema validated
                Governance gates enforced via same RBAC
 ```
 
 **Stack:** FastAPI · SQLAlchemy async · PostgreSQL · Redis · React + TypeScript · Vite · JWT HS256/RS256 · scrypt KDF
+
+**Workers** (6 registered in `src/pearl/workers/registry.py`):
+`compile_context` · `scan_source` · `mass_scan` · `normalize_findings` · `generate_remediation_spec` · `report`
 
 ---
 
@@ -76,12 +79,13 @@ JWT access tokens (15-min) and refresh tokens (30-day) issued on login. Tokens v
 - [x] Timing-safe comparison via `secrets.compare_digest`
 - [x] Refresh token blocklist via Redis on logout
 - [x] JWT secret configurable via `PEARL_JWT_SECRET` env var
+- [x] RFC 7515 `crit` header rejected before `decode()` call
 - [ ] JWT secret rotation without invalidating active sessions
 - [ ] Enforce minimum 32-byte secret length in production startup check
 - [ ] Refresh token rotation — invalidate old token when new one issued
 
 **Key files:**
-- `src/pearl/api/routes/auth.py` — token issuance, password verify
+- `src/pearl/api/routes/auth.py` — token issuance, password verify, crit header check
 - `src/pearl/api/middleware/auth.py` — per-request validation
 
 ---
@@ -120,7 +124,7 @@ Promotion gates evaluated before creating approval requests. Human reviewer requ
 - [x] Exception creation → pending state (not auto-approved)
 - [x] Status progression enforced: `pending → approved | rejected`
 - [x] `trace_id` threaded through all governance requests
-- [ ] Exception creation gated to reviewer or admin (currently any authenticated user)
+- [ ] Exception creation gated to reviewer or admin (currently any authenticated user can request; reviewers decide)
 - [ ] `expires_at` enforced on pending approvals — no indefinite hangs
 - [ ] Webhook / SSE event fired on rejection (currently only on approval)
 - [ ] `conditions` field on approval decisions validated against defined schema
@@ -136,19 +140,21 @@ Promotion gates evaluated before creating approval requests. Human reviewer requ
 **Status:** In Progress
 **Priority:** Critical
 
-Audit events recorded for governance actions. HMAC key configured for integrity signing. ApprovalDecisionRepository stores full decision metadata.
+Audit events recorded for governance actions and user management. HMAC key configured for integrity signing. ApprovalDecisionRepository stores full decision metadata.
 
 **Acceptance criteria:**
 - [x] Approval decisions logged with actor, role, reason, timestamp
 - [x] `audit_hmac_key` configurable via env var
+- [x] Audit events created for: user creation, API key creation, project deletion, bulk project deletion
 - [ ] HMAC signature verified on every audit read (currently write-only)
-- [ ] Audit events created for: user creation, API key creation, project deletion
+- [ ] Audit events created for: user deletion, API key deletion
 - [ ] Audit events immutable — no update/delete endpoints
 - [ ] Log database timestamp + request-local timestamp to detect clock skew
 
 **Key files:**
 - `src/pearl/api/routes/audit.py` — query endpoints
-- `src/pearl/repositories/` — audit event persistence
+- `src/pearl/api/routes/auth.py` — user/API key audit events
+- `src/pearl/api/routes/admin.py` — project deletion audit events
 
 ---
 
@@ -163,7 +169,7 @@ Settings loaded from environment via `pydantic-settings` with `PEARL_` prefix. `
 - [x] All secrets via `PEARL_` env vars
 - [x] `.env.example` in repo, `.env` gitignored
 - [x] JWT private/public key file paths for RS256
-- [ ] **Remove hardcoded bootstrap credentials from source** (`main.py:34-36`)
+- [ ] Remove hardcoded bootstrap credentials from source (`main.py:34-36`)
 - [ ] Generate random admin password on first boot, log once, require change
 - [ ] Bootstrap API key generated per-environment (not hardcoded in `docker-compose.yaml`)
 - [ ] Default JWT secret rejected at startup if value is `"dev-secret-change-in-production"`
@@ -179,21 +185,21 @@ Settings loaded from environment via `pydantic-settings` with `PEARL_` prefix. `
 
 ### Feature: CORS Policy
 
-**Status:** In Progress
+**Status:** Complete
 **Priority:** High
 
-CORS configured via `PEARL_CORS_ALLOWED_ORIGINS` env var. Defaults to localhost origins for dev.
+CORS configured via `PEARL_CORS_ALLOWED_ORIGINS` env var. Methods and headers are explicitly enumerated (no wildcards). Defaults to localhost origins for dev.
 
 **Acceptance criteria:**
-- [x] Origins configurable via env var (not hardcoded)
+- [x] Origins configurable via env var (not hardcoded `["*"]`)
 - [x] Dev default restricts to `localhost:5173`, `localhost:3000`
-- [ ] `allow_methods` restricted to `["GET", "POST", "OPTIONS"]` — remove `["*"]`
-- [ ] `allow_headers` whitelisted: `["Authorization", "Content-Type", "Accept", "X-API-Key"]`
+- [x] `allow_methods` explicitly enumerated — no `["*"]` wildcard
+- [x] `allow_headers` explicitly whitelisted — no `["*"]` wildcard
 - [ ] Production startup rejects wildcard `*` origin with `allow_credentials=True`
 - [ ] Origins validated as HTTPS in non-local environments
 
 **Key files:**
-- `src/pearl/main.py:194-200` — CORS middleware config
+- `src/pearl/main.py` — CORS middleware config
 
 ---
 
@@ -202,19 +208,20 @@ CORS configured via `PEARL_CORS_ALLOWED_ORIGINS` env var. Defaults to localhost 
 **Status:** In Progress
 **Priority:** High
 
-slowapi with Redis backend. Read: 1000/min, Write: 100/min. Per-user/IP key function.
+slowapi with Redis backend. Read: 1000/min, Write: 100/min. Per-user/IP key function. Missing slowapi logs a warning (previously silent).
 
 **Acceptance criteria:**
 - [x] Separate read/write limits configured
 - [x] Per-user rate key (not IP-only)
-- [ ] Startup fails with clear error if `slowapi` not installed (currently silent pass)
+- [x] Missing `slowapi` logs a startup warning (not silently ignored)
+- [ ] Startup fails with clear error if `slowapi` not installed (currently degrades gracefully)
 - [ ] In-memory fallback limiter when Redis unavailable
 - [ ] Bulk/expensive endpoints (scan, bulk delete) have separate lower limits
 - [ ] Rate limit headers returned in responses (`X-RateLimit-*`)
 
 **Key files:**
 - `src/pearl/api/middleware/rate_limit.py`
-- `src/pearl/config.py:70-71` — limits config
+- `src/pearl/config.py` — limits config
 
 ---
 
@@ -223,19 +230,21 @@ slowapi with Redis backend. Read: 1000/min, Write: 100/min. Per-user/IP key func
 **Status:** In Progress
 **Priority:** High
 
-Pydantic models on all request bodies. SQLAlchemy ORM prevents parameterized injection. ID patterns enforced via regex.
+Pydantic models on all request bodies. SQLAlchemy ORM prevents parameterised injection. Dynamic table names in admin delete routes protected by an exhaustive whitelist + guard function.
 
 **Acceptance criteria:**
 - [x] Request bodies validated via Pydantic BaseModel
 - [x] Enum constraints on severity, environment, status fields
 - [x] ORM-based queries (no raw SQL in routes)
-- [ ] **Fix dynamic table names in `admin.py`** — replace f-string SQL with ORM or hardcoded whitelist
+- [x] Dynamic table names in `admin.py` guarded by `_checked_table()` whitelist (raises on unknown tables)
+- [x] Path traversal blocked in scan routes — `resolve(strict=True)` + forbidden prefix list
 - [ ] `maxLength` added to all Pydantic string fields (title, description, rationale, etc.)
 - [ ] SSRF protection on user-supplied URLs (scan targets, webhooks) — block RFC1918 ranges
 - [ ] CVE ID format validation (`CVE-\d{4}-\d{4,}`)
 
 **Key files:**
-- `src/pearl/api/routes/admin.py:24-100` — dynamic SQL ⚠ (11 f-string table names)
+- `src/pearl/api/routes/admin.py` — `_PROJECT_TABLES` whitelist + `_checked_table()` guard
+- `src/pearl/api/routes/scanning.py` — path traversal protection
 - `src/pearl/api/routes/findings.py` — finding ingestion validation
 
 ---
@@ -245,7 +254,7 @@ Pydantic models on all request bodies. SQLAlchemy ORM prevents parameterized inj
 **Status:** Complete
 **Priority:** High
 
-39 MCP tools with JSON Schema input validation. Governance gates enforced via same RBAC as REST API. No self-approval path exists.
+43 MCP tools with JSON Schema input validation. Governance gates enforced via same RBAC as REST API. No self-approval path exists.
 
 **Acceptance criteria:**
 - [x] `decideApproval` requires reviewer role (enforced via API — not MCP-only)
@@ -256,7 +265,7 @@ Pydantic models on all request bodies. SQLAlchemy ORM prevents parameterized inj
 - [ ] Tool schema versioning — deprecation path for breaking changes
 
 **Key files:**
-- `src/pearl/mcp/tools.py` — tool schemas
+- `src/pearl/mcp/tools.py` — tool schemas (43 tools)
 - `src/pearl_dev/unified_mcp.py` — MCP server bindings
 
 ---
@@ -266,7 +275,7 @@ Pydantic models on all request bodies. SQLAlchemy ORM prevents parameterized inj
 **Status:** Complete
 **Priority:** High
 
-JWT login page, AuthContext with token persistence, RequireAuth route guard, user identity + role display in sidebar.
+JWT login page, AuthContext with token persistence, RequireAuth route guard, user identity + role display in sidebar. 14 pages total.
 
 **Acceptance criteria:**
 - [x] Login page with email + password form
@@ -318,21 +327,29 @@ JWT login page, AuthContext with token persistence, RequireAuth route guard, use
 | `src/pearl/api/routes/exceptions.py:52` — exception creation requires only auth | Design choice: operators can *request* exceptions; reviewers *decide*. Gate is on the decide endpoint. |
 | `src/pearl/config.py:74` — default audit HMAC key | Dev default consistent with JWT secret pattern. Prod operators override. |
 | MinIO `minioadmin` defaults | MinIO's own default; compose users expect it. |
+| `frontend/src/context/AuthContext.tsx:61` — JWT in localStorage | Acceptable for research use. Noted for any user-facing deployment. |
 
-### Real Issues — Fix Regardless of Deployment Context
+### Real Issues — Resolved
+
+| Area | Issue | Fix |
+|---|---|---|
+| `src/pearl/api/routes/admin.py` | Dynamic table names via f-strings — injection risk | ✅ Fixed: `_PROJECT_TABLES` frozenset whitelist + `_checked_table()` guard |
+| `src/pearl/main.py` | CORS `allow_methods=["*"]` and `allow_headers=["*"]` | ✅ Fixed: explicit method/header lists, origins via env var |
+| `src/pearl/api/middleware/rate_limit.py` | Missing `slowapi` silently disabled rate limiting | ✅ Fixed: `logger.warning()` on import failure |
+| `src/pearl/api/routes/auth.py` | No audit events on user/API key creation | ✅ Fixed: audit events appended after each create |
+| `src/pearl/api/routes/admin.py` | No audit events on project deletion | ✅ Fixed: `project.deleted` and `project.bulk_deleted` events |
+| `src/pearl/scanning/integrations/security_review.py` | Polynomial ReDoS in 3 regex patterns | ✅ Fixed: bounded `[^...\n]{1,N}` char classes + 500KB input cap |
+| `src/pearl/api/routes/scanning.py` | Path traversal via unresolved scan target path | ✅ Fixed: `resolve(strict=True)` + forbidden prefix check |
+
+### Real Issues — Open
 
 | Area | Issue | Severity |
 |---|---|---|
-| `src/pearl/api/routes/admin.py:47,58,64,75,81` | Dynamic table names via f-strings in raw SQL — injection risk if list ever expands | High |
-| `src/pearl/main.py:194-200` | CORS `allow_methods=["*"]` and `allow_headers=["*"]` — affects all users, two-line fix | High |
-| `src/pearl/api/middleware/rate_limit.py:45` | Missing `slowapi` silently disables rate limiting with no warning — a bug, not a config choice | Medium |
 | `src/pearl/api/routes/audit.py` | No HMAC verification on audit reads — research value of audit trail undermined | Medium |
-| `src/pearl/api/routes/auth.py` | No audit events on user/API key creation — gaps in research observability | Medium |
-| `frontend/src/context/AuthContext.tsx:61` | JWT in localStorage — acceptable for research, worth noting for any user-facing deployment | Low |
-| `src/pearl/api/routes/auth.py:143` | Refresh tokens not rotated on refresh | Low |
+| `src/pearl/api/routes/auth.py:143` | Refresh tokens not rotated on refresh — old token remains valid until expiry | Low |
 
 ## Open Questions
 
-- [ ] Should the Dependabot high-severity alert (currently flagged on GitHub) be resolved before next release?
 - [ ] Multi-tenant project ACL: is per-org data isolation required, or is single-org sufficient for research use?
 - [ ] HttpOnly cookie migration for token storage — is this needed before any public-facing deployment?
+- [ ] Should exception *creation* (not just decision) require reviewer role to prevent operator flooding the queue?

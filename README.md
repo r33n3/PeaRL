@@ -11,8 +11,8 @@ PeaRL sits between your AI agents and production, enforcing governance gates, ap
 ```
 ┌─────────────┐    ┌──────────────────────┐    ┌──────────────┐
 │  AI Agents  │───▶│  PeaRL API (FastAPI)  │───▶│  PostgreSQL   │
-│  (MCP/SDK)  │    │  39 MCP tools         │    │  + Redis      │
-└─────────────┘    │  33 route files        │    └──────────────┘
+│  (MCP/SDK)  │    │  43 MCP tools         │    │  + Redis      │
+└─────────────┘    │  36 route files        │    └──────────────┘
                    │  JWT/API key auth      │
 ┌─────────────┐    │  RBAC + reviewer gates │    ┌──────────────┐
 │  Dashboard  │───▶│                        │───▶│  MinIO / S3  │
@@ -28,8 +28,8 @@ PeaRL sits between your AI agents and production, enforcing governance gates, ap
 - **API** (`src/pearl/`) — FastAPI service with JWT/API key auth, RBAC, reviewer-gated governance endpoints
 - **Workers** — async background jobs: compile context, scan, normalize, remediate, report
 - **Scheduler** — polls scan targets and enqueues periodic scans (Redis distributed lock)
-- **MCP Server** — exposes 39 PeaRL tools for Claude and other AI agents
-- **Frontend** (`frontend/`) — React + TypeScript dashboard with JWT login (12 pages). Org baseline editing lives in **Policy**, not Configuration.
+- **MCP Server** — exposes 43 PeaRL tools for Claude and other AI agents
+- **Frontend** (`frontend/`) — React + TypeScript dashboard with JWT login (14 pages). Org baseline editing lives in **Policy**, not Configuration.
 - **Security Controls** — 7-level autonomous agent attack chain blocked in production
 
 ---
@@ -142,7 +142,7 @@ curl -s "$API/projects/$PROJECT/mcp.json"  -H "X-API-Key: $KEY" > .mcp.json
 
 ### 4. Open the project in Claude Code
 
-Double-click `Claude Code.bat`, select your project folder. Claude Code starts with all 39 PeaRL MCP tools available.
+Double-click `Claude Code.bat`, select your project folder. Claude Code starts with all 43 PeaRL MCP tools available.
 
 From the first prompt, Claude can:
 - `pearl_get_project` — load project context and governance rules
@@ -264,7 +264,7 @@ cd tests/e2e && npx playwright test
 
 ## MCP Integration
 
-PeaRL exposes **39 tools** via MCP for Claude Code and other MCP-compatible AI agents.
+PeaRL exposes **43 tools** via MCP for Claude Code and other MCP-compatible AI agents.
 
 The easiest path is the [Your First Project](#your-first-project) flow above — the launcher and config endpoints handle `.mcp.json` generation automatically.
 
