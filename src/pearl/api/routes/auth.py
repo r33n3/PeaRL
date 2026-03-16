@@ -81,7 +81,7 @@ def _verify_password(password: str, hashed: str) -> bool:
 
 
 def _hash_api_key(raw_key: str) -> str:
-    return hashlib.sha256(raw_key.encode()).hexdigest()
+    return hashlib.sha256(raw_key.encode()).hexdigest()  # nosec B324 — high-entropy token identifier, not a password
 
 
 # ── Auth endpoints ─────────────────────────────────────────────────────────────

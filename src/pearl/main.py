@@ -55,7 +55,7 @@ async def _seed_bootstrap_admin(session: AsyncSession) -> None:
         ))
         await session.flush()  # persist user before FK reference
 
-        key_hash = hashlib.sha256(ADMIN_API_KEY_RAW.encode()).hexdigest()
+        key_hash = hashlib.sha256(ADMIN_API_KEY_RAW.encode()).hexdigest()  # nosec B324 — high-entropy token identifier, not a password
         session.add(ApiKeyRow(
             key_id=ADMIN_KEY_ID,
             user_id=ADMIN_USER_ID,

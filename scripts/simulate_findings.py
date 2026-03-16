@@ -416,12 +416,12 @@ async def main():
         }
         r = await client.post(f"/api/v1/projects/{pid}/remediation-specs/generate", json=remed_secret)
         assert r.status_code == 201, f"Remediation secret: {r.status_code} {r.text}"
-        rs_secret = r.json()
-        print(f"      Spec ID:      {rs_secret['remediation_spec_id']}")
-        print(f"      Eligibility:  {rs_secret['eligibility']}")
-        print(f"      Risk level:   {rs_secret['risk_summary']['risk_level']}")
-        print(f"      Outcome:      {rs_secret['required_outcome']}")
-        print(f"      Approval:     {rs_secret.get('approval_required', False)}")
+        rs_hardcoded_key = r.json()
+        print(f"      Spec ID:      {rs_hardcoded_key['remediation_spec_id']}")
+        print(f"      Eligibility:  {rs_hardcoded_key['eligibility']}")
+        print(f"      Risk level:   {rs_hardcoded_key['risk_summary']['risk_level']}")
+        print(f"      Outcome:      {rs_hardcoded_key['required_outcome']}")
+        print(f"      Approval:     {rs_hardcoded_key.get('approval_required', False)}")
 
         # 4c: Auth boundary finding (Finding 3)
         print()
@@ -642,7 +642,7 @@ async def main():
         print("    2. External tools find issues -> ingest into PeaRL")
         print("    3. PeaRL generates remediation specs with eligibility:")
         print(f"       - Dep pin update:  {rs_dep['eligibility']}")
-        print(f"       - Hardcoded key:   {rs_secret['eligibility']}")
+        print(f"       - Hardcoded key:   {rs_hardcoded_key['eligibility']}")
         print(f"       - Auth boundary:   {rs_auth['eligibility']}")
         print(f"       - RAI disclosure:  {rs_rai['eligibility']}")
         print("    4. Approval workflow for auth boundary change")
