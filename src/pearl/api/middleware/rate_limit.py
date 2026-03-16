@@ -43,4 +43,7 @@ def setup_rate_limiter(app) -> None:
                     settings.rate_limit_writes_per_minute,
                     settings.rate_limit_reads_per_minute)
     except ImportError:
-        logger.debug("slowapi not installed, rate limiting disabled")
+        logger.warning(
+            "slowapi is not installed — rate limiting is DISABLED. "
+            "Install it with: pip install slowapi"
+        )

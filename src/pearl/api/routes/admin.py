@@ -1,6 +1,6 @@
 """Admin-only endpoints for destructive project operations."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,13 +8,37 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pearl.db.models.project import ProjectRow
 from pearl.dependencies import RequireAdmin, get_db
 from pearl.errors.exceptions import NotFoundError, ValidationError
+from pearl.repositories.fairness_repo import AuditEventRepository
 from pearl.repositories.project_repo import ProjectRepository
+from pearl.services.id_generator import generate_id
 
 router = APIRouter(tags=["Admin"])
+
+# Exhaustive whitelist of tables that may be cleared by project-scoped deletes.
+# Adding a table here is a deliberate, reviewed action — never interpolate from
+# user-supplied input.
+_PROJECT_TABLES: frozenset[str] = frozenset({
+    "fairness_cases", "fairness_requirements_specs", "evidence_packages",
+    "fairness_exceptions", "monitoring_signals", "context_contracts",
+    "context_packs", "context_receipts", "compiled_packages",
+    "environment_profiles", "app_specs", "org_baselines", "notifications",
+    "scan_targets", "promotion_pipelines", "promotion_evaluations",
+    "promotion_history", "promotion_gates", "reports", "remediation_specs",
+    "exception_records", "task_packets", "approval_comments",
+    "approval_decisions", "finding_resolutions", "approval_requests",
+    "findings", "jobs", "client_audit_events", "client_cost_entries",
+})
 
 
 class BulkDeleteRequest(BaseModel):
     confirm: bool = False
+
+
+def _checked_table(name: str) -> str:
+    """Return table name only if it is in the whitelist — raises otherwise."""
+    if name not in _PROJECT_TABLES:
+        raise ValueError(f"Table '{name}' is not in the admin delete whitelist")
+    return name
 
 
 async def _delete_project_data(session: AsyncSession, project_id: str) -> int:
@@ -44,7 +68,7 @@ async def _delete_project_data(session: AsyncSession, project_id: str) -> int:
         "context_receipts",
     ):
         await session.execute(
-            text(f"DELETE FROM {table} WHERE project_id = :pid"),  # noqa: S608
+            text(f"DELETE FROM {_checked_table(table)} WHERE project_id = :pid"),
             {"pid": project_id},
         )
     # 4. compiled / environment tables
@@ -55,13 +79,13 @@ async def _delete_project_data(session: AsyncSession, project_id: str) -> int:
         "org_baselines",
     ):
         await session.execute(
-            text(f"DELETE FROM {table} WHERE project_id = :pid"),  # noqa: S608
+            text(f"DELETE FROM {_checked_table(table)} WHERE project_id = :pid"),
             {"pid": project_id},
         )
     # 5. notifications, scan_targets
     for table in ("notifications", "scan_targets"):
         await session.execute(
-            text(f"DELETE FROM {table} WHERE project_id = :pid"),  # noqa: S608
+            text(f"DELETE FROM {_checked_table(table)} WHERE project_id = :pid"),
             {"pid": project_id},
         )
     # 6. promotion tables
@@ -72,13 +96,13 @@ async def _delete_project_data(session: AsyncSession, project_id: str) -> int:
         "promotion_gates",
     ):
         await session.execute(
-            text(f"DELETE FROM {table} WHERE project_id = :pid"),  # noqa: S608
+            text(f"DELETE FROM {_checked_table(table)} WHERE project_id = :pid"),
             {"pid": project_id},
         )
     # 7. reports, remediation_specs, exception_records, task_packets
     for table in ("reports", "remediation_specs", "exception_records", "task_packets"):
         await session.execute(
-            text(f"DELETE FROM {table} WHERE project_id = :pid"),  # noqa: S608
+            text(f"DELETE FROM {_checked_table(table)} WHERE project_id = :pid"),
             {"pid": project_id},
         )
     # 8. approval child rows, finding resolutions, then parents
@@ -105,13 +129,13 @@ async def _delete_project_data(session: AsyncSession, project_id: str) -> int:
     )
     for table in ("approval_requests", "findings", "jobs"):
         await session.execute(
-            text(f"DELETE FROM {table} WHERE project_id = :pid"),  # noqa: S608
+            text(f"DELETE FROM {_checked_table(table)} WHERE project_id = :pid"),
             {"pid": project_id},
         )
     # 9. telemetry
     for table in ("client_audit_events", "client_cost_entries"):
         await session.execute(
-            text(f"DELETE FROM {table} WHERE project_id = :pid"),  # noqa: S608
+            text(f"DELETE FROM {_checked_table(table)} WHERE project_id = :pid"),
             {"pid": project_id},
         )
     # 10. projects
@@ -139,7 +163,7 @@ async def _delete_all_project_data(session: AsyncSession) -> int:
         "context_packs",
         "context_receipts",
     ):
-        await session.execute(text(f"DELETE FROM {table}"))  # noqa: S608
+        await session.execute(text(f"DELETE FROM {_checked_table(table)}"))
     # 4. compiled / environment tables
     for table in (
         "compiled_packages",
@@ -147,10 +171,10 @@ async def _delete_all_project_data(session: AsyncSession) -> int:
         "app_specs",
         "org_baselines",
     ):
-        await session.execute(text(f"DELETE FROM {table}"))  # noqa: S608
+        await session.execute(text(f"DELETE FROM {_checked_table(table)}"))
     # 5. notifications, scan_targets
     for table in ("notifications", "scan_targets"):
-        await session.execute(text(f"DELETE FROM {table}"))  # noqa: S608
+        await session.execute(text(f"DELETE FROM {_checked_table(table)}"))
     # 6. promotion tables
     for table in (
         "promotion_pipelines",
@@ -158,18 +182,18 @@ async def _delete_all_project_data(session: AsyncSession) -> int:
         "promotion_history",
         "promotion_gates",
     ):
-        await session.execute(text(f"DELETE FROM {table}"))  # noqa: S608
+        await session.execute(text(f"DELETE FROM {_checked_table(table)}"))
     # 7. reports, remediation_specs, exception_records, task_packets
     for table in ("reports", "remediation_specs", "exception_records", "task_packets"):
-        await session.execute(text(f"DELETE FROM {table}"))  # noqa: S608
+        await session.execute(text(f"DELETE FROM {_checked_table(table)}"))
     # 8. approval child rows, finding resolutions, then parents
     for table in ("approval_comments", "approval_decisions", "finding_resolutions"):
-        await session.execute(text(f"DELETE FROM {table}"))  # noqa: S608
+        await session.execute(text(f"DELETE FROM {_checked_table(table)}"))
     for table in ("approval_requests", "findings", "jobs"):
-        await session.execute(text(f"DELETE FROM {table}"))  # noqa: S608
+        await session.execute(text(f"DELETE FROM {_checked_table(table)}"))
     # 9. telemetry
     for table in ("client_audit_events", "client_cost_entries"):
-        await session.execute(text(f"DELETE FROM {table}"))  # noqa: S608
+        await session.execute(text(f"DELETE FROM {_checked_table(table)}"))
     # 10. projects
     await session.execute(text("DELETE FROM projects"))
     return 19
@@ -178,6 +202,7 @@ async def _delete_all_project_data(session: AsyncSession) -> int:
 @router.delete("/admin/projects/{project_id}", dependencies=[RequireAdmin])
 async def delete_project(
     project_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Delete one project and all its dependent data (admin only)."""
@@ -187,6 +212,14 @@ async def delete_project(
         raise NotFoundError("Project", project_id)
 
     tables_affected = await _delete_project_data(db, project_id)
+    actor = getattr(request.state, "user", {}).get("sub")
+    await AuditEventRepository(db).append(
+        event_id=generate_id("evt_"),
+        resource_id=project_id,
+        action_type="project.deleted",
+        actor=actor,
+        details={"tables_affected": tables_affected},
+    )
     await db.commit()
     return {"deleted": project_id, "tables_affected": tables_affected}
 
@@ -194,6 +227,7 @@ async def delete_project(
 @router.delete("/admin/projects", dependencies=[RequireAdmin])
 async def delete_all_projects(
     body: BulkDeleteRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Wipe every project and all dependent data (admin only). Requires confirm=true."""
@@ -204,5 +238,13 @@ async def delete_all_projects(
     deleted_count = count_result.scalar_one()
 
     tables_cleared = await _delete_all_project_data(db)
+    actor = getattr(request.state, "user", {}).get("sub")
+    await AuditEventRepository(db).append(
+        event_id=generate_id("evt_"),
+        resource_id="system",
+        action_type="project.bulk_deleted",
+        actor=actor,
+        details={"deleted_count": deleted_count},
+    )
     await db.commit()
     return {"deleted_count": deleted_count, "tables_cleared": tables_cleared}

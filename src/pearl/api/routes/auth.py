@@ -20,6 +20,7 @@ from pearl.models.user import (
     UserResponse,
 )
 from pearl.repositories.compiled_package_repo import CompiledPackageRepository
+from pearl.repositories.fairness_repo import AuditEventRepository
 from pearl.repositories.user_repo import ApiKeyRepository, UserRepository
 from pearl.services.id_generator import generate_id
 
@@ -273,6 +274,13 @@ async def create_user(
         org_id=body.org_id,
         is_active=True,
     )
+    await AuditEventRepository(db).append(
+        event_id=generate_id("evt_"),
+        resource_id=user_id,
+        action_type="user.created",
+        actor=current_user.get("sub"),
+        details={"email": body.email, "roles": body.roles},
+    )
     await db.commit()
     return UserResponse.model_validate(user)
 
@@ -317,6 +325,13 @@ async def create_api_key(
         scopes=body.scopes,
         expires_at=body.expires_at,
         is_active=True,
+    )
+    await AuditEventRepository(db).append(
+        event_id=generate_id("evt_"),
+        resource_id=key_id,
+        action_type="api_key.created",
+        actor=user_id,
+        details={"name": body.name, "scopes": body.scopes},
     )
     await db.commit()
 
