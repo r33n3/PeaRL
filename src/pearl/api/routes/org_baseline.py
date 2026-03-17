@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from pearl.dependencies import RequireAdmin, get_current_user, get_db
 from pearl.errors.exceptions import NotFoundError
-from pearl.models.org_baseline import OrgBaseline
+from pearl.models.org_baseline import OrgBaseline, OrgBaselineUpsert
 from pearl.repositories.org_baseline_repo import OrgBaselineRepository
 
 router = APIRouter(prefix="/org", tags=["Org Baseline"])
@@ -61,7 +61,7 @@ async def get_baseline_controls(_current_user: dict = Depends(get_current_user))
 
 @router.post("/baseline")
 async def upsert_org_baseline(
-    baseline: OrgBaseline,
+    baseline: OrgBaselineUpsert,
     db: AsyncSession = Depends(get_db),
     _admin: dict = RequireAdmin,
 ) -> dict:

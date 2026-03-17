@@ -325,6 +325,7 @@ export interface ProjectBaselineStatus {
 }
 
 export interface OrgBaseline {
+  kind: "PearlOrgBaseline";
   baseline_id: string;
   project_id: string | null;
   org_id: string | null;

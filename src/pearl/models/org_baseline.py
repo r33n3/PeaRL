@@ -293,3 +293,24 @@ class OrgBaseline(BaseModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
     integrity: Integrity | None = None
+
+
+class OrgBaselineUpsert(BaseModel):
+    """Lenient variant used by the upsert endpoint.
+
+    Accepts the same shape returned by GET /org/baseline so the frontend
+    can round-trip the object without stripping fields.  Extra fields
+    (project_id, org_id, etc.) are silently ignored.  ``kind`` defaults
+    to the only valid value so callers need not include it.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    schema_version: str = Field(..., pattern=r"^\d+\.\d+(\.\d+)?$")
+    kind: Literal["PearlOrgBaseline"] = "PearlOrgBaseline"
+    baseline_id: str = Field(..., pattern=r"^orgb_[A-Za-z0-9_-]+$")
+    org_name: str
+    defaults: OrgDefaults
+    environment_defaults: dict[str, Any] | None = None
+    environment_requirements: EnvironmentRequirements | None = None
+    integrity: Integrity | None = None
