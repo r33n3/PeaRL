@@ -48,6 +48,8 @@ from pearl.db.models.org import OrgRow
 from pearl.db.models.business_unit import BusinessUnitRow
 from pearl.db.models.org_env_config import OrgEnvironmentConfigRow
 from pearl.db.models.framework_requirement import FrameworkRequirementRow
+from pearl.db.models.cedar_deployment import CedarDeploymentRow
+from pearl.db.models.agentcore_scan_state import AgentCoreScanStateRow
 
 __all__ = [
     "ProjectRow",
@@ -93,4 +95,6 @@ __all__ = [
     "BusinessUnitRow",
     "OrgEnvironmentConfigRow",
     "FrameworkRequirementRow",
+    "CedarDeploymentRow",
+    "AgentCoreScanStateRow",
 ]

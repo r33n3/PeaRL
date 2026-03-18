@@ -88,6 +88,23 @@ class Settings(BaseSettings):
     mass_api_key: str = ""         # MASS API key for authentication
     mass_scan_timeout: int = 600   # seconds to wait for MASS scan completion
 
+    # AWS AgentCore — Cedar policy deployment
+    # Credentials default to empty; boto3 falls back to IAM role / ~/.aws chain when unset.
+    agentcore_gateway_arn: str = ""          # PEARL_AGENTCORE_GATEWAY_ARN
+    agentcore_aws_region: str = "us-east-1"  # PEARL_AGENTCORE_AWS_REGION
+    agentcore_aws_access_key_id: str = ""    # PEARL_AGENTCORE_AWS_ACCESS_KEY_ID
+    agentcore_aws_secret_access_key: str = ""  # PEARL_AGENTCORE_AWS_SECRET_ACCESS_KEY
+    agentcore_deploy_on_approval: bool = True  # PEARL_AGENTCORE_DEPLOY_ON_APPROVAL
+    cedar_bundle_dry_run: bool = False         # PEARL_CEDAR_BUNDLE_DRY_RUN — generate but don't push
+
+    # CloudWatch — AgentCore decision log bridge
+    cloudwatch_log_group_arn: str = ""             # PEARL_CLOUDWATCH_LOG_GROUP_ARN
+    cloudwatch_aws_region: str = "us-east-1"       # PEARL_CLOUDWATCH_AWS_REGION (may differ from AgentCore)
+    cloudwatch_scan_interval_minutes: int = 60     # PEARL_CLOUDWATCH_SCAN_INTERVAL_MINUTES
+    cloudwatch_scan_window_minutes: int = 60       # PEARL_CLOUDWATCH_SCAN_WINDOW_MINUTES
+    cloudwatch_volume_anomaly_threshold: float = 3.0  # PEARL_CLOUDWATCH_VOLUME_ANOMALY_THRESHOLD (std devs)
+    cloudwatch_query_timeout_seconds: int = 60     # PEARL_CLOUDWATCH_QUERY_TIMEOUT_SECONDS
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",
