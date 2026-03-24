@@ -38,6 +38,7 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./deploy/postgres/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U pearl"]
       interval: 5s
@@ -82,6 +83,45 @@ services:
       pearl-api:
         condition: service_started
 
+  sonarqube:
+    image: sonarqube:community
+    hostname: sonarqube
+    ports:
+      - "9090:9000"   # 9000 is taken by minio; access SonarQube at localhost:9090
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://postgres:5432/sonar
+      SONAR_JDBC_USERNAME: pearl
+      SONAR_JDBC_PASSWORD: pearl
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_extensions:/opt/sonarqube/extensions
+      - sonarqube_logs:/opt/sonarqube/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/api/system/status | grep -q '\"status\":\"UP\"'"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+  sonar-scanner:
+    image: sonarsource/sonar-scanner-cli
+    profiles:
+      - scan   # only runs when explicitly invoked: docker compose run --rm sonar-scanner
+    depends_on:
+      sonarqube:
+        condition: service_healthy
+    environment:
+      SONAR_HOST_URL: http://sonarqube:9000
+      SONAR_TOKEN: ${SONAR_TOKEN:-}   # set in .env or pass on the command line
+    volumes:
+      - ${SCAN_DIR:-.}/:/usr/src   # override with: SCAN_DIR=/path/to/repo docker compose run --rm sonar-scanner
+
 volumes:
   pgdata:
   miniodata:
+  sonarqube_data:
+  sonarqube_extensions:
+  sonarqube_logs:

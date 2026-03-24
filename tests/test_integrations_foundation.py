@@ -672,7 +672,7 @@ class TestAdapterRegistry:
     """Tests for AVAILABLE_ADAPTERS and import_adapter."""
 
     def test_available_adapters_contains_expected_keys(self):
-        expected = {"snyk", "semgrep", "trivy", "jira", "slack", "github_issues", "sonarqube"}
+        expected = {"snyk", "semgrep", "trivy", "jira", "slack", "github_issues", "sonarqube", "teams", "telegram", "webhook"}
         assert expected == set(AVAILABLE_ADAPTERS.keys())
 
     def test_available_adapters_values_are_dotted_paths(self):

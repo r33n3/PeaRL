@@ -151,9 +151,15 @@ def _extract_line_number(text: str) -> int | None:
 # Main parser
 # ---------------------------------------------------------------------------
 
-_HEADING_RE = re.compile(r"^(#{1,4})\s+(.+)$", re.MULTILINE)
-_NUMBERED_ITEM_RE = re.compile(r"^\s*(\d+)\.\s+\*?\*?(.+?)\*?\*?\s*$", re.MULTILINE)
-_BULLET_ITEM_RE = re.compile(r"^\s*[-*]\s+\*?\*?(.+?)\*?\*?\s*$", re.MULTILINE)
+_HEADING_RE = re.compile(r"^(#{1,4})\s+([^\n]{1,200})$", re.MULTILINE)
+# Rewritten to avoid catastrophic backtracking on unbounded input:
+# - capture group uses negated char class instead of .+? + optional suffix
+# - strips trailing bold/italic markers via rstrip after match instead of regex
+_NUMBERED_ITEM_RE = re.compile(r"^\s*(\d+)\.\s+\*{0,2}([^*\n]{1,500}?)\*{0,2}\s*$", re.MULTILINE)
+_BULLET_ITEM_RE = re.compile(r"^\s*[-*]\s+\*{0,2}([^*\n]{1,500}?)\*{0,2}\s*$", re.MULTILINE)
+
+# Cap input length before applying regexes to bound worst-case backtracking time.
+_MAX_MARKDOWN_LEN = 500_000  # 500 KB
 
 
 def parse_security_review(
@@ -176,6 +182,7 @@ def parse_security_review(
     Returns:
         Dict in PeaRL findings ingest batch format.
     """
+    markdown = markdown[:_MAX_MARKDOWN_LEN]
     findings: list[dict[str, Any]] = []
 
     # Strategy 1: Split by headings and extract findings from each section

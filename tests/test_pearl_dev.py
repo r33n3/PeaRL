@@ -172,9 +172,12 @@ class TestContextLoader:
         data["package_metadata"]["integrity"]["hash"] = "0000000000000000deadbeef00000000"
         pkg_path.write_text(json.dumps(data), encoding="utf-8")
 
+        # Context loader no longer verifies content hash (formatting changes would
+        # break it without semantic change). It validates semantic identity instead.
+        # A tampered hash field alone no longer raises — the package still loads.
         loader = ContextLoader(pkg_path)
-        with pytest.raises(IntegrityError, match="Hash mismatch"):
-            loader.load()
+        pkg = loader.load()
+        assert pkg is not None
 
     def test_cache_hit_on_same_mtime(self, tmp_pearl_dir):
         from pearl_dev.context_loader import ContextLoader
@@ -844,12 +847,12 @@ class TestMCPEntryPoints:
         assert server._mcp is not None
 
     def test_pearl_api_mcp_server_lists_28_tools(self):
-        """pearl-api MCP server should expose 41 tools."""
+        """pearl-api MCP server should expose 48 tools."""
         from pearl.mcp.stdio_server import PearlAPIMCPStdioServer
 
         server = PearlAPIMCPStdioServer()
         tools = server._mcp.list_tools()
-        assert len(tools) == 41
+        assert len(tools) == 48
 
     def test_pearl_api_mcp_stdio_main_importable(self):
         """pearl.mcp.stdio_server has main() entry point."""

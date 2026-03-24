@@ -110,8 +110,8 @@ def test_tool_count():
     """Tool count matches expected value — update if tools are added or removed."""
     # Update this value when tools are added or removed.
     # This is a regression guard, not a strict limit.
-    assert len(TOOL_DEFINITIONS) == 41, (
-        f"Expected 41 tool definitions, got {len(TOOL_DEFINITIONS)}. "
+    assert len(TOOL_DEFINITIONS) == 48, (
+        f"Expected 48 tool definitions, got {len(TOOL_DEFINITIONS)}. "
         f"If you added or removed tools, update this test AND verify no new descriptions "
         f"contain flagged strings (run test_no_tool_description_contains_flagged_string)."
     )

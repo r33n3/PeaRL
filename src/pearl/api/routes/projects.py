@@ -9,15 +9,402 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import re
+
+from pydantic import BaseModel as PydanticBaseModel
+
 from pearl.dependencies import get_db, get_trace_id
 from pearl.errors.exceptions import ConflictError, NotFoundError, ValidationError
 from pearl.models.common import TraceabilityRef
+from pearl.models.enums import BusinessCriticality, ExternalExposure
 from pearl.models.project import Project
 from pearl.repositories.environment_profile_repo import EnvironmentProfileRepository
 from pearl.repositories.project_repo import ProjectRepository
 from pearl.services.id_generator import generate_id
 
 router = APIRouter(tags=["Projects"])
+
+
+class RegisterProjectRequest(PydanticBaseModel):
+    name: str
+    owner_team: str
+    business_criticality: BusinessCriticality = BusinessCriticality.LOW
+    external_exposure: ExternalExposure = ExternalExposure.PUBLIC
+    ai_enabled: bool = True
+    description: str | None = None
+    bu_id: str | None = None
+
+
+@router.post("/projects/register", status_code=201)
+async def register_project(
+    body: RegisterProjectRequest,
+    db: AsyncSession = Depends(get_db),
+    trace_id: str = Depends(get_trace_id),
+) -> dict:
+    """Register a new project with minimal input.
+
+    Derives project_id from the name, creates the project, and returns
+    the ready-to-use .pearl.yaml content so the caller can write it to disk.
+    No .pearl.yaml needs to exist first.
+    """
+    from pearl.config import settings
+
+    # Derive project_id slug from name
+    slug = re.sub(r"[^a-z0-9]+", "-", body.name.lower()).strip("-")[:48]
+    project_id = f"proj_{slug}"
+
+    repo = ProjectRepository(db)
+
+    # Handle slug collision with a short suffix
+    if await repo.get(project_id):
+        import random
+        import string
+        suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=4))
+        project_id = f"proj_{slug}-{suffix}"
+
+    await repo.create(
+        project_id=project_id,
+        name=body.name,
+        description=body.description,
+        owner_team=body.owner_team,
+        business_criticality=body.business_criticality,
+        external_exposure=body.external_exposure,
+        ai_enabled=body.ai_enabled,
+        schema_version="1.1",
+        bu_id=body.bu_id,
+    )
+
+    env_repo = EnvironmentProfileRepository(db)
+    await env_repo.create(
+        profile_id=generate_id("envprof_"),
+        project_id=project_id,
+        environment="sandbox",
+        delivery_stage="bootstrap",
+        risk_level="low",
+        autonomy_mode="assistive",
+    )
+
+    await db.commit()
+
+    api_url = settings.effective_public_api_url
+    description_line = f"description: {body.description}" if body.description else "# description: optional"
+    bu_line = f"bu_id: {body.bu_id}" if body.bu_id else "# bu_id: optional"
+
+    pearl_yaml = f"""# PeaRL governance configuration
+# Drop this file in your project root and open the folder in Claude Code.
+
+project_id: {project_id}
+api_url: {api_url}
+
+name: {body.name}
+owner_team: {body.owner_team}
+business_criticality: {body.business_criticality.value}
+external_exposure: {body.external_exposure.value}
+ai_enabled: {str(body.ai_enabled).lower()}
+{description_line}
+{bu_line}
+
+environments:
+  sandbox: sandbox
+  dev: dev
+  preprod: preprod
+  main: prod
+
+protected_branches:
+  - dev
+  - preprod
+  - main
+"""
+
+    return {
+        "project_id": project_id,
+        "name": body.name,
+        "pearl_yaml": pearl_yaml,
+        "next_step": "Write the 'pearl_yaml' content to .pearl.yaml in the project root.",
+    }
+
+
+@router.post("/projects/bootstrap", status_code=201)
+async def bootstrap_project(
+    body: RegisterProjectRequest,
+    db: AsyncSession = Depends(get_db),
+    trace_id: str = Depends(get_trace_id),
+) -> dict:
+    """Full one-shot bootstrap: create project + minimal app spec + compile context.
+
+    Returns pearl_yaml, pearl_dev_toml, and compiled_package ready to write to disk.
+    After writing these three files, all local MCP tools work immediately.
+    No prior setup needed — no .pearl.yaml, no .pearl/ directory required.
+    """
+    import json as _json
+    from pearl.config import settings
+    from pearl.models.app_spec import ApplicationSpec, AppIdentity, Architecture, ArchComponent
+    from pearl.repositories.app_spec_repo import AppSpecRepository
+    from pearl.services.compiler.context_compiler import compile_context
+
+    # 1. Derive project_id
+    slug = re.sub(r"[^a-z0-9]+", "-", body.name.lower()).strip("-")[:48]
+    project_id = f"proj_{slug}"
+
+    repo = ProjectRepository(db)
+    existing = await repo.get(project_id)
+    if existing:
+        # Idempotent — re-bootstrap an already-registered project
+        project_id = existing.project_id
+    else:
+        if await repo.get(project_id):
+            import random, string
+            suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=4))
+            project_id = f"proj_{slug}-{suffix}"
+
+        await repo.create(
+            project_id=project_id,
+            name=body.name,
+            description=body.description,
+            owner_team=body.owner_team,
+            business_criticality=body.business_criticality,
+            external_exposure=body.external_exposure,
+            ai_enabled=body.ai_enabled,
+            schema_version="1.1",
+            bu_id=body.bu_id,
+        )
+
+        env_repo = EnvironmentProfileRepository(db)
+        await env_repo.create(
+            profile_id=generate_id("envprof_"),
+            project_id=project_id,
+            environment="sandbox",
+            delivery_stage="bootstrap",
+            risk_level="low",
+            autonomy_mode="assistive",
+        )
+
+    # 2. Upsert minimal app spec so context compilation has something to work with
+    spec = ApplicationSpec(
+        schema_version="1.1",
+        kind="PearlApplicationSpec",
+        application=AppIdentity(
+            app_id=project_id,
+            owner_team=body.owner_team,
+            business_criticality=body.business_criticality,
+            external_exposure=body.external_exposure,
+            ai_enabled=body.ai_enabled,
+        ),
+        architecture=Architecture(
+            components=[ArchComponent(id="app", type="application", criticality="low")]
+        ),
+    )
+    app_spec_repo = AppSpecRepository(db)
+    full_spec = spec.model_dump(mode="json", exclude_none=True)
+    existing_spec = await app_spec_repo.get_by_project(project_id)
+    if existing_spec:
+        await app_spec_repo.update(existing_spec, app_id=project_id, full_spec=full_spec, integrity=None)
+    else:
+        await app_spec_repo.create(
+            app_id=project_id,
+            project_id=project_id,
+            full_spec=full_spec,
+            integrity=None,
+            schema_version="1.1",
+        )
+
+    await db.commit()
+
+    # 3. Compile context synchronously
+    package = await compile_context(
+        project_id=project_id,
+        trace_id=trace_id,
+        apply_exceptions=True,
+        session=db,
+    )
+    await db.commit()
+
+    # 4. Build the compiled package JSON (strip integrity_hash — local tools don't need it)
+    from pearl.repositories.compiled_package_repo import CompiledPackageRepository
+    pkg_repo = CompiledPackageRepository(db)
+    pkg_row = await pkg_repo.get_latest_by_project(project_id)
+    compiled_package_dict = dict(pkg_row.package_data) if pkg_row else package.model_dump(mode="json", exclude_none=True)
+    compiled_package_dict.pop("integrity_hash", None)
+
+    api_url = settings.effective_public_api_url
+    description_line = f"description: {body.description}" if body.description else "# description: optional"
+    bu_line = f"bu_id: {body.bu_id}" if body.bu_id else "# bu_id: optional"
+
+    pearl_yaml = f"""# PeaRL governance configuration
+# Drop this file in your project root and open the folder in Claude Code.
+
+project_id: {project_id}
+api_url: {api_url}
+
+name: {body.name}
+owner_team: {body.owner_team}
+business_criticality: {body.business_criticality.value}
+external_exposure: {body.external_exposure.value}
+ai_enabled: {str(body.ai_enabled).lower()}
+{description_line}
+{bu_line}
+
+environments:
+  sandbox: sandbox
+  dev: dev
+  preprod: preprod
+  main: prod
+
+protected_branches:
+  - dev
+  - preprod
+  - main
+"""
+
+    pearl_dev_toml = f"""[pearl-dev]
+project_id = "{project_id}"
+environment = "sandbox"
+api_url = "{api_url}"
+package_path = ".pearl/compiled-context-package.json"
+audit_path = ".pearl/audit.jsonl"
+approvals_dir = ".pearl/approvals"
+auto_task_context = true
+"""
+
+    # 5. Auto-provision downstream integrations (SonarQube, etc.)
+    integrations_provisioned: list[dict] = []
+    next_steps = [
+        "Write 'pearl_yaml' to .pearl.yaml in the project root",
+        "Write 'pearl_dev_toml' to .pearl/pearl-dev.toml",
+        "Write 'compiled_package' as JSON to .pearl/compiled-context-package.json",
+    ]
+
+    try:
+        from pearl.repositories.integration_repo import IntegrationEndpointRepository
+        from pearl.integrations.config import AuthConfig, IntegrationEndpoint as IntgEndpoint
+        from pearl.integrations.adapters.sonarqube import SonarQubeAdapter
+        from pearl.services.id_generator import generate_id as _gen_id
+
+        intg_repo = IntegrationEndpointRepository(db)
+        sonar_row = await intg_repo.get_org_by_adapter_type("sonarqube")
+
+        if sonar_row and sonar_row.enabled:
+            sonar_endpoint = IntgEndpoint(
+                endpoint_id=sonar_row.endpoint_id,
+                name=sonar_row.name,
+                adapter_type=sonar_row.adapter_type,
+                integration_type=sonar_row.integration_type,
+                category=sonar_row.category,
+                base_url=sonar_row.base_url,
+                auth=AuthConfig(**(sonar_row.auth_config or {})),
+                labels=sonar_row.labels,
+            )
+            adapter = SonarQubeAdapter()
+            sonar_key = re.sub(r"[^a-z0-9_\-.:]+", "-", project_id.replace("proj_", ""))
+            provision = await adapter.provision_project(sonar_endpoint, sonar_key, body.name)
+
+            # Register a project-level integration pointing at this SonarQube project
+            existing_proj_intg = await intg_repo.get_by_name(project_id, "SonarQube")
+            if not existing_proj_intg:
+                await intg_repo.create(
+                    endpoint_id=_gen_id("intg_"),
+                    project_id=project_id,
+                    name="SonarQube",
+                    adapter_type="sonarqube",
+                    integration_type="source",
+                    category="sast",
+                    base_url=sonar_row.base_url,
+                    auth_config=sonar_row.auth_config,
+                    labels={"project_keys": sonar_key},
+                )
+                await db.commit()
+
+            integrations_provisioned.append({
+                "tool": "sonarqube",
+                "project_key": provision["project_key"],
+                "scanner_command": provision["scanner_command"],
+                "already_existed": provision["already_existed"],
+            })
+            next_steps.append(
+                f"Run sonar-scanner to populate findings:\n  {provision['scanner_command']}"
+            )
+    except Exception as _exc:
+        import logging as _log
+        _log.getLogger(__name__).warning("Integration auto-provisioning skipped: %s", _exc)
+
+    return {
+        "project_id": project_id,
+        "name": body.name,
+        "pearl_yaml": pearl_yaml,
+        "pearl_dev_toml": pearl_dev_toml,
+        "compiled_package": compiled_package_dict,
+        "integrations_provisioned": integrations_provisioned,
+        "next_steps": next_steps,
+    }
+
+
+@router.post("/projects/{project_id}/provision-integrations", status_code=200)
+async def provision_project_integrations(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Provision downstream integrations (SonarQube, etc.) for an existing project.
+
+    Idempotent — safe to call multiple times. Creates the SonarQube project if it
+    doesn't exist, rotates the analysis token, and returns the ready-to-run
+    sonar-scanner command.
+    """
+    repo = ProjectRepository(db)
+    project = await repo.get(project_id)
+    if not project:
+        raise NotFoundError("Project", project_id)
+
+    results: list[dict] = []
+
+    from pearl.repositories.integration_repo import IntegrationEndpointRepository
+    from pearl.integrations.config import AuthConfig, IntegrationEndpoint as IntgEndpoint
+    from pearl.integrations.adapters.sonarqube import SonarQubeAdapter
+
+    intg_repo = IntegrationEndpointRepository(db)
+    sonar_row = await intg_repo.get_org_by_adapter_type("sonarqube")
+
+    if sonar_row and sonar_row.enabled:
+        sonar_endpoint = IntgEndpoint(
+            endpoint_id=sonar_row.endpoint_id,
+            name=sonar_row.name,
+            adapter_type=sonar_row.adapter_type,
+            integration_type=sonar_row.integration_type,
+            category=sonar_row.category,
+            base_url=sonar_row.base_url,
+            auth=AuthConfig(**(sonar_row.auth_config or {})),
+            labels=sonar_row.labels,
+        )
+        adapter = SonarQubeAdapter()
+        sonar_key = re.sub(r"[^a-z0-9_\-.:]+", "-", project_id.replace("proj_", ""))
+        provision = await adapter.provision_project(sonar_endpoint, sonar_key, project.name)
+
+        existing_proj_intg = await intg_repo.get_by_name(project_id, "SonarQube")
+        if not existing_proj_intg:
+            await intg_repo.create(
+                endpoint_id=generate_id("intg_"),
+                project_id=project_id,
+                name="SonarQube",
+                adapter_type="sonarqube",
+                integration_type="source",
+                category="sast",
+                base_url=sonar_row.base_url,
+                auth_config=sonar_row.auth_config,
+                labels={"project_keys": sonar_key},
+            )
+        await db.commit()
+
+        results.append({
+            "tool": "sonarqube",
+            "project_key": provision["project_key"],
+            "scanner_command": provision["scanner_command"],
+            "already_existed": provision["already_existed"],
+        })
+
+    return {
+        "project_id": project_id,
+        "integrations_provisioned": results,
+        "message": "Run the scanner_command to populate findings." if results else "No integrations configured at org level.",
+    }
 
 
 @router.post("/projects", status_code=201)

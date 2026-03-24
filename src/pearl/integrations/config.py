@@ -8,7 +8,17 @@ from pearl.models.enums import IntegrationCategory, IntegrationType
 
 
 class AuthConfig(BaseModel):
-    """Authentication config — stores env var NAMES, never actual secrets."""
+    """Authentication config for integration endpoints.
+
+    Two modes:
+    - **Env var (production)**: set ``bearer_token_env`` / ``api_key_env`` to the *name* of a
+      server environment variable.  The secret is never stored in the database.
+    - **Direct token (local / dev)**: set ``raw_token`` to the token value.  PeaRL stores it in
+      the database.  Use env vars in production; only use ``raw_token`` on local instances where
+      the database is not shared or persisted outside the development environment.
+
+    No server restart is required for either mode — tokens are resolved at connection time.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -18,18 +28,23 @@ class AuthConfig(BaseModel):
     username_env: str | None = None
     password_env: str | None = None
     header_name: str | None = None  # Custom header for API key (default: Authorization)
+    raw_token: str | None = None    # Direct token value — local/dev use only
 
     def resolve_api_key(self) -> str | None:
-        """Resolve API key from environment variable."""
+        """Resolve API key — env var first, raw_token as fallback."""
         if self.api_key_env:
-            return os.environ.get(self.api_key_env)
-        return None
+            val = os.environ.get(self.api_key_env)
+            if val:
+                return val
+        return self.raw_token or None
 
     def resolve_bearer_token(self) -> str | None:
-        """Resolve bearer token from environment variable."""
+        """Resolve bearer token — env var first, raw_token as fallback."""
         if self.bearer_token_env:
-            return os.environ.get(self.bearer_token_env)
-        return None
+            val = os.environ.get(self.bearer_token_env)
+            if val:
+                return val
+        return self.raw_token or None
 
     def resolve_basic_auth(self) -> tuple[str, str] | None:
         """Resolve basic auth credentials from environment variables."""
