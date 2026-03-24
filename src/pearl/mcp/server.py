@@ -126,7 +126,12 @@ class MCPServer:
                 resp = await client.put(url, json=body, headers=self._headers())
             else:
                 return {"error": f"Unsupported method: {method}"}
-            return resp.json()
+            if not resp.content:
+                return {"status": "ok", "http_status": resp.status_code}
+            try:
+                return resp.json()
+            except Exception:
+                return {"error": f"HTTP {resp.status_code}: {resp.text[:300]}"}
 
     # --- Original tool handlers ---
 
