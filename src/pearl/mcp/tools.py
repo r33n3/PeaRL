@@ -1,6 +1,6 @@
 """MCP tool definitions mapping to PeaRL API operations.
 
-43 tools total (28 existing + 11 scanning/compliance/guardrails tools + 1 register + 3 governance).
+48 tools total (43 existing + 5 new: fairness attestation signing, SonarQube integration, PDF export).
 """
 
 TOOL_DEFINITIONS = [
@@ -284,15 +284,32 @@ TOOL_DEFINITIONS = [
     # ─── Reports ─────────────────────────────────────
     {
         "name": "generateReport",
-        "description": "Generate a project report (release_readiness, residual_risk, control_coverage, findings_trend, rai_posture, environment_posture).",
+        "description": "Generate a project report (release_readiness, residual_risk, control_coverage, findings_trend, rai_posture, environment_posture, gate_fulfillment, elevation_audit, findings_remediation).",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "project_id": {"type": "string"},
-                "report_type": {"type": "string", "enum": ["release_readiness", "residual_risk", "control_coverage", "findings_trend", "rai_posture", "environment_posture"]},
+                "report_type": {"type": "string", "enum": ["release_readiness", "residual_risk", "control_coverage", "findings_trend", "rai_posture", "environment_posture", "gate_fulfillment", "elevation_audit", "findings_remediation"]},
                 "format": {"type": "string", "enum": ["json", "markdown"]},
+                "detail_level": {"type": "string", "enum": ["compliance", "full_chain"], "description": "compliance = summary counts; full_chain = complete audit trail per finding/gate"},
             },
             "required": ["project_id", "report_type"],
+        },
+    },
+    {
+        "name": "exportReportPdf",
+        "description": (
+            "Generate and upload a PDF version of a report to MinIO. "
+            "Returns a presigned download URL. "
+            "Use generateReport first to create the report, then call this to get a PDF."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "report_id": {"type": "string", "description": "Report ID from generateReport"},
+            },
+            "required": ["project_id", "report_id"],
         },
     },
 
@@ -439,6 +456,23 @@ TOOL_DEFINITIONS = [
                 "artifact_hashes": {"type": "object"},
             },
             "required": ["project_id"],
+        },
+    },
+    {
+        "name": "signFairnessAttestation",
+        "description": (
+            "Sign a fairness evidence package to satisfy the FAIRNESS_ATTESTATION_SIGNED gate rule. "
+            "Call this after submitEvidence to mark the evidence as officially attested. "
+            "signed_by should be the agent ID or reviewer ID performing the attestation."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "evidence_id": {"type": "string", "description": "Evidence package ID to sign"},
+                "signed_by": {"type": "string", "description": "Agent or reviewer ID performing attestation"},
+            },
+            "required": ["project_id", "evidence_id", "signed_by"],
         },
     },
 
@@ -601,6 +635,45 @@ TOOL_DEFINITIONS = [
                 "environment": {"type": "string", "enum": ["sandbox", "dev", "pilot", "preprod", "prod"], "default": "dev"},
             },
             "required": ["project_id", "markdown"],
+        },
+    },
+    # ─── SonarQube integration ───────────────────────
+    {
+        "name": "triggerSonarPull",
+        "description": (
+            "Pull the latest findings from SonarQube into PeaRL for this project. "
+            "Deduplicates findings and returns quality gate status. "
+            "Run after sonar-scanner completes to ingest results."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"project_id": {"type": "string"}},
+            "required": ["project_id"],
+        },
+    },
+    {
+        "name": "getSonarStatus",
+        "description": "Get the current SonarQube quality gate status and finding counts for this project.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"project_id": {"type": "string"}},
+            "required": ["project_id"],
+        },
+    },
+    {
+        "name": "runSonarScan",
+        "description": (
+            "Trigger a SonarQube scan against a registered scan target path. "
+            "Returns a job_id — poll getJobStatus for completion. "
+            "On completion, findings are automatically pulled into PeaRL."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "target_path": {"type": "string", "description": "Absolute path to scan (must be a registered scan target)"},
+            },
+            "required": ["project_id", "target_path"],
         },
     },
     # ─── Remediation Execution Bridge ────────────────

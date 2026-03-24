@@ -10,11 +10,13 @@ def _build_registry() -> dict[str, type[BaseWorker]]:
     from pearl.workers.remediation_worker import GenerateRemediationWorker
     from pearl.workers.report_worker import GenerateReportWorker
     from pearl.workers.scan_worker import ScanWorker
+    from pearl.workers.sonar_scan_worker import SonarScanWorker
 
     return {
         "compile_context": CompileContextWorker,
         "scan_source": ScanWorker,
         "mass_scan": MassScanWorker,
+        "sonar_scan": SonarScanWorker,
         "normalize_findings": NormalizeFindingsWorker,
         "generate_remediation_spec": GenerateRemediationWorker,
         "report": GenerateReportWorker,

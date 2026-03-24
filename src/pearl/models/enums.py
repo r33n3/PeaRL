@@ -122,6 +122,10 @@ class JobType(StrEnum):
     NORMALIZE_FINDINGS = "normalize_findings"
     GENERATE_REMEDIATION_SPEC = "generate_remediation_spec"
     REPORT = "report"
+    SCAN_SOURCE = "scan_source"
+    MASS_SCAN = "mass_scan"
+    EXPORT_CEDAR_POLICIES = "export_cedar_policies"
+    CLOUDWATCH_SCAN = "cloudwatch_scan"
 
 
 class JobStatus(StrEnum):
@@ -184,6 +188,9 @@ class ReportType(StrEnum):
     FINDINGS_TREND = "findings_trend"
     RAI_POSTURE = "rai_posture"
     ENVIRONMENT_POSTURE = "environment_posture"
+    GATE_FULFILLMENT = "gate_fulfillment"
+    ELEVATION_AUDIT = "elevation_audit"
+    FINDINGS_REMEDIATION = "findings_remediation"
 
 
 class ReportFormat(StrEnum):

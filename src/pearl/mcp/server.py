@@ -96,6 +96,14 @@ class MCPServer:
             "completeTaskPacket": self._complete_task_packet,
             # Governance verification
             "confirmClaudeMd": self._confirm_claude_md,
+            # Fairness attestation
+            "signFairnessAttestation": self._sign_fairness_attestation,
+            # SonarQube
+            "triggerSonarPull": self._trigger_sonar_pull,
+            "getSonarStatus": self._get_sonar_status,
+            "runSonarScan": self._run_sonar_scan,
+            # Reports
+            "exportReportPdf": self._export_report_pdf,
         }
         return routes.get(tool_name)
 
@@ -380,3 +388,27 @@ class MCPServer:
     async def _confirm_claude_md(self, args: dict) -> dict:
         pid = args["project_id"]
         return await self._request("POST", f"/projects/{pid}/confirm-claude-md")
+
+    async def _sign_fairness_attestation(self, args: dict) -> dict:
+        pid = args["project_id"]
+        eid = args["evidence_id"]
+        body = {"signed_by": args["signed_by"]}
+        return await self._request("POST", f"/projects/{pid}/evidence/{eid}/sign", body)
+
+    async def _trigger_sonar_pull(self, args: dict) -> dict:
+        pid = args["project_id"]
+        return await self._request("POST", f"/projects/{pid}/integrations/sonarqube/pull")
+
+    async def _get_sonar_status(self, args: dict) -> dict:
+        pid = args["project_id"]
+        return await self._request("GET", f"/projects/{pid}/integrations/sonarqube/status")
+
+    async def _run_sonar_scan(self, args: dict) -> dict:
+        pid = args["project_id"]
+        body = {"target_path": args["target_path"]}
+        return await self._request("POST", f"/projects/{pid}/integrations/sonarqube/scan", body)
+
+    async def _export_report_pdf(self, args: dict) -> dict:
+        pid = args["project_id"]
+        rid = args["report_id"]
+        return await self._request("POST", f"/projects/{pid}/reports/{rid}/export")

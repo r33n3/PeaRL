@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>PeaRL Report — {{ report_type | replace("_", " ") | title }}</title>
+  <style>
+    :root {
+      --navy: #0F1623;
+      --accent: #7C3AED;
+      --pass-green: #28A745;
+      --fail-red: #DC3545;
+      --warn-orange: #FD7E14;
+      --bg: #F8F9FA;
+      --row-alt: #F0F2F5;
+      --border: #DEE2E6;
+      --text: #212529;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Helvetica Neue", Arial, sans-serif;
+      font-size: 11pt;
+      color: var(--text);
+      background: white;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: var(--navy);
+      color: white;
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .header .logo {
+      font-size: 22pt;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+    .header .logo span {
+      color: var(--accent);
+    }
+    .header .meta {
+      font-size: 9pt;
+      opacity: 0.8;
+      text-align: right;
+    }
+
+    /* ── Body ── */
+    .body {
+      padding: 28px 32px;
+    }
+
+    h1 {
+      font-size: 18pt;
+      color: var(--navy);
+      border-bottom: 3px solid var(--accent);
+      padding-bottom: 8px;
+      margin-bottom: 20px;
+    }
+
+    h2 {
+      font-size: 13pt;
+      color: var(--accent);
+      margin-top: 24px;
+      margin-bottom: 10px;
+    }
+
+    h3 {
+      font-size: 11pt;
+      color: var(--navy);
+      margin-top: 16px;
+      margin-bottom: 6px;
+    }
+
+    p { margin-bottom: 8px; line-height: 1.5; }
+
+    /* ── Tables ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 16px;
+      font-size: 10pt;
+    }
+    thead tr {
+      background: var(--navy);
+      color: white;
+    }
+    thead th {
+      padding: 8px 10px;
+      text-align: left;
+      font-weight: 600;
+    }
+    tbody tr:nth-child(odd)  { background: white; }
+    tbody tr:nth-child(even) { background: var(--row-alt); }
+    tbody td {
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    /* ── Status badges ── */
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 9pt;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .badge-pass    { background: var(--pass-green); color: white; }
+    .badge-fail    { background: var(--fail-red);   color: white; }
+    .badge-warn    { background: var(--warn-orange); color: white; }
+    .badge-unknown { background: #6C757D; color: white; }
+
+    /* ── Summary card ── */
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .summary-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 14px;
+      text-align: center;
+    }
+    .summary-card .value {
+      font-size: 20pt;
+      font-weight: 700;
+      color: var(--navy);
+    }
+    .summary-card .label {
+      font-size: 9pt;
+      color: #6C757D;
+      margin-top: 4px;
+    }
+
+    /* ── Key-value list ── */
+    .kv-list { margin-bottom: 12px; }
+    .kv-list dt { font-weight: 600; display: inline; }
+    .kv-list dd { display: inline; margin-left: 6px; }
+    .kv-list .kv-row { margin-bottom: 4px; }
+
+    /* ── Footer ── */
+    .footer {
+      background: var(--navy);
+      color: rgba(255,255,255,0.6);
+      font-size: 8pt;
+      padding: 10px 32px;
+      display: flex;
+      justify-content: space-between;
+      position: fixed;
+      bottom: 0;
+      width: 100%;
+    }
+
+    /* ── Page break ── */
+    .page-break { page-break-before: always; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">Pea<span>RL</span></div>
+  <div class="meta">
+    {{ report_type | replace("_", " ") | title }}<br />
+    Project: {{ project_id }}<br />
+    Detail: {{ detail_level }}
+  </div>
+</div>
+
+<div class="body">
+  <h1>{{ report_type | replace("_", " ") | title }}</h1>
+
+  <div class="kv-list">
+    <div class="kv-row"><dt>Project ID:</dt><dd>{{ project_id }}</dd></div>
+    <div class="kv-row"><dt>Generated At:</dt><dd>{{ generated_at }}</dd></div>
+    <div class="kv-row"><dt>Detail Level:</dt><dd>{{ detail_level }}</dd></div>
+    {% if content.get("environment_target") %}
+    <div class="kv-row"><dt>Environment Target:</dt><dd>{{ content.environment_target }}</dd></div>
+    {% endif %}
+    {% if content.get("current_environment") %}
+    <div class="kv-row"><dt>Current Environment:</dt><dd>{{ content.current_environment }}</dd></div>
+    {% endif %}
+  </div>
+
+  {# ── Gate Fulfillment ── #}
+  {% if report_type == "gate_fulfillment" %}
+
+    {% if content.get("gate_summary") %}
+    {% set gs = content.gate_summary %}
+    <h2>Gate Summary</h2>
+    <div class="summary-grid">
+      <div class="summary-card"><div class="value">{{ gs.total }}</div><div class="label">Total Gates</div></div>
+      <div class="summary-card"><div class="value" style="color:var(--pass-green)">{{ gs.passed }}</div><div class="label">Passed</div></div>
+      <div class="summary-card"><div class="value" style="color:var(--fail-red)">{{ gs.failed }}</div><div class="label">Failed</div></div>
+      <div class="summary-card"><div class="value">{{ gs.pct }}%</div><div class="label">Pass Rate</div></div>
+    </div>
+    {% endif %}
+
+    {% if content.get("gates") %}
+    <h2>Gate Results</h2>
+    <table>
+      <thead><tr><th>Rule</th><th>Status</th><th>Message</th><th>Evidence</th></tr></thead>
+      <tbody>
+        {% for g in content.gates %}
+        <tr>
+          <td>{{ g.rule }}</td>
+          <td>
+            {% if g.status == "pass" %}<span class="badge badge-pass">pass</span>
+            {% elif g.status == "fail" %}<span class="badge badge-fail">fail</span>
+            {% else %}<span class="badge badge-unknown">{{ g.status }}</span>{% endif %}
+          </td>
+          <td>{{ g.message }}</td>
+          <td>{{ g.evidence_count }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    {% if content.get("blockers") %}
+    <h2>Blockers</h2>
+    <ul>{% for b in content.blockers %}<li>{{ b }}</li>{% endfor %}</ul>
+    {% endif %}
+
+  {# ── Elevation Audit ── #}
+  {% elif report_type == "elevation_audit" %}
+
+    {% if content.get("promotions") %}
+    <h2>Promotion History</h2>
+    <table>
+      <thead><tr><th>History ID</th><th>From</th><th>To</th><th>Promoted By</th><th>Promoted At</th></tr></thead>
+      <tbody>
+        {% for p in content.promotions %}
+        <tr>
+          <td>{{ p.history_id }}</td>
+          <td>{{ p.source_environment }}</td>
+          <td>{{ p.target_environment }}</td>
+          <td>{{ p.promoted_by }}</td>
+          <td>{{ p.promoted_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p>No promotion history found.</p>
+    {% endif %}
+
+  {# ── Findings Remediation ── #}
+  {% elif report_type == "findings_remediation" %}
+
+    {% if content.get("summary") %}
+    {% set s = content.summary %}
+    <h2>Summary</h2>
+    <div class="summary-grid">
+      <div class="summary-card"><div class="value">{{ s.total }}</div><div class="label">Total Findings</div></div>
+      <div class="summary-card"><div class="value" style="color:var(--pass-green)">{{ s.resolved_pct }}%</div><div class="label">Resolved</div></div>
+      <div class="summary-card"><div class="value" style="color:var(--fail-red)">{{ s.by_severity.get("critical", 0) }}</div><div class="label">Critical</div></div>
+      <div class="summary-card"><div class="value" style="color:var(--warn-orange)">{{ s.by_severity.get("high", 0) }}</div><div class="label">High</div></div>
+    </div>
+
+    <h3>By Severity</h3>
+    <table>
+      <thead><tr><th>Severity</th><th>Count</th></tr></thead>
+      <tbody>
+        {% for sev, count in s.by_severity.items() %}
+        <tr><td>{{ sev | capitalize }}</td><td>{{ count }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <h3>By Status</h3>
+    <table>
+      <thead><tr><th>Status</th><th>Count</th></tr></thead>
+      <tbody>
+        {% for status, count in s.by_status.items() %}
+        <tr><td>{{ status | capitalize }}</td><td>{{ count }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    {% if content.get("findings") %}
+    <h2>Findings Detail</h2>
+    <table>
+      <thead><tr><th>ID</th><th>Title</th><th>Severity</th><th>Source</th><th>Status</th><th>Detected</th></tr></thead>
+      <tbody>
+        {% for f in content.findings %}
+        <tr>
+          <td>{{ f.finding_id }}</td>
+          <td>{{ f.title }}</td>
+          <td>{{ f.severity }}</td>
+          <td>{{ f.source_tool }}</td>
+          <td>{{ f.status }}</td>
+          <td>{{ f.detected_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+  {# ── Generic fallback ── #}
+  {% else %}
+    <h2>Report Content</h2>
+    <pre style="font-size:9pt; background:var(--bg); padding:12px; border-radius:4px;">{{ content | tojson(indent=2) }}</pre>
+  {% endif %}
+
+</div>
+
+<div class="footer">
+  <span>PeaRL v1.1.0 &bull; {{ project_id }}</span>
+  <span>{{ generated_at }}</span>
+</div>
+
+</body>
+</html>

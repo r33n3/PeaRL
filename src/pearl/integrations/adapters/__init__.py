@@ -5,10 +5,14 @@ AVAILABLE_ADAPTERS: dict[str, str] = {
     "snyk": "pearl.integrations.adapters.snyk.SnykAdapter",
     "semgrep": "pearl.integrations.adapters.semgrep.SemgrepAdapter",
     "trivy": "pearl.integrations.adapters.trivy.TrivyAdapter",
+    "sonarqube": "pearl.integrations.adapters.sonarqube.SonarQubeAdapter",
     # Sinks
     "jira": "pearl.integrations.adapters.jira.JiraAdapter",
     "slack": "pearl.integrations.adapters.slack.SlackAdapter",
     "github_issues": "pearl.integrations.adapters.github_issues.GitHubIssuesAdapter",
+    "teams": "pearl.integrations.adapters.teams.TeamsAdapter",
+    "telegram": "pearl.integrations.adapters.telegram.TelegramAdapter",
+    "webhook": "pearl.integrations.adapters.webhook.WebhookAdapter",
 }
 
 

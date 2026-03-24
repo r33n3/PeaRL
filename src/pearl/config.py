@@ -105,6 +105,13 @@ class Settings(BaseSettings):
     cloudwatch_volume_anomaly_threshold: float = 3.0  # PEARL_CLOUDWATCH_VOLUME_ANOMALY_THRESHOLD (std devs)
     cloudwatch_query_timeout_seconds: int = 60     # PEARL_CLOUDWATCH_QUERY_TIMEOUT_SECONDS
 
+    # SonarQube
+    sonar_url: str = ""                            # PEARL_SONAR_URL
+    sonar_token: str = ""                          # PEARL_SONAR_TOKEN
+
+    # Reporting
+    report_url_ttl_days: int = 7                   # PEARL_REPORT_URL_TTL_DAYS
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",

@@ -1,5 +1,6 @@
 """Worker for report generation jobs."""
 
+import json
 import logging
 from datetime import datetime, timezone
 
@@ -83,12 +84,54 @@ class GenerateReportWorker(BaseWorker):
 
         logger.info("Generated report %s (type=%s, project=%s)", report_id, report_type, project_id)
 
+        # Upload JSON artifact to MinIO and update artifact_ref
+        artifact_url = await _upload_report_artifact(report_id, project_id, report_type, content)
+        if artifact_url:
+            report.artifact_ref = artifact_url
+            await session.flush()
+            logger.info("Uploaded report artifact to MinIO: %s", artifact_url)
+
         return {
             "result_refs": [
                 {
                     "ref_id": report_id,
                     "kind": "report",
                     "summary": f"{report_type} report ({len(findings)} findings)",
+                    "artifact_url": artifact_url,
                 }
             ]
         }
+
+
+async def _upload_report_artifact(
+    report_id: str, project_id: str, report_type: str, content: dict
+) -> str | None:
+    """Upload report JSON to MinIO. Returns presigned URL or None on failure."""
+    try:
+        import aioboto3 as _aioboto3
+        from pearl.config import settings
+
+        session = _aioboto3.Session()
+        key = f"reports/{project_id}/{report_type}/{report_id}.json"
+
+        async with session.client(
+            "s3",
+            endpoint_url=settings.s3_endpoint_url,
+            aws_access_key_id=settings.s3_access_key,
+            aws_secret_access_key=settings.s3_secret_key,
+        ) as s3:
+            await s3.put_object(
+                Bucket=settings.s3_bucket,
+                Key=key,
+                Body=json.dumps(content, default=str).encode(),
+                ContentType="application/json",
+            )
+            url = await s3.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": settings.s3_bucket, "Key": key},
+                ExpiresIn=settings.report_url_ttl_days * 86400,
+            )
+            return url
+    except Exception as e:
+        logger.warning("MinIO upload failed: %s", e)
+        return None

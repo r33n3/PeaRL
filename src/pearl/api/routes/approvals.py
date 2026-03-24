@@ -66,6 +66,10 @@ async def create_approval_request(
     )
     await db.commit()
 
+    # Dispatch notification for promotion gate approvals
+    if request.request_type == "promotion_gate":
+        await _dispatch_promotion_notification(request, db)
+
     return request.model_dump(mode="json", exclude_none=True)
 
 
@@ -256,3 +260,73 @@ async def list_approval_comments(
         }
         for c in comments
     ]
+
+
+async def _dispatch_promotion_notification(
+    request: ApprovalRequest,
+    db: AsyncSession,
+) -> None:
+    """Fire-and-forget notification to all enabled org-level sink adapters."""
+    try:
+        from pearl.repositories.integration_repo import IntegrationEndpointRepository
+        from pearl.integrations.adapters import AVAILABLE_ADAPTERS, import_adapter
+        from pearl.integrations.normalized import NormalizedNotification
+        from pearl.integrations.config import AuthConfig, IntegrationEndpoint
+
+        repo = IntegrationEndpointRepository(db)
+        # Collect org-wide sinks (project_id IS NULL) that are enabled
+        org_rows = await repo.list_org_wide()
+        sinks = [
+            r for r in org_rows
+            if r.enabled and r.integration_type in ("sink", "bidirectional")
+            and r.adapter_type in AVAILABLE_ADAPTERS
+        ]
+
+        req_data = request.request_data or {}
+        target_env = (
+            req_data.get("target_environment")
+            or req_data.get("environment", "unknown")
+        )
+        passed = req_data.get("passed_count", 0)
+        total = req_data.get("total_count", 0)
+        blockers = req_data.get("blockers", [])
+        pct = req_data.get("progress_pct", 0)
+
+        subject = f"Promotion Gate: {request.project_id} \u2192 {target_env}"
+        body = (
+            f"{passed}/{total} gates passing ({pct}%).\n"
+            f"{len(blockers)} blocker(s) require human review before promotion can proceed."
+        )
+
+        notification = NormalizedNotification(
+            subject=subject,
+            body=body,
+            severity="high" if blockers else "low",
+            project_id=request.project_id,
+        )
+
+        for sink in sinks:
+            adapter_class = import_adapter(AVAILABLE_ADAPTERS[sink.adapter_type])
+            adapter = adapter_class()
+            if not hasattr(adapter, "push_notification"):
+                continue
+            try:
+                endpoint = IntegrationEndpoint(
+                    endpoint_id=sink.endpoint_id,
+                    name=sink.name,
+                    adapter_type=sink.adapter_type,
+                    integration_type=sink.integration_type,
+                    category=sink.category,
+                    base_url=sink.base_url,
+                    auth=AuthConfig(**(sink.auth_config or {})),
+                    project_mapping=sink.project_mapping,
+                    enabled=sink.enabled,
+                    labels=sink.labels,
+                )
+                await adapter.push_notification(endpoint, notification)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Notification dispatch failed for %s: %s", sink.endpoint_id, exc
+                )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Promotion notification dispatch failed: %s", exc)

@@ -16,6 +16,7 @@ class ReportRequest(BaseModel):
     format: ReportFormat
     filters: dict[str, Any] | None = None
     include_references: bool | None = None
+    detail_level: str = "compliance"  # "compliance" | "full_chain"
 
 
 class ReportResponse(BaseModel):
