@@ -13,9 +13,11 @@ Payload fields:
     deployed_by (str):         Subject identifier of the initiating actor.
     agent_aliases (list[dict]): Registered agent aliases to permit (optional).
     blocked_rules (list[str]): Gate rule types currently blocking (optional).
+    project_id (str|None):     If provided, load Cedar findings for this project.
 """
 from __future__ import annotations
 
+import inspect
 import logging
 from datetime import datetime, timezone
 
@@ -60,15 +62,38 @@ class CedarExportWorker(BaseWorker):
                 "CedarExportWorker: could not load baseline org=%s: %s", org_id, exc
             )
 
+        # ── 1b. Load scan findings with Cedar recommendations ─────────────────
+        cedar_findings: list[dict] = []
+        try:
+            from pearl.repositories.finding_repo import FindingRepository
+            finding_repo = FindingRepository(session)
+            # Get all non-closed findings for this org that have cedar_recommendation
+            # Use project_id from payload if provided, otherwise skip
+            cedar_project_id: str | None = payload.get("project_id")
+            if cedar_project_id:
+                all_findings = await finding_repo.list_by_field("project_id", cedar_project_id)
+                cedar_findings = [
+                    f.full_data for f in all_findings
+                    if f.status not in ("closed", "resolved")
+                    and isinstance(f.full_data, dict)
+                    and f.full_data.get("cedar_recommendation")
+                ]
+        except Exception as exc:
+            logger.warning("CedarExportWorker: could not load cedar findings: %s", exc)
+
         # ── 2. Generate Cedar bundle ───────────────────────────────────────────
         generator = CedarPolicyGenerator()
-        bundle = generator.generate_bundle(
+        # Pass scan_findings if the generator supports it (added in cedar_generator update)
+        gen_kwargs: dict = dict(
             org_id=org_id,
             gateway_arn=gateway_arn,
             agent_aliases=agent_aliases,
             blocked_rule_types=blocked_rules,
             baseline_controls=baseline_controls,
         )
+        if "scan_findings" in inspect.signature(generator.generate_bundle).parameters:
+            gen_kwargs["scan_findings"] = cedar_findings
+        bundle = generator.generate_bundle(**gen_kwargs)
 
         bundle_json = bundle.to_json_dict()
         bundle_hash = bundle.bundle_hash

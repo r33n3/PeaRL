@@ -106,6 +106,28 @@ async def test_cedar_export_worker_supersedes_old_active(db_session):
 
 
 @pytest.mark.asyncio
+async def test_cedar_export_worker_dry_run_with_findings(db_session):
+    """When payload includes project_id but DB has no matching findings,
+    the worker still completes successfully."""
+    worker = CedarExportWorker()
+    result = await worker.process(
+        "job_findings001",
+        {
+            "org_id": "org_findings_test",
+            "triggered_by": "manual",
+            "project_id": "proj_nonexistent",
+        },
+        db_session,
+    )
+    refs = result["result_refs"]
+    assert len(refs) == 1
+    ref = refs[0]
+    assert ref["kind"] == "cedar_deployment"
+    assert ref["status"] in ("active", "skipped")
+    assert ref["bundle_hash"]
+
+
+@pytest.mark.asyncio
 async def test_cedar_export_worker_includes_policy_count(db_session):
     worker = CedarExportWorker()
     result = await worker.process(
