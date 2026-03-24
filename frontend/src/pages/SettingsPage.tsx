@@ -76,52 +76,76 @@ interface CatalogueEntry {
 }
 
 const INTEGRATION_CATALOGUE: CatalogueEntry[] = [
-  { adapter_type: "snyk",        category: "security_scanning",     label: "Snyk",        description: "SCA / vulnerability scanning" },
-  { adapter_type: "semgrep",     category: "security_scanning",     label: "Semgrep",     description: "SAST / code analysis" },
-  { adapter_type: "trivy",       category: "security_scanning",     label: "Trivy",       description: "Container & IaC scanning" },
-  { adapter_type: "sonarqube",   category: "security_scanning",     label: "SonarQube",   description: "Code quality & SAST" },
-  { adapter_type: "github",      category: "repo_management",       label: "GitHub",      description: "Source code, PRs, Actions" },
-  { adapter_type: "gitlab",      category: "repo_management",       label: "GitLab",      description: "Source code, MRs, CI/CD" },
-  { adapter_type: "azure_devops",category: "repo_management",       label: "Azure DevOps",description: "Repos, pipelines, work items" },
-  { adapter_type: "jira",        category: "issue_tracking",        label: "Jira",        description: "Ticket & project management" },
-  { adapter_type: "linear",      category: "issue_tracking",        label: "Linear",      description: "Issue tracking" },
-  { adapter_type: "servicenow",  category: "issue_tracking",        label: "ServiceNow",  description: "Enterprise ITSM" },
-  { adapter_type: "slack",       category: "notification_channels", label: "Slack",       description: "Team alerts & notifications" },
-  { adapter_type: "teams",       category: "notification_channels", label: "Teams",       description: "Enterprise notifications" },
-  { adapter_type: "webhook",     category: "notification_channels", label: "Webhook",     description: "Custom HTTP endpoint" },
-  { adapter_type: "email",       category: "notification_channels", label: "Email",       description: "SMTP / email alerts" },
-  { adapter_type: "pagerduty",   category: "notification_channels", label: "PagerDuty",   description: "Incident alerting" },
+  { adapter_type: "snyk",        category: "sca",           label: "Snyk",        description: "SCA / vulnerability scanning" },
+  { adapter_type: "semgrep",     category: "sast",          label: "Semgrep",     description: "SAST / code analysis" },
+  { adapter_type: "trivy",       category: "container_scan",label: "Trivy",       description: "Container & IaC scanning" },
+  { adapter_type: "sonarqube",   category: "sast",          label: "SonarQube",   description: "Code quality & SAST" },
+  { adapter_type: "github",      category: "git_platform",  label: "GitHub",      description: "Source code, PRs, Actions" },
+  { adapter_type: "gitlab",      category: "git_platform",  label: "GitLab",      description: "Source code, MRs, CI/CD" },
+  { adapter_type: "azure_devops",category: "ci_cd",         label: "Azure DevOps",description: "Repos, pipelines, work items" },
+  { adapter_type: "jira",        category: "ticketing",     label: "Jira",        description: "Ticket & project management" },
+  { adapter_type: "linear",      category: "ticketing",     label: "Linear",      description: "Issue tracking" },
+  { adapter_type: "servicenow",  category: "ticketing",     label: "ServiceNow",  description: "Enterprise ITSM" },
+  { adapter_type: "slack",       category: "notification",  label: "Slack",       description: "Team alerts & notifications" },
+  { adapter_type: "teams",       category: "notification",  label: "Teams",       description: "Enterprise notifications" },
+  { adapter_type: "webhook",     category: "notification",  label: "Webhook",     description: "Custom HTTP endpoint" },
+  { adapter_type: "email",       category: "notification",  label: "Email",       description: "SMTP / email alerts" },
+  { adapter_type: "pagerduty",   category: "notification",  label: "PagerDuty",   description: "Incident alerting" },
 ];
 
-const CATEGORY_ORDER = ["security_scanning", "repo_management", "issue_tracking", "notification_channels"] as const;
+const CATEGORY_ORDER = ["sast", "sca", "container_scan", "git_platform", "ci_cd", "ticketing", "notification"] as const;
 
 const CATEGORY_LABELS: Record<string, string> = {
-  security_scanning:     "Security Scanning",
-  repo_management:       "Repository Management",
-  issue_tracking:        "Issue Tracking",
-  notification_channels: "Notification Channels",
+  sast:           "SAST / Code Quality",
+  sca:            "SCA / Dependencies",
+  container_scan: "Container & IaC Scanning",
+  git_platform:   "Source Control",
+  ci_cd:          "CI/CD",
+  ticketing:      "Issue Tracking",
+  notification:   "Notification Channels",
 };
 
 type ConfigFormState = Record<string, string>;
 
-function getAdapterFields(adapter_type: string): { key: string; label: string; placeholder: string; type?: string }[] {
+const TOKEN_ENV_PLACEHOLDERS: Record<string, string> = {
+  sonarqube:   "SONARQUBE_TOKEN",
+  snyk:        "SNYK_TOKEN",
+  semgrep:     "SEMGREP_APP_TOKEN",
+  trivy:       "TRIVY_TOKEN",
+  github:      "GITHUB_TOKEN",
+  gitlab:      "GITLAB_TOKEN",
+  jira:        "JIRA_API_TOKEN",
+  linear:      "LINEAR_API_KEY",
+  servicenow:  "SERVICENOW_TOKEN",
+  azure_devops:"AZURE_DEVOPS_TOKEN",
+};
+
+function getAdapterFields(adapter_type: string): { key: string; label: string; placeholder: string; hint?: string; type?: string; span?: "full" }[] {
   const webhookAdapters = ["slack", "teams", "webhook", "pagerduty"];
   const tokenAdapters = ["github", "gitlab", "snyk", "semgrep", "trivy", "sonarqube"];
   const ticketAdapters = ["jira", "linear", "servicenow", "azure_devops"];
+  const envPlaceholder = TOKEN_ENV_PLACEHOLDERS[adapter_type] ?? "MY_TOKEN";
+  const baseUrlPlaceholder = adapter_type === "sonarqube" ? "http://localhost:9000" : "https://api.example.com";
   if (webhookAdapters.includes(adapter_type)) {
-    return [{ key: "webhook_url", label: "Webhook URL", placeholder: "https://..." }];
+    return [{ key: "webhook_url", label: "Webhook URL", placeholder: "https://...", span: "full" }];
   }
   if (tokenAdapters.includes(adapter_type)) {
     return [
-      { key: "base_url",   label: "Base URL",   placeholder: "https://api.example.com" },
-      { key: "api_token",  label: "API Token",  placeholder: "token...", type: "password" },
+      { key: "base_url",         label: "Base URL",              placeholder: baseUrlPlaceholder },
+      { key: "raw_token",        label: "API Token",             placeholder: "Paste token — stored in DB (local/dev)", type: "password",
+        hint: "No restart needed. For production use Token Env Var instead." },
+      { key: "bearer_token_env", label: "Token Env Var (prod)",  placeholder: envPlaceholder,
+        hint: `Server env var name — takes precedence over API Token if both are set. e.g. export ${envPlaceholder}=<token>` },
     ];
   }
   if (ticketAdapters.includes(adapter_type)) {
     return [
-      { key: "base_url",     label: "Base URL",     placeholder: "https://yourorg.atlassian.net" },
-      { key: "api_token",    label: "API Token",    placeholder: "token...", type: "password" },
-      { key: "project_key", label: "Project Key",  placeholder: "PROJ" },
+      { key: "base_url",         label: "Base URL",              placeholder: "https://yourorg.atlassian.net" },
+      { key: "raw_token",        label: "API Token",             placeholder: "Paste token — stored in DB (local/dev)", type: "password",
+        hint: "No restart needed. For production use Token Env Var instead." },
+      { key: "bearer_token_env", label: "Token Env Var (prod)",  placeholder: envPlaceholder,
+        hint: `Server env var name — takes precedence if set. e.g. export ${envPlaceholder}=<token>` },
+      { key: "project_key",      label: "Project Key",           placeholder: "PROJ" },
     ];
   }
   if (adapter_type === "email") {
@@ -133,16 +157,27 @@ function getAdapterFields(adapter_type: string): { key: string; label: string; p
     ];
   }
   return [
-    { key: "base_url",  label: "Base URL",  placeholder: "https://..." },
-    { key: "api_token", label: "API Token", placeholder: "token...", type: "password" },
+    { key: "base_url",         label: "Base URL",      placeholder: "https://..." },
+    { key: "raw_token",        label: "API Token",     placeholder: "token...", type: "password" },
+    { key: "bearer_token_env", label: "Token Env Var", placeholder: envPlaceholder },
   ];
 }
 
 function buildAuthConfig(adapter_type: string, form: ConfigFormState): Record<string, string> {
-  return Object.fromEntries(getAdapterFields(adapter_type).map(f => [f.key, form[f.key] ?? ""]));
+  const config: Record<string, string> = {};
+  const fields = getAdapterFields(adapter_type);
+  fields.forEach(f => {
+    if (f.key !== "base_url" && form[f.key] !== undefined && form[f.key] !== "") {
+      config[f.key] = form[f.key] as string;
+    }
+  });
+  if (form["bearer_token_env"] || form["raw_token"]) {
+    config["auth_type"] = "bearer";
+  }
+  return config;
 }
 
-function buildBaseUrl(adapter_type: string, form: ConfigFormState): string {
+function buildBaseUrl(_adapter_type: string, form: ConfigFormState): string {
   return form["base_url"] ?? form["webhook_url"] ?? form["smtp_host"] ?? "";
 }
 
@@ -390,9 +425,9 @@ function IntegrationsTab() {
                     <span className="text-sm font-heading font-semibold text-bone">{entry.label}</span>
                     <span className="text-xs text-bone-dim font-mono">{entry.description}</span>
                   </div>
-                  <div className={`grid gap-2 ${fields.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+                  <div className="grid gap-2 grid-cols-2">
                     {fields.map(f => (
-                      <div key={f.key} className={fields.length === 1 ? "col-span-full" : ""}>
+                      <div key={f.key} className={f.span === "full" || fields.length === 1 ? "col-span-full" : ""}>
                         <label className="text-[10px] font-mono text-bone-muted block mb-1">{f.label}</label>
                         <input
                           className="input-vault text-sm w-full"
@@ -401,6 +436,7 @@ function IntegrationsTab() {
                           value={configForm[f.key] ?? ""}
                           onChange={e => setConfigForm(prev => ({ ...prev, [f.key]: e.target.value }))}
                         />
+                        {f.hint && <p className="text-[9px] text-bone-dim font-mono mt-0.5 leading-tight">{f.hint}</p>}
                       </div>
                     ))}
                   </div>
@@ -455,6 +491,7 @@ function IntegrationsTab() {
                                   value={configForm[f.key] ?? ""}
                                   onChange={e => setConfigForm(prev => ({ ...prev, [f.key]: e.target.value }))}
                                 />
+                                {f.hint && <p className="text-[9px] text-bone-dim font-mono mt-0.5 leading-tight">{f.hint}</p>}
                               </div>
                             ))}
                             <div className="flex gap-2 pt-1">
@@ -782,6 +819,8 @@ function AddRulePanel({
     }
     const description = isFwk
       ? `${FRAMEWORK_CONTROLS[fwk]?.label ?? fwk} / ${fwkCategoryDef?.label ?? fwkCategory} / ${fwkCategoryDef?.controls[fwkControl]?.label ?? fwkControl}`
+      : isLegacyAiuc1 && legacyCategory && legacyControl
+      ? `AIUC-1 / ${FRAMEWORK_CONTROLS.aiuc1?.categories[legacyCategory]?.label ?? legacyCategory} / ${fieldKeyToAiuc1Label(legacyControl)}`
       : meta.label;
     onAdd({
       rule_id: `rule_${selectedType}_${Date.now()}`,

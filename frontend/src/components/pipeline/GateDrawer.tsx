@@ -71,6 +71,11 @@ export function GateDrawer({ env, gates, onClose }: Props) {
                           <p className="font-mono text-[10px] text-bone-muted uppercase tracking-wide leading-tight">
                             {rule.rule_type.replace(/_/g, " ")}
                           </p>
+                          {rule.description && rule.description !== rule.rule_type && (
+                            <p className="text-[10px] text-bone font-mono mt-0.5 leading-snug">
+                              {rule.description}
+                            </p>
+                          )}
                           {rule.threshold != null && (
                             <p className="text-[10px] text-bone-dim font-mono">
                               threshold: {rule.threshold}
