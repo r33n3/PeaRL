@@ -383,19 +383,14 @@ async def _build_eval_context(
         st.last_scan_status == "succeeded" for st in ctx.mass_scan_targets
     )
 
-    # Scanning integration: pearl_scan findings and security review findings (open only)
+    # Scanning integration: pearl_scan findings (open only — for compliance scoring)
     ctx.pearl_scan_findings = [
         f for f in all_findings
         if (f.source or {}).get("tool_name", "").startswith("pearl_scan")
     ]
-    ctx.security_review_findings = [
-        f for f in all_findings
-        if (f.source or {}).get("tool_name") == "claude_security_review"
-    ]
 
-    # Load ALL pearl_scan findings (including closed completion markers) for analyzer tracking.
-    # The open_findings query above filters to status=="open", but completion markers are
-    # status=="closed" info-level findings created for 0-finding analyzers.
+    # Load ALL findings for this project (all statuses) — needed for analyzer tracking
+    # and security review gate (which checks resolved findings, not just open ones).
     all_scan_stmt = select(FindingRow).where(
         FindingRow.project_id == project_id,
     )
@@ -404,6 +399,12 @@ async def _build_eval_context(
     all_pearl_scan = [
         f for f in all_project_findings
         if (f.source or {}).get("tool_name", "").startswith("pearl_scan")
+    ]
+
+    # Security review findings — must use all statuses so resolved reviews count
+    ctx.security_review_findings = [
+        f for f in all_project_findings
+        if (f.source or {}).get("tool_name") == "claude_security_review"
     ]
 
     # Determine which analyzers have completed from ALL pearl_scan findings
