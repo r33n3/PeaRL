@@ -200,3 +200,68 @@ def test_multiple_blocked_rules_all_produce_forbids(generator):
     ids = {p.policy_id for p in bundle.policies}
     for rule in rules:
         assert f"pearl_forbid_{rule}" in ids
+
+
+# ── Phase 1 & 3 tests ──────────────────────────────────────────────────────────
+
+def test_permit_alias_with_allowed_actions(generator):
+    """alias with allowed_actions=[...] should only permit those specific actions."""
+    bundle = generator.generate_bundle(
+        org_id="org_test",
+        gateway_arn="",
+        agent_aliases=[{
+            "alias_id": "alias_restricted",
+            "environment": "dev",
+            "allowed_actions": ["InvokeFoundationModel"],
+        }],
+    )
+    permit = next(
+        p for p in bundle.policies if p.policy_id == "pearl_permit_alias_alias_restricted_dev"
+    )
+    assert "InvokeFoundationModel" in permit.statement
+    assert "ExecuteApiCall" not in permit.statement
+
+
+def test_permit_alias_with_blocked_actions(generator):
+    """alias with blocked_actions=[...] produces a separate forbid policy."""
+    bundle = generator.generate_bundle(
+        org_id="org_test",
+        gateway_arn="",
+        agent_aliases=[{
+            "alias_id": "alias_blocked",
+            "environment": "prod",
+            "blocked_actions": ["ExecuteApiCall"],
+        }],
+    )
+    ids = {p.policy_id for p in bundle.policies}
+    forbid_id = "pearl_forbid_alias_alias_blocked_prod_blocked"
+    assert "pearl_permit_alias_alias_blocked_prod" in ids
+    assert forbid_id in ids
+    forbid_policy = next(p for p in bundle.policies if p.policy_id == forbid_id)
+    assert "ExecuteApiCall" in forbid_policy.statement
+    assert "forbid(" in forbid_policy.statement
+
+
+def test_ai_gate_rules_in_rule_to_action(generator):
+    """ai_scan_completed, guardrails_verified, fairness_attestation_signed must be in _RULE_TO_ACTION."""
+    rule_map = CedarPolicyGenerator._RULE_TO_ACTION
+    assert "ai_scan_completed" in rule_map
+    assert "guardrails_verified" in rule_map
+    assert "fairness_attestation_signed" in rule_map
+    assert rule_map["ai_scan_completed"] == "InvokeFoundationModel"
+    assert rule_map["guardrails_verified"] == "InvokeFoundationModel"
+    assert rule_map["fairness_attestation_signed"] == "InvokeFoundationModel"
+
+
+def test_blocked_rule_ai_scan_generates_forbid(generator):
+    """generate_bundle with blocked_rule_types=["ai_scan_completed"] should produce a forbid for InvokeFoundationModel."""
+    bundle = generator.generate_bundle(
+        org_id="org_test",
+        gateway_arn="",
+        blocked_rule_types=["ai_scan_completed"],
+    )
+    ids = {p.policy_id for p in bundle.policies}
+    assert "pearl_forbid_ai_scan_completed" in ids
+    forbid_policy = next(p for p in bundle.policies if p.policy_id == "pearl_forbid_ai_scan_completed")
+    assert "InvokeFoundationModel" in forbid_policy.statement
+    assert "forbid(" in forbid_policy.statement

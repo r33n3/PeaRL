@@ -64,6 +64,15 @@ class CedarPolicyGenerator:
         "compliance_controls_verified": "InvokeFoundationModel",
         "iam_roles_defined": "ExecuteApiCall",
         "network_boundaries_declared": "ExecuteApiCall",
+        "ai_scan_completed": "InvokeFoundationModel",
+        "guardrails_verified": "InvokeFoundationModel",
+        "fairness_attestation_signed": "InvokeFoundationModel",
+        "no_prompt_injection": "ExecuteApiCall",
+        "owasp_llm_top10_clear": "InvokeFoundationModel",
+        "ai_risk_acceptable": "InvokeFoundationModel",
+        # Legacy names map to same actions for backward compat
+        "mass_scan_completed": "InvokeFoundationModel",
+        "mass_risk_acceptable": "InvokeFoundationModel",
     }
 
     def generate_bundle(
@@ -75,6 +84,7 @@ class CedarPolicyGenerator:
         blocked_rule_types: list[str] | None = None,
         baseline_controls: dict | None = None,
         agent_aliases: list[dict] | None = None,
+        scan_findings: list[dict] | None = None,
     ) -> CedarBundle:
         """Generate a Cedar bundle representing current PeaRL governance state.
 
@@ -91,17 +101,21 @@ class CedarPolicyGenerator:
         baseline_controls:
             Dict from the org baseline document ``defaults`` block.
         agent_aliases:
-            Registered agent aliases: list of ``{alias_id, name, environment}``.
+            Registered agent aliases: list of ``{alias_id, name, environment,
+            allowed_actions, blocked_actions}``.
+        scan_findings:
+            Raw scan findings — reserved for Phase 4 agent use. Not acted on yet.
         """
+        _scan_findings = scan_findings or []  # noqa: F841 — reserved for Phase 4
         policies: list[CedarPolicy] = []
 
         # 1. Explicit deny-all sentinel (Cedar is deny-by-default, but this
         #    makes the intent auditable in the bundle snapshot)
         policies.append(self._deny_all_baseline())
 
-        # 2. Permit registered agent aliases
+        # 2. Permit registered agent aliases (may also produce blocked_actions forbid)
         for alias in (agent_aliases or []):
-            policies.append(self._permit_agent_alias(alias))
+            policies.extend(self._permit_agent_alias(alias))
 
         # 3. Permit PeaRL role groups
         for role in (allowed_roles or ["operator", "admin"]):
@@ -157,25 +171,58 @@ class CedarPolicyGenerator:
             ),
         )
 
-    def _permit_agent_alias(self, alias: dict) -> CedarPolicy:
+    def _permit_agent_alias(self, alias: dict) -> list[CedarPolicy]:
+        """Return permit policy (and optional forbid policy) for an agent alias.
+
+        The alias dict may contain:
+        - ``allowed_actions``: list of action names to permit (default:
+          ``["InvokeFoundationModel", "ExecuteApiCall"]``).
+        - ``blocked_actions``: list of action names to explicitly forbid for
+          this alias.  Each produces a separate forbid policy.
+        """
         alias_id = alias.get("alias_id", "unknown")
         env = alias.get("environment", "dev")
         policy_id = f"pearl_permit_alias_{alias_id}_{env}"
-        return CedarPolicy(
-            policy_id=policy_id,
-            description=f"Permit registered alias {alias_id} ({env})",
-            statement=(
-                f"permit(\n"
-                f"  principal == {self._AGENT_NS}::\"{alias_id}\",\n"
-                f"  action in [{self._ACTION_NS}::\"InvokeFoundationModel\",\n"
-                f"             {self._ACTION_NS}::\"ExecuteApiCall\"],\n"
-                f"  resource\n"
-                f") when {{\n"
-                f"  principal.pearl_approved == true &&\n"
-                f"  principal.environment == \"{env}\"\n"
-                f"}};"
-            ),
+
+        _default_actions = ["InvokeFoundationModel", "ExecuteApiCall"]
+        allowed_actions: list[str] = alias.get("allowed_actions") or _default_actions
+        blocked_actions: list[str] = alias.get("blocked_actions") or []
+
+        action_list = ", ".join(
+            f"{self._ACTION_NS}::\"{a}\"" for a in allowed_actions
         )
+        result: list[CedarPolicy] = [
+            CedarPolicy(
+                policy_id=policy_id,
+                description=f"Permit registered alias {alias_id} ({env})",
+                statement=(
+                    f"permit(\n"
+                    f"  principal == {self._AGENT_NS}::\"{alias_id}\",\n"
+                    f"  action in [{action_list}],\n"
+                    f"  resource\n"
+                    f") when {{\n"
+                    f"  principal.pearl_approved == true &&\n"
+                    f"  principal.environment == \"{env}\"\n"
+                    f"}};"
+                ),
+            )
+        ]
+
+        for blocked_action in blocked_actions:
+            forbid_id = f"pearl_forbid_alias_{alias_id}_{env}_blocked"
+            result.append(CedarPolicy(
+                policy_id=forbid_id,
+                description=f"Forbid {blocked_action} for alias {alias_id} ({env})",
+                statement=(
+                    f"forbid(\n"
+                    f"  principal == {self._AGENT_NS}::\"{alias_id}\",\n"
+                    f"  action == {self._ACTION_NS}::\"{blocked_action}\",\n"
+                    f"  resource\n"
+                    f");"
+                ),
+            ))
+
+        return result
 
     def _permit_role(self, role: str) -> CedarPolicy:
         if role == "viewer":
