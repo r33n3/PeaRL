@@ -255,6 +255,7 @@ class GateRuleType(StrEnum):
     FAIRNESS_CONTEXT_RECEIPT_VALID = "fairness_context_receipt_valid"
     FAIRNESS_EXCEPTIONS_CONTROLLED = "fairness_exceptions_controlled"
     FAIRNESS_POLICY_DEPLOYED = "fairness_policy_deployed"
+    CEDAR_POLICY_DEPLOYED = "cedar_policy_deployed"
     # Scanning integration rules
     COMPLIANCE_SCORE_THRESHOLD = "compliance_score_threshold"
     REQUIRED_ANALYZERS_COMPLETED = "required_analyzers_completed"

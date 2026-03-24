@@ -270,6 +270,8 @@ class _EvalContext:
         self.bu_requirements: list[ResolvedRequirement] = []
         # Governance compliance
         self.has_claude_md_governance: bool = False
+        # Cedar deployment status
+        self.cedar_policy_active: bool = False
 
 
 async def _build_eval_context(
@@ -461,6 +463,21 @@ async def _build_eval_context(
     # Check CLAUDE.md governance block confirmation
     ctx.has_claude_md_governance = bool(getattr(project, "claude_md_verified", False))
 
+    # Cedar deployment status
+    try:
+        from pearl.repositories.cedar_deployment_repo import CedarDeploymentRepository
+        cedar_repo = CedarDeploymentRepository(session)
+        org_id = getattr(project, "org_id", None) or "org_default"
+        latest_cedar = await cedar_repo.get_latest_for_org(org_id)
+        ctx.cedar_policy_active = (
+            latest_cedar is not None
+            and latest_cedar.status == "active"
+            and latest_cedar.agentcore_deployment_id is not None
+            and not latest_cedar.agentcore_deployment_id.startswith("dryrun_")
+        )
+    except Exception:
+        ctx.cedar_policy_active = False
+
     return ctx
 
 
@@ -503,6 +520,10 @@ _FIX_GUIDANCE: dict[str, str] = {
     "fairness_requirements_met": "Submit fairness evidence packages to meet requirements.",
     "model_card_documented": "Submit a model card evidence package.",
     "owasp_llm_top10_clear": "Resolve OWASP LLM Top 10 findings. Run a security scan focused on LLM risks.",
+    "cedar_policy_deployed": (
+        "Cedar deployment is triggered automatically after promotion approval. "
+        "Ensure all other gates pass, then call requestPromotion and await approval."
+    ),
 }
 
 
@@ -850,6 +871,17 @@ def _eval_comprehensive_ai_scan(rule, ctx):
 
 # Backward-compat alias
 _eval_comprehensive_mass_scan = _eval_comprehensive_ai_scan
+
+
+def _eval_cedar_policy_deployed(rule, ctx):
+    if ctx.cedar_policy_active:
+        return True, "Cedar policy bundle active in AgentCore", None
+    return (
+        False,
+        "No active Cedar policy bundle deployed to AgentCore — "
+        "all other gates must pass first, then approval triggers deployment",
+        None,
+    )
 
 
 def _eval_rai_eval_completed(rule, ctx):
@@ -1320,6 +1352,7 @@ RULE_EVALUATORS = {
     GateRuleType.OWASP_LLM_TOP10_CLEAR: _eval_owasp_llm_top10_clear,
     GateRuleType.AI_RISK_ACCEPTABLE: _eval_ai_risk_acceptable,
     GateRuleType.COMPREHENSIVE_AI_SCAN: _eval_comprehensive_ai_scan,
+    GateRuleType.CEDAR_POLICY_DEPLOYED: _eval_cedar_policy_deployed,
     # Legacy names — map to same evaluators for backward compat with stored gate rows
     GateRuleType.MASS_SCAN_COMPLETED: _eval_ai_scan_completed,
     GateRuleType.MASS_RISK_ACCEPTABLE: _eval_ai_risk_acceptable,

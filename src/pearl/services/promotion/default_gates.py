@@ -110,6 +110,7 @@ PREPROD_TO_PROD = {
         _rule(GateRuleType.FAIRNESS_EXCEPTIONS_CONTROLLED, "Fairness exceptions have controls", ai_only=True),
         _rule(GateRuleType.FAIRNESS_CONTEXT_RECEIPT_VALID, "Agent fairness context receipt on file", ai_only=True),
         _rule(GateRuleType.FAIRNESS_POLICY_DEPLOYED, "Fairness policy fully deployed", ai_only=True),
+        _rule(GateRuleType.CEDAR_POLICY_DEPLOYED, "Cedar policy deployed to AgentCore", ai_only=True),
         _rule(GateRuleType.COMPLIANCE_SCORE_THRESHOLD, "Compliance score >= 90% for production", ai_only=True, threshold=90.0),
         _rule(GateRuleType.REQUIRED_ANALYZERS_COMPLETED, "All required AI analyzers completed", ai_only=True),
         _rule(GateRuleType.SECURITY_REVIEW_CLEAR, "All /security-review findings addressed"),
