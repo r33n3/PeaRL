@@ -230,8 +230,9 @@ class MCPServer:
             "schema_version": "1.1",
             "report_type": args["report_type"],
             "format": args.get("format", "json"),
-            "trace_id": args.get("trace_id", "mcp_trace"),
         }
+        if args.get("detail_level"):
+            body["detail_level"] = args["detail_level"]
         return await self._request("POST", f"/projects/{pid}/reports/generate", body)
 
     async def _get_job_status(self, args: dict) -> dict:
