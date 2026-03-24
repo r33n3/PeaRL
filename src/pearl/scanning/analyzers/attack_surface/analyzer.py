@@ -752,6 +752,16 @@ class AttackSurfaceAnalyzer:
                 AttackVectorType.API_ENDPOINT: AttackCategory.SENSITIVE_INFO,
                 AttackVectorType.WEBHOOK: AttackCategory.SUPPLY_CHAIN,
             }
+            # Cedar category override for attack vectors that need targeted
+            # forbid clauses but don't map 1-to-1 to AttackCategory strings.
+            cedar_cat_map = {
+                AttackVectorType.TOOL_INVOCATION: "tool_scope_violation",
+                AttackVectorType.AGENT_COMMUNICATION: "excessive_agency",
+            }
+            av_metadata: dict = {}
+            cedar_cat = cedar_cat_map.get(av.vector_type)
+            if cedar_cat:
+                av_metadata["cedar_category"] = cedar_cat
             findings.append(AnalyzerFinding(
                 title=f"Attack Vector: {av.name}",
                 description=av.description,
@@ -763,6 +773,7 @@ class AttackSurfaceAnalyzer:
                 remediation_summary="; ".join(av.mitigations) if av.mitigations else None,
                 confidence=0.7,
                 tags=["attack_surface", av.vector_type.value],
+                metadata=av_metadata,
             ))
         # Convert vulnerability paths to findings
         for vp in result.vulnerability_paths:

@@ -16,6 +16,54 @@ _RAI_CATEGORIES = {
     AttackCategory.HALLUCINATION,
 }
 
+# AttackCategory values that warrant a Cedar policy recommendation.
+# Includes string literals that match StrEnum values plus extra Cedar-specific
+# category tags that may be stored in finding.metadata["cedar_category"].
+_CEDAR_REC_CATEGORIES = {
+    "excessive_agency",
+    "missing_guardrail",
+    "tool_scope_violation",
+    "prompt_injection",
+    "mcp_tool_excessive_permissions",
+}
+
+
+def _build_cedar_recommendation(finding, analyzer_name: str) -> dict | None:
+    """Build a Cedar policy recommendation from a finding, if applicable."""
+    # Allow findings to carry an explicit cedar_category in metadata
+    metadata = getattr(finding, "metadata", {}) or {}
+    category = metadata.get("cedar_category") or getattr(finding, "category", "") or ""
+    # Normalise to string value (StrEnum members compare equal to their string
+    # value, but we want the plain str for the dict lookup below)
+    category_str = str(category)
+
+    if category_str not in _CEDAR_REC_CATEGORIES:
+        return None
+
+    # Map finding category to Cedar action to restrict
+    action_map = {
+        "excessive_agency": "ExecuteApiCall",
+        "tool_scope_violation": "ExecuteApiCall",
+        "mcp_tool_excessive_permissions": "ExecuteApiCall",
+        "missing_guardrail": "InvokeFoundationModel",
+        "prompt_injection": "InvokeFoundationModel",
+    }
+    action = action_map.get(category_str, "ExecuteApiCall")
+
+    # Extract tool/resource name from finding if available
+    resource_hint = (
+        getattr(finding, "resource", None)
+        or getattr(finding, "affected_component", None)
+        or "any"
+    )
+
+    return {
+        "action": action,
+        "resource_hint": resource_hint,
+        "reason": f"{analyzer_name}: {getattr(finding, 'title', category_str)}",
+        "policy_type": "forbid",
+    }
+
 _SEVERITY_MAP = {
     ScanSeverity.CRITICAL: "critical",
     ScanSeverity.HIGH: "high",
@@ -68,7 +116,7 @@ def convert_analyzer_finding(
     fid = finding_id or generate_id("find_")
     category = "responsible_ai" if finding.category in _RAI_CATEGORIES else "security"
 
-    return {
+    result = {
         "finding_id": fid,
         "source": {
             "tool_name": f"pearl_scan_{analyzer_name}",
@@ -88,6 +136,13 @@ def convert_analyzer_finding(
         "detected_at": datetime.now(timezone.utc).isoformat(),
         "status": "open",
     }
+
+    # Cedar recommendation for excessive agency and missing guardrail findings
+    cedar_rec = _build_cedar_recommendation(finding, analyzer_name)
+    if cedar_rec:
+        result["cedar_recommendation"] = cedar_rec
+
+    return result
 
 
 def convert_scan_result(

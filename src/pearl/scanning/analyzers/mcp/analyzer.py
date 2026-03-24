@@ -617,6 +617,12 @@ class MCPAnalyzer:
         from pearl.scanning.analyzers.base import AnalyzerFinding, AnalyzerResult as AR
 
         findings = []
+        # Cedar category overrides for MCP risk categories that warrant targeted
+        # forbid clauses but don't have a matching AttackCategory string.
+        _cedar_cat_map = {
+            MCPRiskCategory.UNSAFE_EXECUTION: "mcp_tool_excessive_permissions",
+            MCPRiskCategory.CONFIGURATION: "missing_guardrail",
+        }
         for result in results:
             for f in result.findings:
                 cat_map = {
@@ -635,6 +641,10 @@ class MCPAnalyzer:
                     MCPRiskCategory.CONFIGURATION: AttackCategory.INSECURE_PLUGIN,
                     MCPRiskCategory.SUPPLY_CHAIN: AttackCategory.SUPPLY_CHAIN,
                 }
+                mcp_metadata: dict = {}
+                cedar_cat = _cedar_cat_map.get(f.category)
+                if cedar_cat:
+                    mcp_metadata["cedar_category"] = cedar_cat
                 findings.append(AnalyzerFinding(
                     title=f.title,
                     description=f.description,
@@ -646,5 +656,6 @@ class MCPAnalyzer:
                     remediation_summary=f.remediation,
                     confidence=0.85,
                     tags=[f.category.value, f.server_name],
+                    metadata=mcp_metadata,
                 ))
         return AR(analyzer_name="mcp", findings=findings)
