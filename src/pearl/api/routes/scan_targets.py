@@ -52,7 +52,7 @@ async def register_scan_target(
     if not repo_url:
         raise ValidationError("repo_url is required")
 
-    tool_type = body.get("tool_type", "mass")
+    tool_type = body.get("tool_type", "pearl_ai")
     branch = body.get("branch", "main")
 
     # Check natural key uniqueness

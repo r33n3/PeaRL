@@ -83,7 +83,8 @@ class ToolType(StrEnum):
     THREAT_MODEL = "threat_model"
     RAI_MONITOR = "rai_monitor"
     MANUAL = "manual"
-    MASS = "mass"
+    PEARL_AI = "pearl_ai"   # PeaRL built-in AI security scan (runScan MCP tool)
+    MASS = "mass"           # External MASS 2.0 adapter
     FEU = "feu"
 
 
@@ -230,12 +231,16 @@ class GateRuleType(StrEnum):
     READ_ONLY_AUTONOMY = "read_only_autonomy"
     # Scan target rules
     SCAN_TARGET_REGISTERED = "scan_target_registered"
-    # MASS-sourced AI security rules
-    MASS_SCAN_COMPLETED = "mass_scan_completed"
+    # AI security scan rules (satisfied by PeaRL built-in scan or any configured adapter)
+    AI_SCAN_COMPLETED = "ai_scan_completed"
     NO_PROMPT_INJECTION = "no_prompt_injection"
     GUARDRAILS_VERIFIED = "guardrails_verified"
     NO_PII_LEAKAGE = "no_pii_leakage"
     OWASP_LLM_TOP10_CLEAR = "owasp_llm_top10_clear"
+    AI_RISK_ACCEPTABLE = "ai_risk_acceptable"
+    COMPREHENSIVE_AI_SCAN = "comprehensive_ai_scan"
+    # Legacy names — kept for backward compatibility with stored gate rows and existing projects
+    MASS_SCAN_COMPLETED = "mass_scan_completed"
     MASS_RISK_ACCEPTABLE = "mass_risk_acceptable"
     COMPREHENSIVE_MASS_SCAN = "comprehensive_mass_scan"
     RAI_EVAL_COMPLETED = "rai_eval_completed"

@@ -72,7 +72,7 @@ def convert_analyzer_finding(
         "finding_id": fid,
         "source": {
             "tool_name": f"pearl_scan_{analyzer_name}",
-            "tool_type": "mass",
+            "tool_type": "pearl_ai",
             "trust_label": "trusted_internal",
         },
         "project_id": project_id,

@@ -376,7 +376,7 @@ class ScanningService:
                         title=f"Scan completed: {analyzer_name} (0 issues found)",
                         source={
                             "tool_name": f"pearl_scan_{analyzer_name}",
-                            "tool_type": "mass",
+                            "tool_type": "pearl_ai",
                             "trust_label": "trusted_internal",
                         },
                         full_data={
@@ -387,7 +387,7 @@ class ScanningService:
                             "status": "closed",
                             "source": {
                                 "tool_name": f"pearl_scan_{analyzer_name}",
-                                "tool_type": "mass",
+                                "tool_type": "pearl_ai",
                                 "trust_label": "trusted_internal",
                             },
                             "detected_at": now_iso,

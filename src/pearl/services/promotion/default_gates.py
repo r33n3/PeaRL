@@ -60,7 +60,7 @@ DEV_TO_PREPROD = {
         _rule(GateRuleType.SECURITY_REVIEW_APPROVAL, "Security review approval required"),
         # AI-specific
         _rule(GateRuleType.FAIRNESS_CASE_DEFINED, "Fairness case must be defined", ai_only=True),
-        _rule(GateRuleType.MASS_SCAN_COMPLETED, "MASS security scan must be completed", ai_only=True),
+        _rule(GateRuleType.AI_SCAN_COMPLETED, "PeaRL AI security scan must be completed", ai_only=True),
         _rule(GateRuleType.NO_PROMPT_INJECTION, "Zero prompt injection findings", ai_only=True),
         _rule(GateRuleType.REQUIRED_ANALYZERS_COMPLETED, "Required AI analyzers must have run", ai_only=True),
         _rule(GateRuleType.FAIRNESS_REQUIREMENTS_MET, "Fairness requirements must be met", ai_only=True),
@@ -102,10 +102,10 @@ PREPROD_TO_PROD = {
         _rule(GateRuleType.RESIDUAL_RISK_REPORT, "Residual risk report generated"),
         _rule(GateRuleType.READ_ONLY_AUTONOMY, "Production autonomy mode verified"),
         # AI-specific
-        _rule(GateRuleType.MASS_SCAN_COMPLETED, "MASS scan completed", ai_only=True),
+        _rule(GateRuleType.AI_SCAN_COMPLETED, "PeaRL AI security scan completed", ai_only=True),
         _rule(GateRuleType.OWASP_LLM_TOP10_CLEAR, "OWASP LLM Top 10 clear", ai_only=True),
-        _rule(GateRuleType.MASS_RISK_ACCEPTABLE, "MASS risk below threshold", ai_only=True, threshold=7.0),
-        _rule(GateRuleType.COMPREHENSIVE_MASS_SCAN, "Comprehensive MASS scan with verdicts", ai_only=True),
+        _rule(GateRuleType.AI_RISK_ACCEPTABLE, "AI scan risk below threshold", ai_only=True, threshold=7.0),
+        _rule(GateRuleType.COMPREHENSIVE_AI_SCAN, "Comprehensive AI scan with verdicts", ai_only=True),
         _rule(GateRuleType.FAIRNESS_DRIFT_ACCEPTABLE, "Fairness drift within limits", ai_only=True, threshold=0.1),
         _rule(GateRuleType.FAIRNESS_EXCEPTIONS_CONTROLLED, "Fairness exceptions have controls", ai_only=True),
         _rule(GateRuleType.FAIRNESS_CONTEXT_RECEIPT_VALID, "Agent fairness context receipt on file", ai_only=True),

@@ -202,7 +202,7 @@ TOOL_DEFINITIONS = [
     # ─── Findings ────────────────────────────────────
     {
         "name": "ingestFindings",
-        "description": "Ingest findings from external security/compliance tools (MASS, SAST, DAST, SCA, etc.). Supports CVSS scores, CWE IDs, compliance references, and MASS verdicts.",
+        "description": "Ingest findings from security/compliance tools (PeaRL AI scan, SAST, DAST, SCA, external adapters, etc.). Supports CVSS scores, CWE IDs, compliance references, and scan verdicts.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -327,7 +327,7 @@ TOOL_DEFINITIONS = [
     # ─── Promotion Gates (NEW) ───────────────────────
     {
         "name": "evaluatePromotionReadiness",
-        "description": "Evaluate if a project is ready for promotion to the next environment. Checks all gate rules (security, MASS AI, fairness) and returns pass/fail for each rule with blockers.",
+        "description": "Evaluate if a project is ready for promotion to the next environment. Checks all gate rules (security, AI security scan, fairness) and returns pass/fail for each rule with blockers.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -479,13 +479,13 @@ TOOL_DEFINITIONS = [
     # ─── Scan Targets (NEW) ──────────────────────────
     {
         "name": "registerScanTarget",
-        "description": "Register a repo as a scan target for a scanning tool (MASS, SAST, etc.). Creates a scan target linked to a project.",
+        "description": "Register a repo as a scan target. Use tool_type 'pearl_ai' for PeaRL's built-in AI security scan (default). Other types activate configured external adapters (MASS, SonarQube, SAST, etc.).",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "project_id": {"type": "string"},
                 "repo_url": {"type": "string", "description": "Repository URL to scan"},
-                "tool_type": {"type": "string", "enum": ["mass", "sast", "dast", "sca", "container_scan", "iac_scan", "custom"], "description": "Type of scanning tool"},
+                "tool_type": {"type": "string", "enum": ["pearl_ai", "mass", "sonarqube", "sast", "dast", "sca", "container_scan", "iac_scan", "custom"], "description": "Scan provider. 'pearl_ai' uses PeaRL's built-in analyzers. Others require the adapter to be configured."},
                 "branch": {"type": "string", "default": "main", "description": "Branch to scan"},
                 "scan_frequency": {"type": "string", "enum": ["on_push", "hourly", "daily", "weekly", "on_demand"], "default": "daily"},
                 "environment_scope": {"type": "array", "items": {"type": "string"}, "description": "Environments this target applies to"},

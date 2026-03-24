@@ -471,7 +471,8 @@ _FIX_GUIDANCE: dict[str, str] = {
     "app_spec_defined": "Define an application spec for this project via POST /projects/{id}/app-spec.",
     "unit_tests_exist": "Add unit test evidence via a compiled context package or evidence submission.",
     "scan_target_registered": "Register an active scan target for this project via POST /scan-targets.",
-    "mass_scan_completed": "Complete a MASS scan for this project. Register a MASS scan target and trigger a scan.",
+    "ai_scan_completed": "Run a PeaRL AI security scan via the runScan MCP tool. If an external scanner (MASS, SonarQube) is configured it will also satisfy this gate.",
+    "mass_scan_completed": "Run a PeaRL AI security scan via the runScan MCP tool. If an external scanner (MASS, SonarQube) is configured it will also satisfy this gate.",
     "no_prompt_injection": "Resolve prompt injection findings. Implement input validation and prompt hardening.",
     "guardrails_verified": "Implement and verify AI guardrails. Address open guardrail findings.",
     "no_pii_leakage": "Fix PII leakage findings. Implement PII detection and filtering.",
@@ -767,19 +768,27 @@ def _eval_read_only_autonomy(rule, ctx):
     return env_profile, "Environment profile defines autonomy mode" if env_profile else "No environment profile to verify autonomy mode", None
 
 
-# MASS-sourced AI security rules
+# AI security scan rules — satisfied by PeaRL built-in scan or any configured adapter
 
-def _eval_mass_scan_completed(rule, ctx):
-    # Primary check: scan target with heartbeat status == "succeeded"
+# AI scan tool types — any of these count as a completed AI security scan
+_AI_SCAN_TOOL_TYPES = {"pearl_ai", "mass", "ai_scan"}
+
+
+def _eval_ai_scan_completed(rule, ctx):
+    # Primary check: scan target with succeeded status (any AI scan tool type)
     if ctx.mass_scan_completed:
-        return True, "MASS scan completed (heartbeat confirmed)", None
+        return True, "PeaRL AI security scan completed", None
 
-    # Fallback: findings with source.tool_type == "mass" exist
-    mass_findings = ctx.findings_by_source.get("mass", [])
-    if mass_findings:
-        return True, "MASS scan results on file (from findings)", None
+    # Fallback: findings tagged with an AI scan tool type exist
+    for tool_type in _AI_SCAN_TOOL_TYPES:
+        if ctx.findings_by_source.get(tool_type):
+            return True, f"AI security scan results on file (from {tool_type})", None
 
-    return False, "No MASS scan completed", None
+    return False, "No AI security scan completed — run the runScan MCP tool", None
+
+
+# Backward-compat alias
+_eval_mass_scan_completed = _eval_ai_scan_completed
 
 
 def _eval_scan_target_registered(rule, ctx):
@@ -812,18 +821,34 @@ def _eval_owasp_llm_top10_clear(rule, ctx):
     return passed, "OWASP LLM Top 10 clear" if passed else f"{len(owasp_findings)} OWASP LLM Top 10 finding(s)", None
 
 
-def _eval_mass_risk_acceptable(rule, ctx):
+def _eval_ai_risk_acceptable(rule, ctx):
     threshold = rule.threshold or 7.0
-    high_risk = [f for f in ctx.open_findings if (f.cvss_score or 0) >= threshold and (f.source or {}).get("tool_type") == "mass"]
+    # Check findings from any AI scan source
+    high_risk = [
+        f for f in ctx.open_findings
+        if (f.cvss_score or 0) >= threshold
+        and (f.source or {}).get("tool_type") in _AI_SCAN_TOOL_TYPES
+    ]
     passed = len(high_risk) == 0
-    return passed, f"MASS risk below threshold ({threshold})" if passed else f"{len(high_risk)} finding(s) above risk threshold", None
+    return passed, f"AI scan risk below threshold ({threshold})" if passed else f"{len(high_risk)} finding(s) above risk threshold", None
 
 
-def _eval_comprehensive_mass_scan(rule, ctx):
-    # Check that MASS findings exist and have verdict data
-    mass_with_verdict = [f for f in ctx.open_findings if f.verdict and (f.source or {}).get("tool_type") == "mass"]
-    passed = len(mass_with_verdict) > 0 or _eval_mass_scan_completed(rule, ctx)[0]
-    return passed, "Comprehensive MASS scan with verdicts" if passed else "No comprehensive MASS scan", None
+# Backward-compat alias
+_eval_mass_risk_acceptable = _eval_ai_risk_acceptable
+
+
+def _eval_comprehensive_ai_scan(rule, ctx):
+    # Comprehensive: AI scan findings with verdict data present, or scan completed
+    ai_with_verdict = [
+        f for f in ctx.open_findings
+        if f.verdict and (f.source or {}).get("tool_type") in _AI_SCAN_TOOL_TYPES
+    ]
+    passed = len(ai_with_verdict) > 0 or _eval_ai_scan_completed(rule, ctx)[0]
+    return passed, "Comprehensive AI security scan with verdicts" if passed else "No comprehensive AI security scan", None
+
+
+# Backward-compat alias
+_eval_comprehensive_mass_scan = _eval_comprehensive_ai_scan
 
 
 def _eval_rai_eval_completed(rule, ctx):
@@ -1286,14 +1311,18 @@ RULE_EVALUATORS = {
     GateRuleType.READ_ONLY_AUTONOMY: _eval_read_only_autonomy,
     # Scan targets
     GateRuleType.SCAN_TARGET_REGISTERED: _eval_scan_target_registered,
-    # MASS AI security
-    GateRuleType.MASS_SCAN_COMPLETED: _eval_mass_scan_completed,
+    # AI security scan (built-in + adapter)
+    GateRuleType.AI_SCAN_COMPLETED: _eval_ai_scan_completed,
     GateRuleType.NO_PROMPT_INJECTION: _eval_no_prompt_injection,
     GateRuleType.GUARDRAILS_VERIFIED: _eval_guardrails_verified,
     GateRuleType.NO_PII_LEAKAGE: _eval_no_pii_leakage,
     GateRuleType.OWASP_LLM_TOP10_CLEAR: _eval_owasp_llm_top10_clear,
-    GateRuleType.MASS_RISK_ACCEPTABLE: _eval_mass_risk_acceptable,
-    GateRuleType.COMPREHENSIVE_MASS_SCAN: _eval_comprehensive_mass_scan,
+    GateRuleType.AI_RISK_ACCEPTABLE: _eval_ai_risk_acceptable,
+    GateRuleType.COMPREHENSIVE_AI_SCAN: _eval_comprehensive_ai_scan,
+    # Legacy names — map to same evaluators for backward compat with stored gate rows
+    GateRuleType.MASS_SCAN_COMPLETED: _eval_ai_scan_completed,
+    GateRuleType.MASS_RISK_ACCEPTABLE: _eval_ai_risk_acceptable,
+    GateRuleType.COMPREHENSIVE_MASS_SCAN: _eval_comprehensive_ai_scan,
     GateRuleType.RAI_EVAL_COMPLETED: _eval_rai_eval_completed,
     GateRuleType.MODEL_CARD_DOCUMENTED: _eval_model_card_documented,
     # FEU fairness
