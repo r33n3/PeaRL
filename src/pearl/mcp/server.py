@@ -47,6 +47,7 @@ class MCPServer:
 
     def _route(self, tool_name: str):
         routes = {
+            "pearl_register_project": self._register_project,
             "createProject": self._create_project,
             "getProject": self._get_project,
             "updateProject": self._update_project,
@@ -93,6 +94,8 @@ class MCPServer:
             "ingestSecurityReview": self._ingest_security_review,
             "claimTaskPacket": self._claim_task_packet,
             "completeTaskPacket": self._complete_task_packet,
+            # Governance verification
+            "confirmClaudeMd": self._confirm_claude_md,
         }
         return routes.get(tool_name)
 
@@ -118,6 +121,10 @@ class MCPServer:
             return resp.json()
 
     # --- Original tool handlers ---
+
+    async def _register_project(self, args: dict) -> dict:
+        """Full bootstrap — derives project_id, compiles context, returns all three config files."""
+        return await self._request("POST", "/projects/bootstrap", args)
 
     async def _create_project(self, args: dict) -> dict:
         return await self._request("POST", "/projects", args)
@@ -369,3 +376,7 @@ class MCPServer:
             "finding_ids_resolved": args.get("finding_ids_resolved", []),
         }
         return await self._request("POST", f"/task-packets/{packet_id}/complete", body)
+
+    async def _confirm_claude_md(self, args: dict) -> dict:
+        pid = args["project_id"]
+        return await self._request("POST", f"/projects/{pid}/confirm-claude-md")

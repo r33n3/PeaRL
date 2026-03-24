@@ -475,13 +475,24 @@ _FIX_GUIDANCE: dict[str, str] = {
     "no_prompt_injection": "Resolve prompt injection findings. Implement input validation and prompt hardening.",
     "guardrails_verified": "Implement and verify AI guardrails. Address open guardrail findings.",
     "no_pii_leakage": "Fix PII leakage findings. Implement PII detection and filtering.",
-    "framework_control_required": "Satisfy the required framework control. Check the specific control documentation.",
-    "aiuc1_control_required": "Set the required AIUC-1 control to True in the org baseline.",
+    "framework_control_required": (
+        "Inspect the project for evidence of this control (code, config, tests, reports), "
+        "then call submitEvidence with evidence_type='attestation', "
+        "control_id matching the rule's framework/category/control path, "
+        "and findings summarising what you found. "
+        "Alternatively set baseline_defaults[framework][category][control]=true in the org baseline."
+    ),
+    "aiuc1_control_required": (
+        "Inspect the project for evidence of this AIUC-1 control, "
+        "then call submitEvidence with evidence_type='attestation' and "
+        "control_id='aiuc1/<category>/<control>'. "
+        "Alternatively set the control to true in the org baseline defaults."
+    ),
     "security_review_clear": "Run /security-review and address all findings.",
     "compliance_score_threshold": "Improve compliance score by resolving scan findings. Target: 80%+.",
     "required_analyzers_completed": "Run all required analyzers. Trigger a full scan via POST /scan-targets/{id}/trigger.",
     "project_registered": "Ensure the project is properly registered in PeaRL.",
-    "claude_md_governance_present": "Write the PeaRL governance block to the project's CLAUDE.md, then call POST /projects/{id}/confirm-claude-md to confirm.",
+    "claude_md_governance_present": "Write the PeaRL governance block to the project's CLAUDE.md, then call the confirmClaudeMd MCP tool to confirm.",
     "residual_risk_report": "Generate a residual risk report via POST /projects/{id}/reports.",
     "data_classifications_documented": "Add data classifications to the application spec.",
     "iam_roles_defined": "Define IAM roles and trust boundaries in the application spec.",
@@ -997,18 +1008,38 @@ def _check_findings_by_tool(ctx: _EvalContext, tool_type: str, label: str):
 
 
 def _baseline_attestation(ctx: _EvalContext, framework: str, category: str, control: str, label: str):
-    """Check framework-namespaced attestation in org baseline: baseline_defaults[framework][category][control]."""
+    """Check framework control is satisfied via org baseline boolean OR submitted evidence package.
+
+    Pass conditions (in priority order):
+    1. baseline_defaults[framework][category][control] is True
+    2. An evidence package of type 'attestation' with matching control_id exists
+    Fail if explicitly set to False in baseline (non-compliant declaration).
+    """
+    ref = f"{framework}/{category}/{control}"
+
+    # 1. Check org baseline boolean
     fw_data = ctx.baseline_defaults.get(framework, {})
     cat_data = fw_data.get(category, {}) if isinstance(fw_data, dict) else {}
     value = cat_data.get(control) if isinstance(cat_data, dict) else None
-    ref = f"{framework}/{category}/{control}"
     if value is True:
-        return True, f"{label}: attested in org baseline", {"ref": ref, "source": "attestation"}
+        return True, f"{label}: attested in org baseline", {"ref": ref, "source": "baseline"}
     if value is False:
-        return False, f"{label}: marked non-compliant in org baseline", {"ref": ref, "source": "attestation"}
+        return False, f"{label}: marked non-compliant in org baseline", {"ref": ref, "source": "baseline"}
+
+    # 2. Check submitted evidence packages for a matching attestation
+    matching_evidence = [
+        e for e in ctx.evidence_packages
+        if getattr(e, "evidence_type", None) == "attestation"
+        and (getattr(e, "evidence_data", None) or {}).get("control_id") == ref
+    ]
+    if matching_evidence:
+        latest = matching_evidence[-1]
+        attested_by = (getattr(latest, "evidence_data", None) or {}).get("attested_by", "agent")
+        return True, f"{label}: validated by {attested_by} — evidence on file", {"ref": ref, "source": "evidence_package"}
+
     if not ctx.has_baseline:
-        return False, f"{label}: no org baseline attached", {"ref": ref}
-    return False, f"{label}: not yet attested — update org baseline or run automated scan", {"ref": ref, "source": "missing"}
+        return False, f"{label}: no org baseline — attest via submitEvidence(evidence_type='attestation', control_id='{ref}')", {"ref": ref}
+    return False, f"{label}: not yet attested — inspect the project and call submitEvidence(evidence_type='attestation', control_id='{ref}')", {"ref": ref, "source": "missing"}
 
 
 # ── Per-framework dispatchers ──────────────────────────────────────────────────

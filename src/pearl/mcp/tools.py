@@ -1,10 +1,49 @@
 """MCP tool definitions mapping to PeaRL API operations.
 
-39 tools total (28 existing + 11 scanning/compliance/guardrails tools).
+43 tools total (28 existing + 11 scanning/compliance/guardrails tools + 1 register + 3 governance).
 """
 
 TOOL_DEFINITIONS = [
     # ─── Project Management ──────────────────────────
+    {
+        "name": "pearl_register_project",
+        "description": (
+            "Full one-shot project bootstrap. "
+            "Creates the project, builds a minimal app spec, compiles the governance context, "
+            "and returns all three config files ready to write to disk. "
+            "After writing them, all other PeaRL MCP tools work immediately. "
+            "Use this for first-time setup — no .pearl.yaml or .pearl/ directory needed first. "
+            "Write pearl_yaml to .pearl.yaml, pearl_dev_toml to .pearl/pearl-dev.toml, "
+            "and compiled_package (as JSON) to .pearl/compiled-context-package.json."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Human-readable project name (e.g. 'Saga of the Norsemen')"},
+                "owner_team": {"type": "string", "description": "Team responsible for this project (e.g. 'APE_Exp_Team')"},
+                "business_criticality": {
+                    "type": "string",
+                    "enum": ["low", "moderate", "high", "mission_critical"],
+                    "default": "low",
+                    "description": "low = internal tool/game/experiment; mission_critical = financial/safety system",
+                },
+                "external_exposure": {
+                    "type": "string",
+                    "enum": ["internal_only", "partner", "customer_facing", "public"],
+                    "default": "public",
+                    "description": "Who can reach this system",
+                },
+                "ai_enabled": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Whether this project uses AI/LLM capabilities",
+                },
+                "description": {"type": "string", "description": "Optional short description"},
+                "bu_id": {"type": "string", "description": "Optional business unit ID"},
+            },
+            "required": ["name", "owner_team"],
+        },
+    },
     {
         "name": "createProject",
         "description": "Create or register a new project for policy enforcement. Requires schema_version, project_id, name, owner_team, business_criticality, external_exposure, and ai_enabled.",
@@ -343,14 +382,30 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "submitEvidence",
-        "description": "Submit a fairness evidence package (CI eval report, bias benchmark, red team report, etc.) for a project.",
+        "description": (
+            "Submit an evidence package for a project gate control. "
+            "Use this after inspecting the project to validate a framework control requirement. "
+            "For framework_control_required rules (AIUC-1, OWASP LLM, etc.), inspect the project "
+            "codebase for evidence of the control (e.g. rate limiting code, input filtering, security "
+            "config, test results) then submit with evidence_type='attestation' and include "
+            "control_id (e.g. 'aiuc1/security/b001_2_security_program_integration'), "
+            "findings (what you found), and artifact_refs (file paths or URLs). "
+            "This satisfies the gate rule without requiring manual baseline editing."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "project_id": {"type": "string"},
                 "environment": {"type": "string", "enum": ["sandbox", "dev", "pilot", "preprod", "prod"]},
-                "evidence_type": {"type": "string", "enum": ["ci_eval_report", "runtime_sample", "bias_benchmark", "red_team_report", "guardrail_test", "fairness_audit", "model_card", "manual_review"]},
-                "evidence_data": {"type": "object", "description": "Evidence details and results"},
+                "evidence_type": {
+                    "type": "string",
+                    "enum": ["attestation", "ci_eval_report", "runtime_sample", "bias_benchmark", "red_team_report", "guardrail_test", "fairness_audit", "model_card", "manual_review", "sbom", "provenance"],
+                    "description": "Use 'attestation' for framework control validation (AIUC-1, OWASP LLM, etc.)"
+                },
+                "evidence_data": {
+                    "type": "object",
+                    "description": "Evidence details. For attestation: include control_id, findings (what was found), artifact_refs (file paths), and attested_by.",
+                },
             },
             "required": ["project_id", "environment", "evidence_type"],
         },
@@ -577,6 +632,26 @@ TOOL_DEFINITIONS = [
                 },
             },
             "required": ["packet_id", "status"],
+        },
+    },
+    # ─── Governance Verification ─────────────────────
+    {
+        "name": "confirmClaudeMd",
+        "description": (
+            "Confirms the PeaRL governance block is present in the project's CLAUDE.md "
+            "and marks the project as governance-verified in PeaRL. "
+            "Call this after writing the PeaRL governance block to CLAUDE.md. "
+            "Satisfies the CLAUDE_MD_GOVERNANCE_PRESENT gate rule."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "string",
+                    "description": "The project ID to mark as governance-verified",
+                },
+            },
+            "required": ["project_id"],
         },
     },
 ]

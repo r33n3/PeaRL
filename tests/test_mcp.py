@@ -7,8 +7,8 @@ from pearl.mcp.tools import TOOL_DEFINITIONS
 
 
 def test_tool_definitions_count():
-    """All 41 API operations have tool definitions."""
-    assert len(TOOL_DEFINITIONS) == 41
+    """All 43 API operations have tool definitions."""
+    assert len(TOOL_DEFINITIONS) == 43
 
 
 def test_tool_definitions_structure():
@@ -30,7 +30,7 @@ def test_mcp_server_list_tools():
     """MCPServer.list_tools returns all definitions."""
     server = MCPServer()
     tools = server.list_tools()
-    assert len(tools) == 41
+    assert len(tools) == 43
 
 
 def test_mcp_server_routes_all_tools():
@@ -53,6 +53,7 @@ async def test_mcp_server_unknown_tool():
 def test_required_tool_names():
     """Check all expected tool names are present."""
     expected = {
+        "pearl_register_project",
         "createProject",
         "getProject",
         "updateProject",
@@ -100,6 +101,8 @@ def test_required_tool_names():
         # Remediation execution bridge
         "claimTaskPacket",
         "completeTaskPacket",
+        # Governance verification
+        "confirmClaudeMd",
     }
     actual = {t["name"] for t in TOOL_DEFINITIONS}
     assert actual == expected

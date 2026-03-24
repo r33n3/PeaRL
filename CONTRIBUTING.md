@@ -45,6 +45,7 @@ PEARL_LOCAL=1 pytest tests/ -q
 - New workers must have unit tests verifying job lifecycle
 - New ORM models must be included in the `tests/conftest.py` fixture teardown
 - New MCP tools require updating the tool count assertion in `tests/test_mcp.py`
+- After deploying new MCP tools (rebuild + `docker compose up -d pearl-api`), connected agent sessions must reload their tool list. Use `/mcp` → disconnect → reconnect on the pearl server. The `unified_mcp` process fetches tool definitions dynamically from the API at call time, but the MCP session caches the list — reconnect forces a fresh fetch.
 
 ## Code Style
 
