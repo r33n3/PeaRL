@@ -193,4 +193,4 @@ async def test_default_gate_rule_counts(client):
     gates = {g["gate_id"]: g for g in r.json()}
     assert gates["gate_sandbox_to_dev"]["rule_count"] == 8
     assert gates["gate_dev_to_preprod"]["rule_count"] == 26
-    assert gates["gate_preprod_to_prod"]["rule_count"] == 29
+    assert gates["gate_preprod_to_prod"]["rule_count"] == 30
