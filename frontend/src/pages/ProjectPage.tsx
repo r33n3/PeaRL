@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useProjectOverview, useProjectGovernance } from "@/api/dashboard";
 import { useAgentBrief, usePackageIntegrity } from "@/api/agent";
@@ -9,6 +10,7 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { GateProgress } from "@/components/shared/GateProgress";
 import { MonoText } from "@/components/shared/MonoText";
 import { TimelinePanel } from "@/components/shared/TimelinePanel";
+import { GuardrailsTab } from "@/components/pipeline/GuardrailsTab";
 import { Bug, ArrowUpCircle, FileText, Shield, DollarSign, Cpu, CheckCircle, Package, AlertTriangle, XCircle, Clock, ShieldCheck, Tag } from "lucide-react";
 import type { ApprovalStatus, Environment } from "@/lib/types";
 import { formatTimestamp } from "@/lib/utils";
@@ -24,6 +26,7 @@ function fmtDays(d: number | null | undefined): string {
 export function ProjectPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState<"overview" | "guardrails">("overview");
   const { data, isLoading } = useProjectOverview(projectId!);
   const { data: agentBrief } = useAgentBrief(projectId);
   const { data: pkgIntegrity } = usePackageIntegrity(projectId);
@@ -198,6 +201,31 @@ export function ProjectPage() {
           )}
         </VaultCard>
       </div>
+
+      {/* Tab bar */}
+      <div className="flex gap-0 border-b border-white/10 mb-8">
+        {(["overview", "guardrails"] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-2 text-sm font-mono border-b-2 transition-colors capitalize ${
+              activeTab === tab
+                ? "border-purple-500 text-purple-400"
+                : "border-transparent text-white/50 hover:text-white/70"
+            }`}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
+
+      {/* Guardrails tab */}
+      {activeTab === "guardrails" && (
+        <GuardrailsTab projectId={projectId} />
+      )}
+
+      {/* Overview tab content */}
+      {activeTab === "overview" && <>
 
       {/* Quick nav */}
       <div className="flex gap-2 mb-8">
@@ -518,6 +546,8 @@ export function ProjectPage() {
       <VaultCard className="mb-0">
         <TimelinePanel events={timeline} isLoading={timelineLoading} maxItems={25} />
       </VaultCard>
+
+      </> /* end overview tab */}
     </div>
   );
 }
