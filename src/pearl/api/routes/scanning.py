@@ -2,9 +2,11 @@
 
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pearl.dependencies import get_db, get_trace_id
@@ -257,6 +259,340 @@ async def trigger_scan_target(
 async def list_analyzers() -> list[dict]:
     """List available scanning analyzers."""
     return _service.get_analyzer_info()
+
+
+# ---------------------------------------------------------------------------
+# Snyk SCA ingest route
+# ---------------------------------------------------------------------------
+
+_SNYK_SEVERITY_MAP = {
+    "critical": "critical",
+    "high": "high",
+    "medium": "moderate",
+    "low": "low",
+}
+
+
+class SnykVuln(BaseModel):
+    model_config = {"populate_by_name": True}
+
+    id: str
+    title: str | None = None
+    severity: str = "low"
+    packageName: str = ""
+    version: str | None = None
+    fixedIn: list[str] = []
+    description: str | None = None
+    identifiers: dict[str, Any] = {}
+    references: list[dict[str, Any]] = []
+    from_path: list[str] = Field(default=[], alias="from")
+
+
+class SnykIngestRequest(BaseModel):
+    vulnerabilities: list[SnykVuln] = []
+
+
+@router.post("/projects/{project_id}/integrations/snyk/ingest", status_code=200)
+async def snyk_ingest(
+    project_id: str,
+    body: SnykIngestRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Ingest raw `snyk test --json` output and upsert findings into PeaRL.
+
+    Upserts by external_id (stored in source.external_id).
+    Auto-resolves open snyk_sca findings not present in the current scan.
+    """
+    from pearl.db.models.finding import FindingRow
+    from pearl.repositories.finding_repo import FindingRepository
+    from pearl.services.id_generator import generate_id
+
+    await _ensure_project(project_id, db)
+
+    # Load all existing snyk findings for this project (any status)
+    stmt = select(FindingRow).where(
+        FindingRow.project_id == project_id,
+        FindingRow.source["tool_name"].as_string() == "snyk_sca",
+    )
+    result = await db.execute(stmt)
+    existing_findings: list[FindingRow] = list(result.scalars().all())
+    existing_by_ext_id: dict[str, FindingRow] = {
+        (f.source or {}).get("external_id", ""): f
+        for f in existing_findings
+    }
+
+    finding_repo = FindingRepository(db)
+    created = 0
+    updated = 0
+    current_ext_ids: set[str] = set()
+
+    for vuln in body.vulnerabilities:
+        ext_id = f"snyk-{vuln.id}-{vuln.packageName}"
+        current_ext_ids.add(ext_id)
+        severity = _SNYK_SEVERITY_MAP.get(vuln.severity.lower(), "low")
+        title = vuln.title or f"Snyk: {vuln.packageName} - {vuln.id}"
+        source = {
+            "tool_name": "snyk_sca",
+            "system": "snyk",
+            "external_id": ext_id,
+        }
+        full_data = {
+            "id": vuln.id,
+            "title": vuln.title,
+            "severity": vuln.severity,
+            "packageName": vuln.packageName,
+            "version": vuln.version,
+            "fixedIn": vuln.fixedIn,
+            "description": vuln.description,
+            "identifiers": vuln.identifiers,
+            "references": vuln.references,
+            "from": vuln.from_path,
+        }
+
+        existing = existing_by_ext_id.get(ext_id)
+        if existing:
+            existing.full_data = full_data
+            existing.title = title
+            existing.severity = severity
+            await db.flush()
+            updated += 1
+        else:
+            await finding_repo.create(
+                finding_id=generate_id("find_"),
+                project_id=project_id,
+                environment="dev",
+                category="security",
+                severity=severity,
+                title=title,
+                source=source,
+                full_data=full_data,
+                normalized=True,
+                detected_at=datetime.now(timezone.utc),
+                batch_id=None,
+                status="open",
+                schema_version="1.1",
+            )
+            created += 1
+
+    # Auto-resolve open snyk_sca findings not in current scan
+    resolved = 0
+    for f in existing_findings:
+        ext_id = (f.source or {}).get("external_id", "")
+        if f.status == "open" and ext_id not in current_ext_ids:
+            f.status = "resolved"
+            f.resolved_at = datetime.now(timezone.utc)
+            await db.flush()
+            resolved += 1
+
+    await db.commit()
+
+    # Count open snyk findings by severity after ingest
+    sev_stmt = select(FindingRow).where(
+        FindingRow.project_id == project_id,
+        FindingRow.source["tool_name"].as_string() == "snyk_sca",
+        FindingRow.status == "open",
+    )
+    sev_result = await db.execute(sev_stmt)
+    open_snyk = list(sev_result.scalars().all())
+    sev_counts: dict[str, int] = {}
+    for f in open_snyk:
+        sev_counts[f.severity] = sev_counts.get(f.severity, 0) + 1
+
+    return {
+        "project_id": project_id,
+        "findings_created": created,
+        "findings_updated": updated,
+        "findings_resolved": resolved,
+        "critical": sev_counts.get("critical", 0),
+        "high": sev_counts.get("high", 0),
+        "medium": sev_counts.get("moderate", 0),
+        "low": sev_counts.get("low", 0),
+    }
+
+
+# ---------------------------------------------------------------------------
+# MASS 2.0 ingest route
+# ---------------------------------------------------------------------------
+
+_MASS_CATEGORY_MAP: dict[str, str] = {
+    "prompt_injection": "security",
+    "jailbreak": "security",
+    "secret_leak": "security",
+    "infra_misconfiguration": "security",
+    "mcp_vulnerability": "security",
+    "rag_vulnerability": "security",
+    "model_file_risk": "security",
+    "bias": "responsible_ai",
+    "toxicity": "responsible_ai",
+}
+
+
+class MassFinding(BaseModel):
+    finding_id: str
+    category: str
+    severity: str = "low"
+    title: str
+    description: str | None = None
+    location: str | None = None
+    remediation: str | None = None
+    false_positive: bool = False
+
+
+class MassIngestRequest(BaseModel):
+    scan_id: str
+    risk_score: float = 0.0
+    categories_completed: list[str] = []
+    findings: list[MassFinding] = []
+
+
+@router.post("/projects/{project_id}/integrations/mass/ingest", status_code=200)
+async def mass_ingest(
+    project_id: str,
+    body: MassIngestRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Ingest MASS 2.0 AI security scan results into PeaRL.
+
+    Upserts by external_id (stored in source.external_id).
+    Auto-resolves open mass2 findings not present in current scan.
+    Creates/updates an informational marker finding used by gate rules.
+    """
+    from pearl.db.models.finding import FindingRow
+    from pearl.repositories.finding_repo import FindingRepository
+    from pearl.services.id_generator import generate_id
+
+    await _ensure_project(project_id, db)
+
+    # Load all existing MASS findings for this project (any status)
+    stmt = select(FindingRow).where(
+        FindingRow.project_id == project_id,
+        FindingRow.source["tool_name"].as_string() == "mass2",
+    )
+    result = await db.execute(stmt)
+    existing_mass: list[FindingRow] = list(result.scalars().all())
+    existing_by_ext_id: dict[str, FindingRow] = {
+        (f.source or {}).get("external_id", ""): f
+        for f in existing_mass
+    }
+
+    finding_repo = FindingRepository(db)
+    created = 0
+    updated = 0
+    current_ext_ids: set[str] = set()
+
+    for mf in body.findings:
+        ext_id = f"mass-{body.scan_id}-{mf.finding_id}"
+        current_ext_ids.add(ext_id)
+        status = "closed" if mf.false_positive else "open"
+        # "info" maps to "low"
+        severity = "low" if mf.severity == "info" else mf.severity
+        category = _MASS_CATEGORY_MAP.get(mf.category, "security")
+        source = {
+            "tool_name": "mass2",
+            "system": "mass_scan",
+            "trust_label": "trusted_external",
+            "scan_id": body.scan_id,
+            "external_id": ext_id,
+        }
+        full_data = {
+            "finding_id": mf.finding_id,
+            "category": mf.category,
+            "severity": mf.severity,
+            "title": mf.title,
+            "description": mf.description,
+            "location": mf.location,
+            "remediation": mf.remediation,
+            "false_positive": mf.false_positive,
+        }
+
+        existing = existing_by_ext_id.get(ext_id)
+        if existing:
+            existing.full_data = full_data
+            existing.status = status
+            existing.severity = severity
+            await db.flush()
+            updated += 1
+        else:
+            await finding_repo.create(
+                finding_id=generate_id("find_"),
+                project_id=project_id,
+                environment="dev",
+                category=category,
+                severity=severity,
+                title=mf.title,
+                source=source,
+                full_data=full_data,
+                normalized=True,
+                detected_at=datetime.now(timezone.utc),
+                batch_id=None,
+                status=status,
+                schema_version="1.1",
+            )
+            created += 1
+
+    # Auto-resolve open mass2 findings not in current scan
+    resolved = 0
+    for f in existing_mass:
+        ext_id = (f.source or {}).get("external_id", "")
+        if f.status == "open" and ext_id not in current_ext_ids:
+            f.status = "resolved"
+            f.resolved_at = datetime.now(timezone.utc)
+            await db.flush()
+            resolved += 1
+
+    # Upsert MASS marker finding (drives AI_SCAN_COMPLETED and AI_RISK_ACCEPTABLE)
+    marker_ext_id = f"mass-marker-{project_id}"
+    marker_source = {
+        "tool_name": "mass2_marker",
+        "system": "mass_scan",
+        "scan_id": body.scan_id,
+        "external_id": marker_ext_id,
+    }
+    marker_full_data = {
+        "risk_score": body.risk_score,
+        "categories_completed": body.categories_completed,
+        "scan_id": body.scan_id,
+    }
+
+    marker_stmt = select(FindingRow).where(
+        FindingRow.project_id == project_id,
+        FindingRow.source["external_id"].as_string() == marker_ext_id,
+    ).limit(1)
+    marker_result = await db.execute(marker_stmt)
+    marker_row = marker_result.scalar_one_or_none()
+
+    if marker_row:
+        marker_row.source = marker_source
+        marker_row.full_data = marker_full_data
+        await db.flush()
+    else:
+        await finding_repo.create(
+            finding_id=generate_id("find_"),
+            project_id=project_id,
+            environment="dev",
+            category="security",
+            severity="low",
+            title="MASS 2.0 AI Security Scan Completed",
+            source=marker_source,
+            full_data=marker_full_data,
+            normalized=True,
+            detected_at=datetime.now(timezone.utc),
+            batch_id=None,
+            status="open",
+            schema_version="1.1",
+        )
+
+    await db.commit()
+
+    return {
+        "project_id": project_id,
+        "scan_id": body.scan_id,
+        "findings_created": created,
+        "findings_updated": updated,
+        "findings_resolved": resolved,
+        "categories_completed": body.categories_completed,
+        "risk_score": body.risk_score,
+    }
 
 
 # ---------------------------------------------------------------------------
