@@ -306,9 +306,12 @@ class _EvalContext:
         # SonarQube quality gate status (from stored summary finding)
         self.sonarqube_qg_status: str | None = None
         # Snyk SCA context
+        self.snyk_scan_seen: bool = False
         self.snyk_open_critical: int = 0
         self.snyk_open_high: int = 0
-        self.snyk_scan_seen: bool = False
+        # MASS 2.0 context
+        self.mass_scan_seen: bool = False
+        self.mass_risk_score: float = 0.0
 
 
 async def _build_eval_context(
@@ -497,6 +500,22 @@ async def _build_eval_context(
         except Exception:
             ctx.bu_requirements = []
 
+    # Snyk SCA context — derived from all_project_findings (already loaded above)
+    snyk_findings = [f for f in all_project_findings if (f.source or {}).get("tool_name") == "snyk_sca"]
+    ctx.snyk_scan_seen = len(snyk_findings) > 0
+    open_snyk = [f for f in snyk_findings if f.status == "open"]
+    ctx.snyk_open_critical = sum(1 for f in open_snyk if f.severity == "critical")
+    ctx.snyk_open_high = sum(1 for f in open_snyk if f.severity == "high")
+
+    # MASS 2.0 marker — identified by source.external_id == f"mass-marker-{project_id}"
+    mass_marker = next(
+        (f for f in all_project_findings if (f.source or {}).get("external_id") == f"mass-marker-{project_id}"),
+        None,
+    )
+    ctx.mass_scan_seen = mass_marker is not None
+    if mass_marker:
+        ctx.mass_risk_score = float((mass_marker.full_data or {}).get("risk_score", 0.0))
+
     # Check CLAUDE.md governance block confirmation
     ctx.has_claude_md_governance = bool(getattr(project, "claude_md_verified", False))
 
@@ -574,6 +593,7 @@ _FIX_GUIDANCE: dict[str, str] = {
         "control_id='aiuc1/<category>/<control>'. "
         "Alternatively set the control to true in the org baseline defaults."
     ),
+    "snyk_open_high_critical": "Resolve all Snyk critical and high severity findings, then re-run `snyk test --json` and POST to /integrations/snyk/ingest.",
     "security_review_clear": "Run /security-review and address all findings.",
     "compliance_score_threshold": (
         "Compliance score must reach 100%. Resolve all scan findings to raise the score. "
@@ -877,7 +897,24 @@ def _eval_read_only_autonomy(rule, ctx):
 _AI_SCAN_TOOL_TYPES = {"pearl_ai", "mass", "ai_scan"}
 
 
+def _eval_snyk_open_high_critical(rule, ctx):
+    if not ctx.snyk_scan_seen:
+        return False, "No Snyk SCA scan ingested — run `snyk test --json` and POST to /integrations/snyk/ingest", None
+    total = ctx.snyk_open_critical + ctx.snyk_open_high
+    if total > 0:
+        return (
+            False,
+            f"{total} open Snyk critical/high finding(s) ({ctx.snyk_open_critical} critical, {ctx.snyk_open_high} high)",
+            {"critical": ctx.snyk_open_critical, "high": ctx.snyk_open_high},
+        )
+    return True, "No open Snyk critical or high severity findings", None
+
+
 def _eval_ai_scan_completed(rule, ctx):
+    # Check MASS 2.0 ingest marker (ingested via /integrations/mass/ingest)
+    if ctx.mass_scan_seen:
+        return True, "MASS 2.0 AI security scan completed", None
+
     # Primary check: scan target with succeeded status (any AI scan tool type)
     if ctx.mass_scan_completed:
         return True, "PeaRL AI security scan completed", None
@@ -887,7 +924,7 @@ def _eval_ai_scan_completed(rule, ctx):
         if ctx.findings_by_source.get(tool_type):
             return True, f"AI security scan results on file (from {tool_type})", None
 
-    return False, "No AI security scan completed — run the runScan MCP tool", None
+    return False, "No AI security scan completed — run the runScan MCP tool or POST to /integrations/mass/ingest", None
 
 
 # Backward-compat alias
@@ -926,7 +963,14 @@ def _eval_owasp_llm_top10_clear(rule, ctx):
 
 def _eval_ai_risk_acceptable(rule, ctx):
     threshold = rule.threshold or 7.0
-    # Check findings from any AI scan source
+    # Check MASS 2.0 risk score if a scan was ingested
+    if ctx.mass_scan_seen:
+        if ctx.mass_risk_score <= threshold:
+            return True, f"MASS 2.0 risk score {ctx.mass_risk_score:.1f} is within threshold {threshold}", {"risk_score": ctx.mass_risk_score, "threshold": threshold}
+        return False, f"MASS 2.0 risk score {ctx.mass_risk_score:.1f} exceeds threshold {threshold}", {"risk_score": ctx.mass_risk_score, "threshold": threshold}
+    if not ctx.mass_scan_seen and not ctx.mass_scan_completed:
+        return False, "No MASS 2.0 scan ingested — POST to /integrations/mass/ingest", None
+    # Fallback: check findings from any AI scan source
     high_risk = [
         f for f in ctx.open_findings
         if (f.cvss_score or 0) >= threshold
@@ -1470,6 +1514,8 @@ RULE_EVALUATORS = {
     GateRuleType.READ_ONLY_AUTONOMY: _eval_read_only_autonomy,
     # Scan targets
     GateRuleType.SCAN_TARGET_REGISTERED: _eval_scan_target_registered,
+    # Snyk SCA
+    GateRuleType.SNYK_OPEN_HIGH_CRITICAL: _eval_snyk_open_high_critical,
     # AI security scan (built-in + adapter)
     GateRuleType.AI_SCAN_COMPLETED: _eval_ai_scan_completed,
     GateRuleType.NO_PROMPT_INJECTION: _eval_no_prompt_injection,
