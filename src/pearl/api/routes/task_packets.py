@@ -1,17 +1,32 @@
 """Task packet generation and execution bridge API routes."""
 
 from datetime import datetime, timezone
+from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pearl.dependencies import get_db, get_trace_id
-from pearl.errors.exceptions import ConflictError, NotFoundError
+from pearl.errors.exceptions import ConflictError, NotFoundError, ValidationError
 from pearl.repositories.task_packet_repo import TaskPacketRepository
 from pearl.services.task_packet_generator import generate_task_packet
 
 router = APIRouter(tags=["TaskPackets"])
+
+# Valid execution phases
+VALID_PHASES = {"planning", "coding", "testing", "review", "complete", "failed"}
+TERMINAL_PHASES = {"complete", "failed"}
+
+# Legal forward transitions
+LEGAL_TRANSITIONS: dict[str, set[str]] = {
+    "planning": {"coding", "failed"},
+    "coding": {"testing", "failed"},
+    "testing": {"review", "failed"},
+    "review": {"complete", "failed"},
+    "complete": set(),
+    "failed": set(),
+}
 
 
 class ClaimRequest(BaseModel):
@@ -26,6 +41,11 @@ class CompleteRequest(BaseModel):
     commit_ref: str = ""
     files_changed: list[str] = []
     evidence_notes: str = ""
+
+
+class PhaseTransitionRequest(BaseModel):
+    phase: str
+    agent_id: Optional[str] = None
 
 
 @router.post("/projects/{project_id}/task-packets", status_code=201)
@@ -62,6 +82,103 @@ async def generate_task_packet_endpoint(
     await db.commit()
 
     return packet_data
+
+
+@router.get("/task-packets/{packet_id}", status_code=200)
+async def get_task_packet(
+    packet_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Retrieve a task packet by ID, including execution phase and phase history."""
+    repo = TaskPacketRepository(db)
+    packet = await repo.get(packet_id)
+    if not packet:
+        raise NotFoundError("TaskPacket", packet_id)
+
+    return {
+        "task_packet_id": packet.task_packet_id,
+        "project_id": packet.project_id,
+        "environment": packet.environment,
+        "trace_id": packet.trace_id,
+        "schema_version": packet.schema_version,
+        "agent_id": packet.agent_id,
+        "claimed_at": packet.claimed_at.isoformat() if packet.claimed_at else None,
+        "completed_at": packet.completed_at.isoformat() if packet.completed_at else None,
+        "outcome": packet.outcome,
+        "execution_phase": packet.execution_phase,
+        "phase_history": packet.phase_history,
+        "packet_data": packet.packet_data,
+    }
+
+
+@router.patch("/task-packets/{packet_id}/phase", status_code=200)
+async def update_task_packet_phase(
+    packet_id: str,
+    body: PhaseTransitionRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Transition execution phase of a task packet."""
+    repo = TaskPacketRepository(db)
+    packet = await repo.get(packet_id)
+    if not packet:
+        raise NotFoundError("TaskPacket", packet_id)
+
+    new_phase = body.phase
+    if new_phase not in VALID_PHASES:
+        raise HTTPException(status_code=422, detail=f"Invalid phase '{new_phase}'. Must be one of: {', '.join(sorted(VALID_PHASES))}")
+
+    current_phase = packet.execution_phase
+    allowed_next = LEGAL_TRANSITIONS.get(current_phase, set())
+
+    if current_phase in TERMINAL_PHASES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Cannot transition from terminal phase '{current_phase}'. Phases 'complete' and 'failed' have no further transitions."
+        )
+
+    if new_phase not in allowed_next:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Illegal phase transition from '{current_phase}' to '{new_phase}'. Allowed transitions from '{current_phase}': {', '.join(sorted(allowed_next)) or 'none'}"
+        )
+
+    # Determine agent_id
+    agent_id = body.agent_id
+    if not agent_id:
+        user = getattr(request.state, "user", None) or {}
+        agent_id = user.get("sub", "unknown")
+
+    now = datetime.now(timezone.utc)
+    history_entry = {
+        "phase": new_phase,
+        "timestamp": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "agent_id": agent_id,
+    }
+
+    # Read list, append in Python, write back
+    current_history = list(packet.phase_history or [])
+    current_history.append(history_entry)
+
+    packet.execution_phase = new_phase
+    packet.phase_history = current_history
+
+    await db.commit()
+
+    return {
+        "task_packet_id": packet_id,
+        "project_id": packet.project_id,
+        "environment": packet.environment,
+        "trace_id": packet.trace_id,
+        "schema_version": packet.schema_version,
+        "agent_id": packet.agent_id,
+        "claimed_at": packet.claimed_at.isoformat() if packet.claimed_at else None,
+        "completed_at": packet.completed_at.isoformat() if packet.completed_at else None,
+        "outcome": packet.outcome,
+        "execution_phase": packet.execution_phase,
+        "phase_history": packet.phase_history,
+        "packet_data": packet.packet_data,
+    }
 
 
 @router.post("/task-packets/{packet_id}/claim", status_code=200)

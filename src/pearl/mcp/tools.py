@@ -186,7 +186,13 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "generateTaskPacket",
-        "description": "Generate a task-scoped context packet from the compiled package. Includes relevant controls, tests, and policy rules for the specific task type.",
+        "description": (
+            "Generate a task-scoped context packet from the compiled package. "
+            "Includes relevant controls, tests, and policy rules for the specific task type. "
+            "The response includes execution_phase (initially set to 'planning') and phase_history (initially empty). "
+            "Use PATCH /task-packets/{id}/phase to transition through phases: "
+            "planning → coding → testing → review → complete (or any non-terminal phase → failed)."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
