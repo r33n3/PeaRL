@@ -142,6 +142,80 @@ async def request_promotion(
 
     evaluation_passed = evaluation.status == "passed"
 
+    # Trust accumulation auto-pass path: gate has earned auto-pass via accumulated trust
+    if evaluation.auto_pass and evaluation_passed:
+        await approval_repo.create(
+            approval_request_id=approval_id,
+            project_id=project_id,
+            request_type=ApprovalRequestType.PROMOTION_GATE,
+            environment=evaluation.target_environment,
+            status=ApprovalStatus.APPROVED,
+            request_data={
+                "evaluation_id": evaluation.evaluation_id,
+                "gate_id": evaluation.gate_id,
+                "source_environment": evaluation.source_environment,
+                "target_environment": evaluation.target_environment,
+                "progress_pct": evaluation.progress_pct,
+                "auto_pass": True,
+            },
+            trace_id=trace_id,
+        )
+
+        decision_repo = ApprovalDecisionRepository(db)
+        await decision_repo.create(
+            approval_request_id=approval_id,
+            decision=ApprovalDecisionValue.APPROVE,
+            decided_by="pearl-trust-auto-pass",
+            decider_role="system",
+            reason="Auto-approved: gate has accumulated sufficient trust (auto_pass=True, no open drift_trend findings)",
+            decided_at=datetime.now(timezone.utc),
+            trace_id=trace_id,
+        )
+
+        history_repo = PromotionHistoryRepository(db)
+        await history_repo.create(
+            history_id=generate_id("promhist_"),
+            project_id=project_id,
+            source_environment=evaluation.source_environment,
+            target_environment=evaluation.target_environment,
+            evaluation_id=evaluation.evaluation_id,
+            promoted_by="pearl-trust-auto-pass",
+            promoted_at=datetime.now(timezone.utc),
+            details={"auto_approved": True, "auto_pass": True, "approval_request_id": approval_id},
+        )
+
+        env_repo = EnvironmentProfileRepository(db)
+        env_profile = await env_repo.get_by_project(project_id)
+        if env_profile:
+            env_profile.environment = evaluation.target_environment
+        else:
+            await env_repo.create(
+                profile_id=generate_id("envprof_"),
+                project_id=project_id,
+                environment=evaluation.target_environment,
+                delivery_stage="bootstrap",
+                risk_level="low",
+                autonomy_mode="assistive",
+            )
+
+        status = PromotionRequestStatus.APPROVED
+        await db.commit()
+
+        _schedule_anomaly_checks(background_tasks, request, project_id, datetime.now(timezone.utc), trace_id)
+        return {
+            "request_id": generate_id("promreq_"),
+            "project_id": project_id,
+            "evaluation_id": evaluation.evaluation_id,
+            "approval_request_id": approval_id,
+            "status": status.value,
+            "auto_approved": True,
+            "auto_pass": True,
+            "source_environment": evaluation.source_environment,
+            "target_environment": evaluation.target_environment,
+            "progress_pct": evaluation.progress_pct,
+            "blockers": evaluation.blockers,
+        }
+
     # Auto-approval path: gate is set to "auto" AND evaluation passed
     if approval_mode == "auto" and evaluation_passed:
         # Create approval request as already approved
@@ -153,6 +227,7 @@ async def request_promotion(
             status=ApprovalStatus.APPROVED,
             request_data={
                 "evaluation_id": evaluation.evaluation_id,
+                "gate_id": evaluation.gate_id,
                 "source_environment": evaluation.source_environment,
                 "target_environment": evaluation.target_environment,
                 "progress_pct": evaluation.progress_pct,
@@ -225,6 +300,7 @@ async def request_promotion(
         status=ApprovalStatus.PENDING,
         request_data={
             "evaluation_id": evaluation.evaluation_id,
+            "gate_id": evaluation.gate_id,
             "source_environment": evaluation.source_environment,
             "target_environment": evaluation.target_environment,
             "progress_pct": evaluation.progress_pct,
@@ -283,6 +359,9 @@ async def list_default_gates(
             "approval_mode": g.approval_mode or "manual",
             "rules": g.rules if isinstance(g.rules, list) else [],
             "rule_count": len(g.rules) if isinstance(g.rules, list) else 0,
+            "auto_pass": g.auto_pass,
+            "pass_count": g.pass_count,
+            "auto_pass_threshold": g.auto_pass_threshold,
         }
         for g in gates
     ]
@@ -305,6 +384,41 @@ async def get_gate(
         "approval_mode": gate.approval_mode or "manual",
         "rules": gate.rules if isinstance(gate.rules, list) else [],
         "rule_count": len(gate.rules) if isinstance(gate.rules, list) else 0,
+        "auto_pass": gate.auto_pass,
+        "pass_count": gate.pass_count,
+        "auto_pass_threshold": gate.auto_pass_threshold,
+    }
+
+
+@router.patch("/promotions/gates/{gate_id}", status_code=200)
+async def update_gate_trust_config(
+    gate_id: str,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Update trust accumulation config for a gate. Admin only."""
+    from pearl.errors.exceptions import ValidationError as PearlValidationError
+
+    repo = PromotionGateRepository(db)
+    gate = await repo.get(gate_id)
+    if not gate:
+        raise NotFoundError("Promotion gate", gate_id)
+
+    if "auto_pass_threshold" in body:
+        threshold = body["auto_pass_threshold"]
+        if not isinstance(threshold, int) or threshold < 1:
+            raise PearlValidationError("auto_pass_threshold must be a positive integer")
+        gate.auto_pass_threshold = threshold
+
+    if "auto_pass" in body:
+        gate.auto_pass = bool(body["auto_pass"])
+
+    await db.commit()
+    return {
+        "gate_id": gate_id,
+        "auto_pass": gate.auto_pass,
+        "pass_count": gate.pass_count,
+        "auto_pass_threshold": gate.auto_pass_threshold,
     }
 
 

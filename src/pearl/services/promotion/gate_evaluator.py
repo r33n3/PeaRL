@@ -192,6 +192,18 @@ async def evaluate_promotion(
         evaluated_at=evaluation.evaluated_at,
     )
 
+    # Auto-pass eligibility check: gate has accumulated enough trust to skip human queue
+    if gate.auto_pass and status == GateEvaluationStatus.PASSED:
+        drift_stmt = select(FindingRow).where(
+            FindingRow.project_id == project_id,
+            FindingRow.category == "drift_trend",
+            FindingRow.status == "open",
+        )
+        drift_result = await session.execute(drift_stmt)
+        open_drift = list(drift_result.scalars().all())
+        if not open_drift:
+            evaluation.auto_pass = True
+
     # Auto-create TaskPackets for FAIL results (idempotent — skip if one already exists)
     failed_results = [r for r in rule_results if r.result == GateRuleResult.FAIL]
     if failed_results:

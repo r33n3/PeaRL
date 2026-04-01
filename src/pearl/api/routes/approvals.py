@@ -128,7 +128,9 @@ async def decide_approval(
 
     # If approving a promotion gate, write promotion history and advance the project environment
     if decision.decision == "approve" and approval.request_type == "promotion_gate":
-        from pearl.repositories.promotion_repo import PromotionHistoryRepository
+        from sqlalchemy import select, func
+        from pearl.db.models.finding import FindingRow
+        from pearl.repositories.promotion_repo import PromotionHistoryRepository, PromotionGateRepository
         from pearl.repositories.project_repo import ProjectRepository
 
         req_data = approval.request_data or {}
@@ -161,6 +163,27 @@ async def decide_approval(
         ep = await ep_repo.get_by_project(approval.project_id)
         if ep:
             ep.environment = target_env
+
+        # Trust accumulation: increment pass_count on the gate (human approval only, not auto-pass)
+        is_auto_pass = req_data.get("auto_pass", False)
+        if not is_auto_pass:
+            gate_id = req_data.get("gate_id")
+            if gate_id:
+                gate_repo = PromotionGateRepository(db)
+                gate = await gate_repo.get(gate_id)
+                if gate:
+                    gate.pass_count = (gate.pass_count or 0) + 1
+                    # Flip auto_pass if threshold reached and no open drift_trend findings
+                    if not gate.auto_pass and gate.pass_count >= (gate.auto_pass_threshold or 5):
+                        drift_count = (await db.execute(
+                            select(func.count()).select_from(FindingRow).where(
+                                FindingRow.project_id == approval.project_id,
+                                FindingRow.category == "drift_trend",
+                                FindingRow.status == "open",
+                            )
+                        )).scalar() or 0
+                        if drift_count == 0:
+                            gate.auto_pass = True
 
     await db.commit()
 

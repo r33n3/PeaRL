@@ -86,6 +86,7 @@ class ToolType(StrEnum):
     PEARL_AI = "pearl_ai"   # PeaRL built-in AI security scan (runScan MCP tool)
     MASS = "mass"           # External MASS 2.0 adapter
     FEU = "feu"
+    BEHAVIORAL_DRIFT = "behavioral_drift"  # Control plane behavioral drift signals
 
 
 class FindingCategory(StrEnum):
@@ -93,6 +94,8 @@ class FindingCategory(StrEnum):
     RESPONSIBLE_AI = "responsible_ai"
     GOVERNANCE = "governance"
     ARCHITECTURE_DRIFT = "architecture_drift"
+    DRIFT_ACUTE = "drift_acute"    # Hard-stopped by control plane, logged for patch cycle
+    DRIFT_TREND = "drift_trend"    # Pattern drift over multiple runs; blocks auto-pass flip
 
 
 class Confidence(StrEnum):

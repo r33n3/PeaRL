@@ -19,6 +19,10 @@ class PromotionGateRow(Base, TimestampMixin):
     )
     rules: Mapped[dict] = mapped_column(JSON, nullable=False)
     approval_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="manual")
+    # Trust accumulation fields
+    auto_pass: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    pass_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    auto_pass_threshold: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
 
 
 class PromotionEvaluationRow(Base, TimestampMixin):

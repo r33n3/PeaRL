@@ -171,6 +171,26 @@ async def update_finding_status(
     else:
         finding.status = body.status
 
+    # Re-evaluate auto_pass eligibility when a drift_trend finding is closed
+    if finding.category == "drift_trend" and body.status not in ("open",):
+        from sqlalchemy import select, func
+        from pearl.db.models.finding import FindingRow as _FR
+        from pearl.repositories.promotion_repo import PromotionGateRepository
+        remaining = (await db.execute(
+            select(func.count()).select_from(_FR).where(
+                _FR.project_id == project_id,
+                _FR.category == "drift_trend",
+                _FR.status == "open",
+                _FR.finding_id != finding_id,
+            )
+        )).scalar() or 0
+        if remaining == 0:
+            gate_repo = PromotionGateRepository(db)
+            all_gates = await gate_repo.list_all_defaults()
+            for _gate in all_gates:
+                if not _gate.auto_pass and (_gate.pass_count or 0) >= (_gate.auto_pass_threshold or 5):
+                    _gate.auto_pass = True
+
     await db.commit()
     return {"finding_id": finding_id, "status": finding.status}
 

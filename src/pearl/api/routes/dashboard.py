@@ -101,6 +101,15 @@ async def dashboard_project_overview(
     ).group_by(FindingRow.severity)
     findings_by_severity = {r[0]: r[1] for r in (await db.execute(finding_stmt)).all()}
 
+    # Behavioral drift trend finding count (open)
+    drift_trend_count = (await db.execute(
+        select(func.count()).select_from(FindingRow).where(
+            FindingRow.project_id == project_id,
+            FindingRow.category == "drift_trend",
+            FindingRow.status == "open",
+        )
+    )).scalar() or 0
+
     # Latest evaluation
     eval_stmt = select(PromotionEvaluationRow).where(
         PromotionEvaluationRow.project_id == project_id
@@ -141,6 +150,7 @@ async def dashboard_project_overview(
         "environment": env_profile.environment if env_profile else None,
         "findings_by_severity": findings_by_severity,
         "total_open_findings": sum(findings_by_severity.values()),
+        "behavioral_drift_trend_count": drift_trend_count,
         "gate_status": latest_eval.status if latest_eval else None,
         "gate_progress_pct": latest_eval.progress_pct if latest_eval else 0.0,
         "gate_passed": latest_eval.passed_count if latest_eval else 0,
