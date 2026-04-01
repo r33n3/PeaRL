@@ -51,6 +51,7 @@ from pearl.db.models.framework_requirement import FrameworkRequirementRow
 from pearl.db.models.cedar_deployment import CedarDeploymentRow
 from pearl.db.models.agentcore_scan_state import AgentCoreScanStateRow
 from pearl.db.models.allowance_profile import AllowanceProfileRow
+from pearl.db.models.workload import WorkloadRow
 
 __all__ = [
     "ProjectRow",
@@ -99,4 +100,5 @@ __all__ = [
     "CedarDeploymentRow",
     "AgentCoreScanStateRow",
     "AllowanceProfileRow",
+    "WorkloadRow",
 ]
