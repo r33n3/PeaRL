@@ -5,12 +5,14 @@ from pearl.api.routes import (
     admin as admin_routes,
     agentcore,
     agent,
+    allowance_profiles,
     onboarding,
     approvals,
     org_baseline,
     audit,
     auth,
     business_units,
+    ci_snippet,
     compile,
     compliance,
     context,
@@ -60,6 +62,7 @@ api_router.include_router(fairness.router)
 api_router.include_router(context.router)
 api_router.include_router(scan_targets.router)
 api_router.include_router(scanning.router)
+api_router.include_router(ci_snippet.router)
 api_router.include_router(guardrails.router)
 api_router.include_router(compliance.router)
 api_router.include_router(audit.router)
@@ -77,3 +80,4 @@ api_router.include_router(onboarding.router)
 api_router.include_router(org_baseline.router)
 api_router.include_router(admin_routes.router)
 api_router.include_router(agentcore.router)
+api_router.include_router(allowance_profiles.router)

@@ -2,7 +2,7 @@
 
 import json
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path  # noqa: F401 — used by load_example
 
 import pytest
 
@@ -191,6 +191,147 @@ async def test_default_gate_rule_counts(client):
     """Default gates have the correct number of rules."""
     r = await client.get("/api/v1/promotions/gates")
     gates = {g["gate_id"]: g for g in r.json()}
-    assert gates["gate_sandbox_to_dev"]["rule_count"] == 8
-    assert gates["gate_dev_to_preprod"]["rule_count"] == 26
-    assert gates["gate_preprod_to_prod"]["rule_count"] == 30
+    assert gates["gate_sandbox_to_dev"]["rule_count"] == 11
+    assert gates["gate_dev_to_preprod"]["rule_count"] == 28
+    assert gates["gate_preprod_to_prod"]["rule_count"] == 32
+
+
+# ---------------------------------------------------------------------------
+# Trust accumulation — auto-pass gate tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_default_gates_have_trust_fields(client):
+    """Default gates include auto_pass, pass_count, auto_pass_threshold fields."""
+    r = await client.get("/api/v1/promotions/gates")
+    assert r.status_code == 200
+    gates = r.json()
+    for gate in gates:
+        assert "auto_pass" in gate, f"auto_pass missing from gate {gate['gate_id']}"
+        assert "pass_count" in gate
+        assert "auto_pass_threshold" in gate
+        assert gate["auto_pass"] is False
+        assert gate["pass_count"] == 0
+        assert gate["auto_pass_threshold"] == 5
+
+
+@pytest.mark.asyncio
+async def test_patch_gate_updates_threshold(client):
+    """PATCH /promotions/gates/{id} updates auto_pass_threshold."""
+    r = await client.get("/api/v1/promotions/gates")
+    gate_id = r.json()[0]["gate_id"]
+
+    r = await client.patch(f"/api/v1/promotions/gates/{gate_id}", json={"auto_pass_threshold": 2})
+    assert r.status_code == 200
+    assert r.json()["auto_pass_threshold"] == 2
+
+    # Verify persisted
+    r = await client.get(f"/api/v1/promotions/gates/{gate_id}")
+    assert r.json()["auto_pass_threshold"] == 2
+
+
+@pytest.mark.asyncio
+async def test_patch_gate_can_set_auto_pass_directly(client):
+    """PATCH /promotions/gates/{id} can manually set auto_pass flag."""
+    r = await client.get("/api/v1/promotions/gates")
+    gate_id = r.json()[0]["gate_id"]
+
+    r = await client.patch(f"/api/v1/promotions/gates/{gate_id}", json={"auto_pass": True})
+    assert r.status_code == 200
+    assert r.json()["auto_pass"] is True
+
+    # Reset
+    await client.patch(f"/api/v1/promotions/gates/{gate_id}", json={"auto_pass": False})
+
+
+@pytest.mark.asyncio
+async def test_get_single_gate_includes_trust_fields(client):
+    """GET /promotions/gates/{id} includes trust accumulation fields."""
+    r = await client.get("/api/v1/promotions/gates")
+    gate_id = r.json()[0]["gate_id"]
+
+    r = await client.get(f"/api/v1/promotions/gates/{gate_id}")
+    assert r.status_code == 200
+    data = r.json()
+    assert "auto_pass" in data
+    assert "pass_count" in data
+    assert "auto_pass_threshold" in data
+
+
+def _project_payload(project_id: str, name: str = "", ai_enabled: bool = False) -> dict:
+    return {
+        "schema_version": "1.1",
+        "project_id": project_id,
+        "name": name or f"Test Project {project_id}",
+        "owner_team": "platform",
+        "business_criticality": "low",
+        "external_exposure": "internal_only",
+        "ai_enabled": ai_enabled,
+    }
+
+
+def _decide_payload(approval_request_id: str, decision: str = "approve") -> dict:
+    return {
+        "schema_version": "1.1",
+        "approval_request_id": approval_request_id,
+        "decision": decision,
+        "decided_by": "test-reviewer",
+        "decider_role": "security_reviewer",
+        "reason": "Test decision",
+        "decided_at": datetime.now(timezone.utc).isoformat(),
+        "trace_id": "trc_test_trust_gate01",
+    }
+
+
+@pytest.mark.asyncio
+async def test_human_approved_counter_increments(reviewer_client, client):
+    """pass_count increments when a human approves a promotion gate request."""
+    await client.post("/api/v1/projects", json=_project_payload("proj_trust_counter"))
+
+    # Set threshold high so auto_pass doesn't flip yet — we only want to verify counter
+    r = await client.get("/api/v1/promotions/gates")
+    gate_id = r.json()[0]["gate_id"]  # sandbox_to_dev
+    await client.patch(f"/api/v1/promotions/gates/{gate_id}", json={"auto_pass_threshold": 10})
+
+    # Request a promotion — creates pending approval
+    r = await client.post("/api/v1/projects/proj_trust_counter/promotions/request")
+    assert r.status_code == 202
+    approval_id = r.json()["approval_request_id"]
+
+    # Human approves
+    r = await reviewer_client.post(
+        f"/api/v1/approvals/{approval_id}/decide",
+        json=_decide_payload(approval_id),
+    )
+    assert r.status_code == 200
+
+    # pass_count should have incremented on the gate
+    r = await client.get(f"/api/v1/promotions/gates/{gate_id}")
+    assert r.json()["pass_count"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_auto_pass_flips_after_threshold_and_no_drift(reviewer_client, client):
+    """Gate flips auto_pass=True after pass_count reaches threshold with no open drift findings."""
+    await client.post("/api/v1/projects", json=_project_payload("proj_trust_flip"))
+
+    # Set threshold to 1 so a single human approval triggers the flip
+    r = await client.get("/api/v1/promotions/gates")
+    gate_id = r.json()[0]["gate_id"]
+    await client.patch(f"/api/v1/promotions/gates/{gate_id}", json={"auto_pass_threshold": 1})
+
+    # Request + human approve
+    r = await client.post("/api/v1/projects/proj_trust_flip/promotions/request")
+    assert r.status_code == 202
+    approval_id = r.json()["approval_request_id"]
+
+    r = await reviewer_client.post(
+        f"/api/v1/approvals/{approval_id}/decide",
+        json=_decide_payload(approval_id),
+    )
+    assert r.status_code == 200
+
+    # Gate should now have auto_pass=True (pass_count=1 >= threshold=1, no drift findings)
+    r = await client.get(f"/api/v1/promotions/gates/{gate_id}")
+    assert r.json()["auto_pass"] is True
+    assert r.json()["pass_count"] >= 1

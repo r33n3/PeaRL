@@ -55,7 +55,7 @@ async def test_sonarqube_status_no_integration(client):
     assert resp.status_code == 200
     body = resp.json()
     assert "quality_gate" in body
-    assert "findings_by_severity" in body
+    assert "metrics" in body
     assert "last_pull_at" in body
     assert body["integration_configured"] is False
 

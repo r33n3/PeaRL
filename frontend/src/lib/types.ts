@@ -154,6 +154,9 @@ export interface PromotionHistoryEntry {
   target_environment: Environment;
   promoted_by: string;
   promoted_at: string | null;
+  commit_sha?: string | null;
+  version_tag?: string | null;
+  branch?: string | null;
 }
 
 // Notifications

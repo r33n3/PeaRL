@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pearl.dependencies import get_db, get_trace_id
@@ -310,10 +310,14 @@ async def sonarqube_pull(
     db: AsyncSession = Depends(get_db),
     trace_id: str = Depends(get_trace_id),
 ) -> dict:
-    """Pull findings from SonarQube and ingest into PeaRL.
+    """Pull SonarQube quality gate status and ingest into PeaRL.
 
-    Upserts findings by external_id+source_tool — updates existing, creates new.
-    Also fetches quality gate status.
+    PeaRL is the gate-checker, not a finding mirror. This route:
+    1. Fetches quality gate status + key metrics → stored as ONE summary finding
+    2. Ingests individual issues ONLY for BLOCKER severity (→ critical PeaRL findings)
+    3. Provides a link to SonarQube for full issue detail
+
+    The quality gate summary finding drives the SONARQUBE_QUALITY_GATE gate rule.
     """
     from datetime import datetime, timezone
 
@@ -327,52 +331,114 @@ async def sonarqube_pull(
     await _ensure_project(project_id, db)
     endpoint, endpoint_row = await _get_sonarqube_endpoint(project_id, db)
 
+    from pearl.config import settings as _pearl_settings
     adapter = SonarQubeAdapter()
-    findings = await adapter.pull_findings(endpoint, since=None)
+    labels = endpoint.labels or {}
+    project_key = labels.get("project_key", project_id)
+    base_url = endpoint.base_url.rstrip("/")
+    # Use public URL for browser-accessible links (falls back to base_url)
+    _settings = _pearl_settings
+    public_base = (_settings.sonar_url or base_url).rstrip("/")
+    sonarqube_link = f"{public_base}/dashboard?id={project_key}"
 
+    # 1. Fetch quality gate status and metrics in parallel
+    qg = await adapter.get_quality_gate_status(endpoint, project_key)
+    metrics = await adapter.get_metrics(endpoint, project_key)
+
+    qg_status = qg.get("status", "UNKNOWN")  # OK | WARN | ERROR | UNKNOWN
+    qg_conditions = qg.get("conditions", [])
+
+    # 2. Upsert the quality gate summary finding (one per project)
     finding_repo = FindingRepository(db)
+    summary_severity = {"OK": "low", "WARN": "moderate", "ERROR": "high"}.get(qg_status, "moderate")
+    summary_title = f"SonarQube Quality Gate: {qg_status} — {project_key}"
+    summary_full_data = {
+        "quality_gate_status": qg_status,
+        "conditions": qg_conditions,
+        "metrics": metrics,
+        "sonarqube_link": sonarqube_link,
+        "project_key": project_key,
+        "pulled_at": datetime.now(timezone.utc).isoformat(),
+        "source": {"tool_name": "sonarqube_quality_gate", "tool_type": "sast", "trust_label": "trusted_external_registered"},
+    }
+
+    # Find existing summary finding for this project
+    stmt = select(FindingRow).where(
+        FindingRow.project_id == project_id,
+        FindingRow.source["tool_name"].as_string() == "sonarqube_quality_gate",
+    ).limit(1)
+    result = await db.execute(stmt)
+    existing_summary = result.scalar_one_or_none()
+
+    if existing_summary:
+        existing_summary.title = summary_title
+        existing_summary.severity = summary_severity
+        existing_summary.full_data = summary_full_data
+        existing_summary.status = "open" if qg_status != "OK" else "resolved"
+        await db.flush()
+    else:
+        summary_id = generate_id("find_")
+        await finding_repo.create(
+            finding_id=summary_id,
+            project_id=project_id,
+            environment="dev",
+            category="governance",
+            severity=summary_severity,
+            title=summary_title,
+            source={"tool_name": "sonarqube_quality_gate", "tool_type": "sast", "trust_label": "trusted_external_registered"},
+            full_data=summary_full_data,
+            normalized=False,
+            detected_at=datetime.now(timezone.utc),
+            batch_id=None,
+            cwe_ids=None,
+            compliance_refs=None,
+            status="open" if qg_status != "OK" else "resolved",
+        )
+
+    # 3. Ingest BLOCKER and HIGH issues as individual PeaRL findings
+    all_findings = await adapter.pull_findings(endpoint, since=None)
+    severity_map = {"BLOCKER": "critical", "HIGH": "high"}
+    ingested_findings = [
+        nf for nf in all_findings
+        if (nf.raw_record or {}).get("severity") in severity_map
+    ]
+
     new_count = 0
     updated_count = 0
 
-    for nf in findings:
-        # Check for existing finding by external_id in source JSON
-        stmt = select(FindingRow).where(
+    for nf in ingested_findings:
+        sonar_severity = (nf.raw_record or {}).get("severity", "HIGH")
+        pearl_severity = severity_map.get(sonar_severity, "high")
+        stmt2 = select(FindingRow).where(
             FindingRow.project_id == project_id,
-        ).where(
             FindingRow.source["raw_record_ref"].as_string() == nf.external_id,
-        ).where(
             FindingRow.source["tool_name"].as_string() == "sonarqube",
         ).limit(1)
-        result = await db.execute(stmt)
-        existing = result.scalar_one_or_none()
+        existing_row = (await db.execute(stmt2)).scalar_one_or_none()
 
-        if existing:
-            # Update existing finding
-            existing.title = nf.title
-            existing.severity = nf.severity
-            existing.category = nf.category
-            existing.full_data = nf.raw_record or {}
-            existing.cwe_ids = nf.cwe_ids
-            existing.status = existing.status  # preserve current status
+        if existing_row:
+            existing_row.title = nf.title
+            existing_row.severity = pearl_severity
+            existing_row.full_data = {**(nf.raw_record or {}), "sonarqube_link": sonarqube_link}
             await db.flush()
             updated_count += 1
         else:
-            # Create new finding
             finding_id = generate_id("find_")
             await finding_repo.create(
                 finding_id=finding_id,
                 project_id=project_id,
                 environment="dev",
                 category=nf.category,
-                severity=nf.severity,
-                title=nf.title,
+                severity=pearl_severity,
+                title=f"[SonarQube {sonar_severity}] {nf.title}",
                 source={
                     "tool_name": "sonarqube",
                     "tool_type": nf.source_type,
                     "trust_label": "trusted_external_registered",
                     "raw_record_ref": nf.external_id,
+                    "sonarqube_link": sonarqube_link,
                 },
-                full_data=nf.raw_record or {},
+                full_data={**(nf.raw_record or {}), "sonarqube_link": sonarqube_link},
                 normalized=False,
                 detected_at=nf.detected_at,
                 batch_id=None,
@@ -382,24 +448,20 @@ async def sonarqube_pull(
             )
             new_count += 1
 
-    # Fetch quality gate
-    labels = endpoint.labels or {}
-    project_key = labels.get("project_key", project_id)
-    qg = await adapter.get_quality_gate_status(endpoint, project_key)
-
     # Update last_sync on endpoint
     endpoint_row.last_sync_at = datetime.now(timezone.utc)
     endpoint_row.last_sync_status = "success"
     await db.flush()
     await db.commit()
 
-    last_pull_at = datetime.now(timezone.utc).isoformat()
     return {
-        "pulled": len(findings),
-        "new": new_count,
-        "updated": updated_count,
-        "quality_gate": qg.get("status", "UNKNOWN"),
-        "last_pull_at": last_pull_at,
+        "quality_gate": qg_status,
+        "sonarqube_link": sonarqube_link,
+        "metrics": metrics,
+        "blockers_ingested": new_count + updated_count,
+        "blockers_new": new_count,
+        "blockers_updated": updated_count,
+        "last_pull_at": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -415,7 +477,6 @@ async def sonarqube_status(
     from sqlalchemy import func, select
 
     from pearl.db.models.finding import FindingRow
-    from pearl.integrations.adapters.sonarqube import SonarQubeAdapter
 
     await _ensure_project(project_id, db)
 
@@ -425,26 +486,30 @@ async def sonarqube_status(
         # Return a structured response even when no integration is configured
         return {
             "quality_gate": None,
-            "findings_by_severity": {},
+            "metrics": {},
+            "open_blockers_in_pearl": 0,
             "last_pull_at": None,
             "integration_configured": False,
         }
 
-    adapter = SonarQubeAdapter()
-    labels = endpoint.labels or {}
-    project_key = labels.get("project_key", project_id)
-    qg = await adapter.get_quality_gate_status(endpoint, project_key)
+    # Load last quality gate summary finding from DB (populated by pull)
+    summary_stmt = (
+        select(FindingRow)
+        .where(FindingRow.project_id == project_id)
+        .where(FindingRow.source["tool_name"].as_string() == "sonarqube_quality_gate")
+        .limit(1)
+    )
+    summary_result = await db.execute(summary_stmt)
+    summary_finding = summary_result.scalar_one_or_none()
 
-    # Count sonarqube findings by severity
-    stmt = (
-        select(FindingRow.severity, func.count(FindingRow.finding_id))
+    # Count BLOCKER findings ingested into PeaRL
+    blocker_stmt = (
+        select(func.count(FindingRow.finding_id))
         .where(FindingRow.project_id == project_id)
         .where(FindingRow.source["tool_name"].as_string() == "sonarqube")
-        .where(FindingRow.status != "closed")
-        .group_by(FindingRow.severity)
+        .where(FindingRow.status == "open")
     )
-    result = await db.execute(stmt)
-    findings_by_severity = dict(result.all())
+    blocker_count = (await db.execute(blocker_stmt)).scalar_one_or_none() or 0
 
     last_pull_at = (
         endpoint_row.last_sync_at.isoformat()
@@ -452,11 +517,368 @@ async def sonarqube_status(
         else None
     )
 
+    from pearl.config import settings as _pearl_settings
+    qg_data = (summary_finding.full_data or {}) if summary_finding else {}
+    labels = endpoint.labels or {}
+    project_key = labels.get("project_key", project_id)
+    _settings = _pearl_settings
+    public_base = (_settings.sonar_url or endpoint.base_url).rstrip("/")
+    sonarqube_link = f"{public_base}/dashboard?id={project_key}"
+    issues_link = f"{public_base}/project/issues?impactSeverities=HIGH,BLOCKER&issueStatuses=CONFIRMED,OPEN&id={project_key}"
+
     return {
-        "quality_gate": qg.get("status", "UNKNOWN"),
-        "findings_by_severity": findings_by_severity,
+        "quality_gate": qg_data.get("quality_gate_status", "UNKNOWN"),
+        "metrics": qg_data.get("metrics", {}),
+        "conditions": qg_data.get("conditions", []),
+        "sonarqube_link": sonarqube_link,
+        "sonarqube_issues_link": issues_link,
+        "open_findings_in_pearl": blocker_count,
         "last_pull_at": last_pull_at,
         "integration_configured": True,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Snyk CLI ingest route
+# ---------------------------------------------------------------------------
+
+
+class SnykIngestRequest(BaseModel):
+    """Raw `snyk test --json` output."""
+    vulnerabilities: list[dict] = []
+    ok: bool = False
+    dependency_count: int = Field(0, alias="dependencyCount")
+    package_manager: str = Field("", alias="packageManager")
+    project_name: str = Field("", alias="projectName")
+
+    model_config = {"populate_by_name": True}
+
+
+@router.post("/projects/{project_id}/integrations/snyk/ingest", status_code=200)
+async def snyk_ingest(
+    project_id: str,
+    body: SnykIngestRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Ingest Snyk CLI JSON output (`snyk test --json`) into PeaRL findings.
+
+    Creates or updates findings for each vulnerability.  Previously-open Snyk
+    findings that are absent from this scan are automatically resolved.
+    """
+    from sqlalchemy import select
+
+    from pearl.db.models.finding import FindingRow
+    from pearl.repositories.finding_repo import FindingRepository
+    from pearl.services.id_generator import generate_id
+
+    await _ensure_project(project_id, db)
+
+    _SEV_MAP = {
+        "critical": "critical",
+        "high": "high",
+        "medium": "moderate",
+        "low": "low",
+    }
+
+    finding_repo = FindingRepository(db)
+    created = 0
+    updated = 0
+    severity_counts: dict[str, int] = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    processed_external_ids: list[str] = []
+
+    for vuln in body.vulnerabilities:
+        external_id = f"snyk-{vuln.get('id', '')}-{vuln.get('pkgName', '')}"
+        processed_external_ids.append(external_id)
+
+        pearl_severity = _SEV_MAP.get(vuln.get("severity", "low"), "low")
+        sev_key = vuln.get("severity", "low")
+        if sev_key in severity_counts:
+            severity_counts[sev_key] += 1
+
+        source = {"system": "snyk", "tool": "snyk_cli", "trust_label": "ci_trusted"}
+        full_data = {
+            **vuln,
+            "source": source,
+            "tool_name": "snyk_sca",
+        }
+        title = vuln.get("title", vuln.get("id", external_id))
+
+        stmt = select(FindingRow).where(
+            FindingRow.project_id == project_id,
+            FindingRow.source["system"].as_string() == "snyk",
+            FindingRow.full_data["tool_name"].as_string() == "snyk_sca",
+        ).where(
+            FindingRow.full_data["id"].as_string() == str(vuln.get("id", "")),
+        ).limit(1)
+        existing = (await db.execute(stmt)).scalar_one_or_none()
+
+        if existing:
+            existing.title = title
+            existing.severity = pearl_severity
+            existing.full_data = full_data
+            existing.source = source
+            existing.status = "open"
+            await db.flush()
+            updated += 1
+        else:
+            finding_id = generate_id("find_")
+            await finding_repo.create(
+                finding_id=finding_id,
+                project_id=project_id,
+                environment="dev",
+                category="security",
+                severity=pearl_severity,
+                title=title,
+                source=source,
+                full_data=full_data,
+                normalized=False,
+                detected_at=datetime.now(timezone.utc),
+                batch_id=None,
+                cwe_ids=vuln.get("identifiers", {}).get("CWE") or None,
+                compliance_refs=None,
+                status="open",
+            )
+            created += 1
+
+    # Auto-resolve previously-open Snyk findings not in this scan
+    if processed_external_ids:
+        # Fetch all open snyk findings to resolve the ones not in this scan
+        resolve_stmt = select(FindingRow).where(
+            FindingRow.project_id == project_id,
+            FindingRow.source["system"].as_string() == "snyk",
+            FindingRow.status == "open",
+        )
+        resolve_result = await db.execute(resolve_stmt)
+        for stale in resolve_result.scalars().all():
+            # Build external_id from stored full_data
+            stored_id = (stale.full_data or {}).get("id", "")
+            stored_pkg = (stale.full_data or {}).get("pkgName", "")
+            stale_ext_id = f"snyk-{stored_id}-{stored_pkg}"
+            if stale_ext_id not in processed_external_ids:
+                stale.status = "resolved"
+                await db.flush()
+    elif body.vulnerabilities == []:
+        # Empty scan — resolve all open Snyk findings
+        resolve_stmt = select(FindingRow).where(
+            FindingRow.project_id == project_id,
+            FindingRow.source["system"].as_string() == "snyk",
+            FindingRow.status == "open",
+        )
+        resolve_result = await db.execute(resolve_stmt)
+        for stale in resolve_result.scalars().all():
+            stale.status = "resolved"
+            await db.flush()
+
+    # Upsert a scan-completed marker so the gate evaluator knows a scan ran
+    # even when 0 vulnerabilities are found.
+    marker_ext_id = f"snyk-scan-marker-{project_id}"
+    marker_stmt = select(FindingRow).where(
+        FindingRow.project_id == project_id,
+        FindingRow.full_data["external_id"].as_string() == marker_ext_id,
+    ).limit(1)
+    marker_row = (await db.execute(marker_stmt)).scalar_one_or_none()
+    total_high_critical = severity_counts.get("critical", 0) + severity_counts.get("high", 0)
+    marker_source = {"system": "snyk", "tool": "snyk_cli", "trust_label": "ci_trusted"}
+    if marker_row:
+        marker_row.title = f"Snyk SCA scan completed — {project_id}"
+        marker_row.full_data = {
+            "external_id": marker_ext_id,
+            "scan_marker": True,
+            "high_critical_count": total_high_critical,
+            "dependency_count": body.dependency_count,
+        }
+        marker_row.source = marker_source
+        marker_row.status = "open"
+        await db.flush()
+    else:
+        await finding_repo.create(
+            finding_id=generate_id("find_"),
+            project_id=project_id,
+            environment="dev",
+            category="governance",
+            severity="low",
+            title=f"Snyk SCA scan completed — {project_id}",
+            source=marker_source,
+            full_data={
+                "external_id": marker_ext_id,
+                "scan_marker": True,
+                "high_critical_count": total_high_critical,
+                "dependency_count": body.dependency_count,
+            },
+            normalized=False,
+            detected_at=datetime.now(timezone.utc),
+            batch_id=None,
+            status="open",
+        )
+
+    await db.commit()
+
+    return {
+        "project_id": project_id,
+        "findings_created": created,
+        "findings_updated": updated,
+        "critical": severity_counts.get("critical", 0),
+        "high": severity_counts.get("high", 0),
+        "medium": severity_counts.get("medium", 0),
+        "low": severity_counts.get("low", 0),
+    }
+
+
+# ---------------------------------------------------------------------------
+# MASS ingest route
+# ---------------------------------------------------------------------------
+
+
+_MASS_CATEGORY_MAP = {
+    # security categories
+    "prompt_injection": "security",
+    "jailbreak": "security",
+    "secret_leak": "security",
+    "infra_misconfiguration": "security",
+    "mcp_vulnerability": "security",
+    "rag_vulnerability": "security",
+    "model_file_risk": "security",
+    # responsible_ai categories
+    "bias": "responsible_ai",
+    "toxicity": "responsible_ai",
+}
+
+
+class MassIngestRequest(BaseModel):
+    scan_id: str
+    findings: list[dict] = []
+    risk_score: float = 0.0
+    categories_completed: list[str] = []
+
+
+@router.post("/projects/{project_id}/integrations/mass/ingest", status_code=200)
+async def mass_ingest(
+    project_id: str,
+    body: MassIngestRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Ingest MASS 2.0 scan results into PeaRL findings.
+
+    Creates or updates findings for each MASS finding.  Previously-open MASS
+    findings absent from this scan are automatically resolved.  A marker
+    finding (mass_scan_completed) is written at the end for gate evaluation.
+    """
+    from sqlalchemy import select
+
+    from pearl.db.models.finding import FindingRow
+    from pearl.repositories.finding_repo import FindingRepository
+    from pearl.services.id_generator import generate_id
+
+    await _ensure_project(project_id, db)
+
+    finding_repo = FindingRepository(db)
+    created = 0
+    processed_external_ids: list[str] = []
+
+    source_base = {"system": "mass_scan", "tool": "mass2", "trust_label": "trusted_external"}
+
+    for finding in body.findings:
+        external_id = f"mass-{finding.get('finding_id', '')}"
+        processed_external_ids.append(external_id)
+
+        status = "closed" if finding.get("false_positive", False) else "open"
+        pearl_category = _MASS_CATEGORY_MAP.get(finding.get("category", ""), "security")
+        severity = finding.get("severity", "moderate")
+
+        full_data = {**finding, "source": source_base}
+
+        stmt = select(FindingRow).where(
+            FindingRow.project_id == project_id,
+            FindingRow.source["system"].as_string() == "mass_scan",
+            FindingRow.full_data["finding_id"].as_string() == str(finding.get("finding_id", "")),
+        ).limit(1)
+        existing = (await db.execute(stmt)).scalar_one_or_none()
+
+        if existing:
+            existing.title = finding.get("title", external_id)
+            existing.severity = severity
+            existing.full_data = full_data
+            existing.source = source_base
+            existing.status = status
+            await db.flush()
+        else:
+            finding_id = generate_id("find_")
+            await finding_repo.create(
+                finding_id=finding_id,
+                project_id=project_id,
+                environment="dev",
+                category=pearl_category,
+                severity=severity,
+                title=finding.get("title", external_id),
+                source=source_base,
+                full_data=full_data,
+                normalized=False,
+                detected_at=datetime.now(timezone.utc),
+                batch_id=None,
+                cwe_ids=finding.get("cwe_ids") or None,
+                compliance_refs=None,
+                status=status,
+            )
+            created += 1
+
+    # Auto-resolve previously-open MASS findings not in this scan
+    resolve_stmt = select(FindingRow).where(
+        FindingRow.project_id == project_id,
+        FindingRow.source["system"].as_string() == "mass_scan",
+        FindingRow.status == "open",
+    )
+    resolve_result = await db.execute(resolve_stmt)
+    for stale in resolve_result.scalars().all():
+        stale_ext_id = f"mass-{(stale.full_data or {}).get('finding_id', '')}"
+        if stale_ext_id not in processed_external_ids:
+            stale.status = "resolved"
+            await db.flush()
+
+    # Write marker finding (mass_scan_completed) for gate evaluation
+    marker_source = {"system": "mass_scan", "tool": "mass2", "tool_name": "mass_scan_completed", "trust_label": "trusted_external"}
+    marker_stmt = select(FindingRow).where(
+        FindingRow.project_id == project_id,
+        FindingRow.source["tool_name"].as_string() == "mass_scan_completed",
+    ).limit(1)
+    existing_marker = (await db.execute(marker_stmt)).scalar_one_or_none()
+
+    marker_full_data = {
+        "scan_id": body.scan_id,
+        "risk_score": body.risk_score,
+        "categories_completed": body.categories_completed,
+        "source": marker_source,
+    }
+
+    if existing_marker:
+        existing_marker.full_data = marker_full_data
+        existing_marker.source = marker_source
+        await db.flush()
+    else:
+        marker_id = generate_id("find_")
+        await finding_repo.create(
+            finding_id=marker_id,
+            project_id=project_id,
+            environment="dev",
+            category="governance",
+            severity="info",
+            title="MASS scan completed",
+            source=marker_source,
+            full_data=marker_full_data,
+            normalized=False,
+            detected_at=datetime.now(timezone.utc),
+            batch_id=None,
+            cwe_ids=None,
+            compliance_refs=None,
+            status="resolved",
+        )
+
+    await db.commit()
+
+    return {
+        "project_id": project_id,
+        "scan_id": body.scan_id,
+        "findings_created": created,
+        "categories_completed": body.categories_completed,
     }
 
 

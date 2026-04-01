@@ -19,19 +19,29 @@ def _rule(rule_type: str, description: str, ai_only: bool = False, threshold: fl
     return r
 
 
-# ─── sandbox → dev (8 rules) ──────────────────────────────────
+# ─── sandbox → dev (11 rules) ─────────────────────────────────
+# Code security (Snyk) + code quality (SonarQube) required from the very first gate.
+# AI scan required from first gate for AI-enabled projects.
 
 SANDBOX_TO_DEV = {
     "gate_id": "gate_sandbox_to_dev",
     "source_environment": "sandbox",
     "target_environment": "dev",
     "rules": [
+        # Governance
         _rule(GateRuleType.PROJECT_REGISTERED, "Project must be registered in PeaRL"),
         _rule(GateRuleType.CLAUDE_MD_GOVERNANCE_PRESENT, "PeaRL governance block must be present and confirmed in CLAUDE.md"),
         _rule(GateRuleType.ORG_BASELINE_ATTACHED, "Organization security baseline must be attached"),
         _rule(GateRuleType.APP_SPEC_DEFINED, "Application specification must be defined"),
+        # Code security
         _rule(GateRuleType.NO_HARDCODED_SECRETS, "No hardcoded secrets in codebase"),
+        _rule(GateRuleType.SNYK_OPEN_HIGH_CRITICAL, "Snyk SCA: no open HIGH/CRITICAL vulnerabilities"),
+        # Code quality
+        _rule(GateRuleType.SONARQUBE_QUALITY_GATE, "SonarQube quality gate must be configured (WARN or OK acceptable)"),
+        # Testing
         _rule(GateRuleType.UNIT_TESTS_EXIST, "Unit tests must exist"),
+        # AI-specific (tighten at higher gates)
+        _rule(GateRuleType.AI_SCAN_COMPLETED, "PeaRL or MASS AI security scan must be completed for AI projects", ai_only=True),
         _rule(GateRuleType.FAIRNESS_CASE_DEFINED, "Fairness case must be defined for AI projects", ai_only=True),
         _rule(GateRuleType.MODEL_CARD_DOCUMENTED, "Model card must be documented for AI projects", ai_only=True),
     ],
@@ -69,9 +79,11 @@ DEV_TO_PREPROD = {
         _rule(GateRuleType.FAIRNESS_ATTESTATION_SIGNED, "Fairness attestation signed", ai_only=True),
         _rule(GateRuleType.FAIRNESS_HARD_BLOCKS_CLEAR, "No fairness hard blocks", ai_only=True),
         _rule(GateRuleType.RAI_EVAL_COMPLETED, "RAI evaluation completed", ai_only=True),
-        _rule(GateRuleType.COMPLIANCE_SCORE_THRESHOLD, "Compliance score >= 80%", ai_only=True, threshold=80.0),
+        _rule(GateRuleType.COMPLIANCE_SCORE_THRESHOLD, "Compliance score must be 100% (exception required for any shortfall)", ai_only=True, threshold=100.0),
         _rule(GateRuleType.SECURITY_REVIEW_CLEAR, "All /security-review findings addressed"),
         _rule(GateRuleType.GUARDRAIL_COVERAGE, "Guardrail coverage adequate", ai_only=True),
+        _rule(GateRuleType.SONARQUBE_QUALITY_GATE, "SonarQube quality gate must pass (OK or WARN)"),
+        _rule(GateRuleType.SNYK_OPEN_HIGH_CRITICAL, "Snyk SCA scan must have no open HIGH/CRITICAL vulnerabilities"),
     ],
 }
 
@@ -111,10 +123,12 @@ PREPROD_TO_PROD = {
         _rule(GateRuleType.FAIRNESS_CONTEXT_RECEIPT_VALID, "Agent fairness context receipt on file", ai_only=True),
         _rule(GateRuleType.FAIRNESS_POLICY_DEPLOYED, "Fairness policy fully deployed", ai_only=True),
         _rule(GateRuleType.CEDAR_POLICY_DEPLOYED, "Cedar policy deployed to AgentCore", ai_only=True),
-        _rule(GateRuleType.COMPLIANCE_SCORE_THRESHOLD, "Compliance score >= 90% for production", ai_only=True, threshold=90.0),
+        _rule(GateRuleType.COMPLIANCE_SCORE_THRESHOLD, "Compliance score must be 100% for production (exception required for any shortfall)", ai_only=True, threshold=100.0),
         _rule(GateRuleType.REQUIRED_ANALYZERS_COMPLETED, "All required AI analyzers completed", ai_only=True),
         _rule(GateRuleType.SECURITY_REVIEW_CLEAR, "All /security-review findings addressed"),
         _rule(GateRuleType.GUARDRAIL_COVERAGE, "Guardrail coverage complete for production", ai_only=True),
+        _rule(GateRuleType.SONARQUBE_QUALITY_GATE, "SonarQube quality gate must pass (OK)"),
+        _rule(GateRuleType.SNYK_OPEN_HIGH_CRITICAL, "Snyk SCA scan must have no open HIGH/CRITICAL vulnerabilities"),
     ],
 }
 
@@ -158,6 +172,9 @@ async def seed_default_gates(session) -> int:
                 rules=gate_def["rules"],
             )
             created += 1
+        else:
+            # Always sync rules so new rule types added to code land in the DB
+            existing.rules = gate_def["rules"]
 
     # Seed the default pipeline
     pipeline_repo = PromotionPipelineRepository(session)

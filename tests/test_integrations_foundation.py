@@ -672,11 +672,14 @@ class TestAdapterRegistry:
     """Tests for AVAILABLE_ADAPTERS and import_adapter."""
 
     def test_available_adapters_contains_expected_keys(self):
-        expected = {"snyk", "semgrep", "trivy", "jira", "slack", "github_issues", "sonarqube", "teams", "telegram", "webhook"}
+        expected = {"snyk", "semgrep", "trivy", "jira", "slack", "github_issues", "sonarqube", "teams", "telegram", "webhook", "azure_devops"}
         assert expected == set(AVAILABLE_ADAPTERS.keys())
 
     def test_available_adapters_values_are_dotted_paths(self):
         for name, path in AVAILABLE_ADAPTERS.items():
+            # CI/CD integrations (e.g. azure_devops) have no pull/push adapter class — skip them
+            if path is None:
+                continue
             parts = path.rsplit(".", 1)
             assert len(parts) == 2, f"Expected dotted class path for {name}, got {path}"
             assert parts[1][0].isupper(), f"Class name should be capitalized for {name}"

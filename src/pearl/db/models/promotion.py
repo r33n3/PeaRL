@@ -19,6 +19,10 @@ class PromotionGateRow(Base, TimestampMixin):
     )
     rules: Mapped[dict] = mapped_column(JSON, nullable=False)
     approval_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="manual")
+    # Trust accumulation fields
+    auto_pass: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    pass_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    auto_pass_threshold: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
 
 
 class PromotionEvaluationRow(Base, TimestampMixin):
@@ -43,6 +47,9 @@ class PromotionEvaluationRow(Base, TimestampMixin):
     blockers: Mapped[list | None] = mapped_column(JSON, nullable=True)
     trace_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    commit_sha: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    version_tag: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    branch: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
 
 class PromotionHistoryRow(Base, TimestampMixin):
@@ -58,6 +65,9 @@ class PromotionHistoryRow(Base, TimestampMixin):
     promoted_by: Mapped[str] = mapped_column(String(200), nullable=False)
     promoted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    commit_sha: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    version_tag: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    branch: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
 
 class PromotionPipelineRow(Base, TimestampMixin):

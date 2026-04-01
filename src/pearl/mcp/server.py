@@ -94,6 +94,10 @@ class MCPServer:
             "ingestSecurityReview": self._ingest_security_review,
             "claimTaskPacket": self._claim_task_packet,
             "completeTaskPacket": self._complete_task_packet,
+            # Agent allowance profiles
+            "pearl_allowance_check": self._allowance_check,
+            # MASS 2.0 AI security scan
+            "pearl_trigger_mass_scan": self._trigger_mass_scan,
             # Governance verification
             "confirmClaudeMd": self._confirm_claude_md,
             # Fairness attestation
@@ -390,6 +394,74 @@ class MCPServer:
             "finding_ids_resolved": args.get("finding_ids_resolved", []),
         }
         return await self._request("POST", f"/task-packets/{packet_id}/complete", body)
+
+    async def _allowance_check(self, args: dict) -> dict:
+        profile_id = args["profile_id"]
+        body = {
+            "action": args["action"],
+            "agent_id": args["agent_id"],
+            "task_packet_id": args.get("task_packet_id"),
+        }
+        return await self._request("POST", f"/allowance-profiles/{profile_id}/check", body)
+
+    async def _trigger_mass_scan(self, args: dict) -> dict:
+        """Trigger a MASS 2.0 Claude Agent SDK scan via subprocess.
+
+        Invokes `mass-scan` CLI which uses the Claude Agent SDK coordinator
+        to spawn 7 specialized subagents and push findings to PeaRL.
+        """
+        import asyncio
+        import shutil
+
+        project_id = args["project_id"]
+        target_path = args["target_path"]
+        pearl_api_url = args.get("pearl_api_url", self.base_url)
+        pearl_api_token = args.get("pearl_api_token", self.auth_token or "")
+        commit_sha = args.get("commit_sha", "")
+        branch = args.get("branch", "")
+
+        mass_scan_cmd = shutil.which("mass-scan")
+        if not mass_scan_cmd:
+            return {
+                "error": "mass-scan CLI not found. Install MASS 2.0 SDK: cd MASS-2.0/sdk && pip install -e .",
+                "project_id": project_id,
+            }
+
+        cmd = [
+            mass_scan_cmd,
+            "--project-id", project_id,
+            "--target-path", target_path,
+            "--pearl-api-url", pearl_api_url,
+            "--output-json",
+        ]
+        if pearl_api_token:
+            cmd += ["--pearl-api-token", pearl_api_token]
+        if commit_sha:
+            cmd += ["--commit-sha", commit_sha]
+        if branch:
+            cmd += ["--branch", branch]
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=600)
+        except asyncio.TimeoutError:
+            return {"error": "MASS scan timed out after 10 minutes", "project_id": project_id}
+        except Exception as exc:
+            return {"error": f"Failed to launch mass-scan: {exc}", "project_id": project_id}
+
+        import json
+        try:
+            result = json.loads(stdout.decode())
+        except Exception:
+            result = {"stdout": stdout.decode()[:500], "stderr": stderr.decode()[:300]}
+
+        result["exit_code"] = proc.returncode
+        result["blocked"] = proc.returncode == 1
+        return result
 
     async def _confirm_claude_md(self, args: dict) -> dict:
         pid = args["project_id"]

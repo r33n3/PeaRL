@@ -97,6 +97,7 @@ class PromotionEvaluation(BaseModel):
     blockers: list[str] | None = None
     evaluated_at: datetime | None = None
     trace_id: str | None = None
+    auto_pass: bool = False  # True when gate trust-accumulation qualifies for auto-approval
 
 
 class PromotionRequest(BaseModel):
