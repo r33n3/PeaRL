@@ -23,3 +23,7 @@ class TaskPacketRow(Base, TimestampMixin):
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     outcome: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # Execution phase tracking
+    execution_phase: Mapped[str] = mapped_column(String(50), nullable=False, default="planning")
+    phase_history: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
