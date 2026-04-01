@@ -145,7 +145,7 @@ async def test_illegal_backward_transition_coding_to_planning(client, db_session
 
     await _patch_phase(client, tp_id, "coding")
     r = await _patch_phase(client, tp_id, "planning")
-    assert r.status_code in (400, 422), r.text
+    assert r.status_code == 422, r.text
 
 
 @pytest.mark.asyncio
@@ -155,7 +155,7 @@ async def test_illegal_skip_transition_planning_to_testing(client, db_session):
     tp_id = await _create_task_packet(db_session, pid)
 
     r = await _patch_phase(client, tp_id, "testing")
-    assert r.status_code in (400, 422), r.text
+    assert r.status_code == 422, r.text
 
 
 @pytest.mark.asyncio
@@ -168,7 +168,7 @@ async def test_illegal_transition_review_to_coding(client, db_session):
     await _patch_phase(client, tp_id, "testing")
     await _patch_phase(client, tp_id, "review")
     r = await _patch_phase(client, tp_id, "coding")
-    assert r.status_code in (400, 422), r.text
+    assert r.status_code == 422, r.text
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +188,7 @@ async def test_terminal_complete_blocks_further_transitions(client, db_session):
 
     for target in ["planning", "coding", "testing", "review", "failed"]:
         r = await _patch_phase(client, tp_id, target)
-        assert r.status_code in (400, 422), f"Expected 400/422 when transitioning from 'complete' to '{target}', got {r.status_code}"
+        assert r.status_code == 422, f"Expected 422 when transitioning from 'complete' to '{target}', got {r.status_code}"
 
 
 @pytest.mark.asyncio
@@ -201,7 +201,7 @@ async def test_terminal_failed_blocks_further_transitions(client, db_session):
 
     for target in ["planning", "coding", "testing", "review", "complete"]:
         r = await _patch_phase(client, tp_id, target)
-        assert r.status_code in (400, 422), f"Expected 400/422 when transitioning from 'failed' to '{target}', got {r.status_code}"
+        assert r.status_code == 422, f"Expected 422 when transitioning from 'failed' to '{target}', got {r.status_code}"
 
 
 # ---------------------------------------------------------------------------
@@ -361,7 +361,7 @@ async def test_invalid_phase_name_returns_422(client, db_session):
     tp_id = await _create_task_packet(db_session, pid)
 
     r = await _patch_phase(client, tp_id, "deploying")  # not a valid phase
-    assert r.status_code in (400, 422)
+    assert r.status_code == 422
 
 
 # ---------------------------------------------------------------------------

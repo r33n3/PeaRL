@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -126,21 +126,21 @@ async def update_task_packet_phase(
 
     new_phase = body.phase
     if new_phase not in VALID_PHASES:
-        raise ValidationError(f"Invalid phase '{new_phase}'. Must be one of: {', '.join(sorted(VALID_PHASES))}")
+        raise HTTPException(status_code=422, detail=f"Invalid phase '{new_phase}'. Must be one of: {', '.join(sorted(VALID_PHASES))}")
 
     current_phase = packet.execution_phase
     allowed_next = LEGAL_TRANSITIONS.get(current_phase, set())
 
     if current_phase in TERMINAL_PHASES:
-        raise ValidationError(
-            f"Cannot transition from terminal phase '{current_phase}'. "
-            f"Phases 'complete' and 'failed' have no further transitions."
+        raise HTTPException(
+            status_code=422,
+            detail=f"Cannot transition from terminal phase '{current_phase}'. Phases 'complete' and 'failed' have no further transitions."
         )
 
     if new_phase not in allowed_next:
-        raise ValidationError(
-            f"Illegal phase transition from '{current_phase}' to '{new_phase}'. "
-            f"Allowed transitions from '{current_phase}': {', '.join(sorted(allowed_next)) or 'none'}"
+        raise HTTPException(
+            status_code=422,
+            detail=f"Illegal phase transition from '{current_phase}' to '{new_phase}'. Allowed transitions from '{current_phase}': {', '.join(sorted(allowed_next)) or 'none'}"
         )
 
     # Determine agent_id
