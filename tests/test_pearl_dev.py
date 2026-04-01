@@ -852,7 +852,7 @@ class TestMCPEntryPoints:
 
         server = PearlAPIMCPStdioServer()
         tools = server._mcp.list_tools()
-        assert len(tools) == 49
+        assert len(tools) == 50
 
     def test_pearl_api_mcp_stdio_main_importable(self):
         """pearl.mcp.stdio_server has main() entry point."""
