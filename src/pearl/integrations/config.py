@@ -119,3 +119,115 @@ class IntegrationRegistry(BaseModel):
             if e.endpoint_id == endpoint_id:
                 return e
         return None
+
+
+# ---------------------------------------------------------------------------
+# Integration Catalogue — static metadata for all supported adapter types.
+# Used by the frontend integration picker and the ci-snippet endpoint to
+# determine platform-appropriate CI YAML.
+# ---------------------------------------------------------------------------
+
+INTEGRATION_CATALOGUE: list[dict] = [
+    {
+        "adapter_type": "snyk",
+        "integration_type": "source",
+        "category": "sca",
+        "name": "Snyk",
+        "description": "Snyk SCA/SAST integration for dependency and code vulnerability scanning",
+        "auth_types": ["api_key"],
+        "labels_schema": {"org_id": "Snyk organization ID"},
+    },
+    {
+        "adapter_type": "semgrep",
+        "integration_type": "source",
+        "category": "sast",
+        "name": "Semgrep",
+        "description": "Semgrep SAST integration for static analysis findings",
+        "auth_types": ["api_key"],
+        "labels_schema": {"deployment_id": "Semgrep deployment ID"},
+    },
+    {
+        "adapter_type": "trivy",
+        "integration_type": "source",
+        "category": "container_scan",
+        "name": "Trivy",
+        "description": "Trivy container and IaC vulnerability scanner",
+        "auth_types": ["none"],
+        "labels_schema": {},
+    },
+    {
+        "adapter_type": "sonarqube",
+        "integration_type": "source",
+        "category": "sast",
+        "name": "SonarQube",
+        "description": "SonarQube code quality and security analysis integration",
+        "auth_types": ["api_key", "bearer"],
+        "labels_schema": {"project_key": "SonarQube project key"},
+    },
+    {
+        "adapter_type": "azure_devops",
+        "integration_type": "ci_cd",
+        "category": "ci_cd",
+        "name": "Azure DevOps",
+        "description": "Azure DevOps Pipelines CI/CD integration for automated gate scanning",
+        "auth_types": ["pat"],
+        "labels_schema": {
+            "organization": "ADO org name",
+            "project": "ADO project name",
+        },
+    },
+    {
+        "adapter_type": "jira",
+        "integration_type": "sink",
+        "category": "ticketing",
+        "name": "Jira",
+        "description": "Jira issue tracker integration for finding ticket creation",
+        "auth_types": ["api_key", "basic"],
+        "labels_schema": {"project_key": "Jira project key"},
+    },
+    {
+        "adapter_type": "slack",
+        "integration_type": "sink",
+        "category": "notification",
+        "name": "Slack",
+        "description": "Slack notification integration for gate events and alerts",
+        "auth_types": ["bearer"],
+        "labels_schema": {"channel": "Default Slack channel"},
+    },
+    {
+        "adapter_type": "github_issues",
+        "integration_type": "sink",
+        "category": "ticketing",
+        "name": "GitHub Issues",
+        "description": "GitHub Issues integration for finding ticket creation",
+        "auth_types": ["bearer"],
+        "labels_schema": {"repo": "owner/repo"},
+    },
+    {
+        "adapter_type": "teams",
+        "integration_type": "sink",
+        "category": "notification",
+        "name": "Microsoft Teams",
+        "description": "Microsoft Teams webhook integration for gate notifications",
+        "auth_types": ["none"],
+        "labels_schema": {"webhook_url": "Teams incoming webhook URL"},
+    },
+    {
+        "adapter_type": "telegram",
+        "integration_type": "sink",
+        "category": "notification",
+        "name": "Telegram",
+        "description": "Telegram bot integration for gate notifications",
+        "auth_types": ["api_key"],
+        "labels_schema": {"chat_id": "Telegram chat ID"},
+    },
+    {
+        "adapter_type": "webhook",
+        "integration_type": "sink",
+        "category": "notification",
+        "name": "Webhook",
+        "description": "Generic outbound webhook for custom integrations",
+        "auth_types": ["api_key", "bearer", "none"],
+        "labels_schema": {"url": "Webhook target URL"},
+    },
+]

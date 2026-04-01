@@ -79,13 +79,16 @@ async def evaluate_promotion(
     if not project:
         raise ValidationError(f"Project '{project_id}' not found")
 
-    # Determine current environment
+    # Determine current environment — project.current_environment is authoritative.
+    # env_profile.environment is a git-branch mapping and can lag behind resets/rollbacks.
     if source_environment:
         current_env = source_environment
     else:
-        env_repo = EnvironmentProfileRepository(session)
-        env_profile = await env_repo.get_by_project(project_id)
-        current_env = env_profile.environment if env_profile else "sandbox"
+        current_env = project.current_environment
+        if not current_env:
+            env_repo = EnvironmentProfileRepository(session)
+            env_profile = await env_repo.get_by_project(project_id)
+            current_env = env_profile.environment if env_profile else "sandbox"
 
     # Determine target
     if not target_environment:
@@ -284,6 +287,12 @@ class _EvalContext:
         self.has_claude_md_governance: bool = False
         # Cedar deployment status
         self.cedar_policy_active: bool = False
+        # SonarQube quality gate status (from stored summary finding)
+        self.sonarqube_qg_status: str | None = None
+        # Snyk SCA context
+        self.snyk_open_critical: int = 0
+        self.snyk_open_high: int = 0
+        self.snyk_scan_seen: bool = False
 
 
 async def _build_eval_context(
@@ -475,6 +484,16 @@ async def _build_eval_context(
     # Check CLAUDE.md governance block confirmation
     ctx.has_claude_md_governance = bool(getattr(project, "claude_md_verified", False))
 
+    # SonarQube quality gate status — read from stored summary finding
+    sonar_stmt = select(FindingRow).where(
+        FindingRow.project_id == project_id,
+        FindingRow.source["tool_name"].as_string() == "sonarqube_quality_gate",
+    ).limit(1)
+    sonar_result = await session.execute(sonar_stmt)
+    sonar_summary = sonar_result.scalar_one_or_none()
+    if sonar_summary:
+        ctx.sonarqube_qg_status = (sonar_summary.full_data or {}).get("quality_gate_status")
+
     # Cedar deployment status
     try:
         from pearl.repositories.cedar_deployment_repo import CedarDeploymentRepository
@@ -489,6 +508,26 @@ async def _build_eval_context(
         )
     except Exception:
         ctx.cedar_policy_active = False
+
+    # Snyk SCA context — count open findings by severity
+    snyk_any_stmt = select(FindingRow).where(
+        FindingRow.project_id == project_id,
+        FindingRow.source["system"].as_string() == "snyk",
+    ).limit(1)
+    snyk_any_result = await session.execute(snyk_any_stmt)
+    ctx.snyk_scan_seen = snyk_any_result.scalar_one_or_none() is not None
+
+    snyk_open_stmt = select(FindingRow).where(
+        FindingRow.project_id == project_id,
+        FindingRow.source["system"].as_string() == "snyk",
+        FindingRow.status == "open",
+    )
+    snyk_open_result = await session.execute(snyk_open_stmt)
+    for snyk_f in snyk_open_result.scalars().all():
+        if snyk_f.severity == "critical":
+            ctx.snyk_open_critical += 1
+        elif snyk_f.severity == "high":
+            ctx.snyk_open_high += 1
 
     return ctx
 
@@ -520,7 +559,11 @@ _FIX_GUIDANCE: dict[str, str] = {
         "Alternatively set the control to true in the org baseline defaults."
     ),
     "security_review_clear": "Run /security-review and address all findings.",
-    "compliance_score_threshold": "Improve compliance score by resolving scan findings. Target: 80%+.",
+    "compliance_score_threshold": (
+        "Compliance score must reach 100%. Resolve all scan findings to raise the score. "
+        "For known accepted risks that cannot be remediated, request an approved exception via "
+        "createException — an active exception allows elevation even if the threshold is not met."
+    ),
     "required_analyzers_completed": "Run all required analyzers. Trigger a full scan via POST /scan-targets/{id}/trigger.",
     "project_registered": "Ensure the project is properly registered in PeaRL.",
     "claude_md_governance_present": "Write the PeaRL governance block to the project's CLAUDE.md, then call the confirmClaudeMd MCP tool to confirm.",
@@ -535,6 +578,16 @@ _FIX_GUIDANCE: dict[str, str] = {
     "cedar_policy_deployed": (
         "Cedar deployment is triggered automatically after promotion approval. "
         "Ensure all other gates pass, then call requestPromotion and await approval."
+    ),
+    "sonarqube_quality_gate": (
+        "Fix failing quality gate conditions in SonarQube (see the sonarqube_link in the finding). "
+        "Once the quality gate shows OK (or WARN for dev→preprod), "
+        "call POST .../integrations/sonarqube/pull to refresh the status in PeaRL."
+    ),
+    "snyk_open_high_critical": (
+        "Run `snyk test --json > snyk_results.json` in the project root, "
+        "then POST the results to /projects/{id}/integrations/snyk/ingest. "
+        "Fix or accept all HIGH/CRITICAL vulnerabilities before re-ingesting."
     ),
 }
 
@@ -1016,6 +1069,51 @@ def _eval_security_review_clear(rule, ctx):
     return passed, f"All {total} security review findings addressed" if passed else f"{len(open_reviews)} of {total} security review findings still open", {"open": len(open_reviews), "total": total}
 
 
+def _eval_sonarqube_quality_gate(rule, ctx):
+    """Pass if SonarQube quality gate is OK (or WARN for non-prod gates).
+
+    For dev→preprod: OK or WARN is acceptable.
+    For preprod→prod: only OK passes.
+    Rule description distinguishes the threshold.
+    """
+    if ctx.sonarqube_qg_status is None:
+        return (
+            False,
+            "No SonarQube quality gate data — run POST .../integrations/sonarqube/pull first",
+            None,
+        )
+    # preprod→prod requires OK; other gates accept OK or WARN
+    description = getattr(rule, "description", "")
+    require_ok_only = "OK)" in description  # set by default_gates description
+    status = ctx.sonarqube_qg_status
+    if status == "OK":
+        return True, f"SonarQube quality gate: OK", {"quality_gate": status}
+    if status == "WARN" and not require_ok_only:
+        return True, f"SonarQube quality gate: WARN (acceptable for this stage)", {"quality_gate": status}
+    return (
+        False,
+        f"SonarQube quality gate: {status} — fix failing conditions in SonarQube, then re-pull",
+        {"quality_gate": status},
+    )
+
+
+def _eval_snyk_open_high_critical(rule, ctx):
+    if not ctx.snyk_scan_seen:
+        return (
+            False,
+            "No Snyk SCA scan ingested — run snyk test and POST to /integrations/snyk/ingest",
+            None,
+        )
+    total = ctx.snyk_open_critical + ctx.snyk_open_high
+    if total > 0:
+        return (
+            False,
+            f"Snyk SCA: {total} HIGH/CRITICAL open ({ctx.snyk_open_critical} critical, {ctx.snyk_open_high} high) — fix and re-run snyk test",
+            {"critical": ctx.snyk_open_critical, "high": ctx.snyk_open_high},
+        )
+    return True, "Snyk SCA: no open HIGH/CRITICAL vulnerabilities", {"critical": 0, "high": 0}
+
+
 def _eval_aiuc1_control_required(rule, ctx):
     """Check that a specific AIUC-1 sub-control is set to True in the org baseline.
 
@@ -1386,6 +1484,8 @@ RULE_EVALUATORS = {
     GateRuleType.REQUIRED_ANALYZERS_COMPLETED: _eval_required_analyzers_completed,
     GateRuleType.GUARDRAIL_COVERAGE: _eval_guardrail_coverage,
     GateRuleType.SECURITY_REVIEW_CLEAR: _eval_security_review_clear,
+    GateRuleType.SONARQUBE_QUALITY_GATE: _eval_sonarqube_quality_gate,
+    GateRuleType.SNYK_OPEN_HIGH_CRITICAL: _eval_snyk_open_high_critical,
     # AIUC-1 baseline control compliance (legacy — prefer FRAMEWORK_CONTROL_REQUIRED)
     GateRuleType.AIUC1_CONTROL_REQUIRED: _eval_aiuc1_control_required,
     # Unified multi-framework control evaluation

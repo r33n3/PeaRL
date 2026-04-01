@@ -461,20 +461,23 @@ async def get_project(
     if not row:
         raise NotFoundError("Project", project_id)
 
-    return Project(
-        schema_version=row.schema_version,
-        project_id=row.project_id,
-        name=row.name,
-        description=row.description,
-        owner_team=row.owner_team,
-        business_criticality=row.business_criticality,
-        external_exposure=row.external_exposure,
-        ai_enabled=row.ai_enabled,
-        bu_id=row.bu_id,
-        tags=getattr(row, "tags", None),
-        created_at=row.created_at,
-        updated_at=row.updated_at,
-    ).model_dump(mode="json", exclude_none=True)
+    return {
+        **Project(
+            schema_version=row.schema_version,
+            project_id=row.project_id,
+            name=row.name,
+            description=row.description,
+            owner_team=row.owner_team,
+            business_criticality=row.business_criticality,
+            external_exposure=row.external_exposure,
+            ai_enabled=row.ai_enabled,
+            bu_id=row.bu_id,
+            tags=getattr(row, "tags", None),
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        ).model_dump(mode="json", exclude_none=True),
+        "current_environment": row.current_environment or "sandbox",
+    }
 
 
 @router.put("/projects/{project_id}")

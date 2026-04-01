@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pearl.dependencies import get_db, get_trace_id
@@ -22,6 +23,20 @@ from pearl.services.promotion.gate_evaluator import evaluate_promotion
 from pearl.api.routes.stream import publish_event
 
 router = APIRouter(tags=["Promotions"])
+
+
+class EvaluatePromotionBody(BaseModel):
+    source_environment: str | None = None
+    target_environment: str | None = None
+    commit_sha: str | None = None
+    version_tag: str | None = None
+    branch: str | None = None
+
+
+class RequestPromotionBody(BaseModel):
+    commit_sha: str | None = None
+    version_tag: str | None = None
+    branch: str | None = None
 
 
 def _schedule_anomaly_checks(
@@ -61,21 +76,35 @@ def _schedule_anomaly_checks(
 @router.post("/projects/{project_id}/promotions/evaluate", status_code=200)
 async def evaluate_promotion_readiness(
     project_id: str,
-    source_environment: str | None = None,
-    target_environment: str | None = None,
+    body: EvaluatePromotionBody = None,
     request: Request = None,
     db: AsyncSession = Depends(get_db),
     trace_id: str = Depends(get_trace_id),
 ) -> dict:
+    body = body or EvaluatePromotionBody()
     evaluation = await evaluate_promotion(
         project_id=project_id,
-        source_environment=source_environment,
-        target_environment=target_environment,
+        source_environment=body.source_environment,
+        target_environment=body.target_environment,
         trace_id=trace_id,
         session=db,
     )
+    # Store version fields on the persisted evaluation row
+    eval_repo = PromotionEvaluationRepository(db)
+    eval_row = await eval_repo.get(evaluation.evaluation_id)
+    if eval_row and (body.commit_sha or body.version_tag or body.branch):
+        await eval_repo.update(
+            eval_row,
+            commit_sha=body.commit_sha,
+            version_tag=body.version_tag,
+            branch=body.branch,
+        )
     await db.commit()
     result = evaluation.model_dump(mode="json", exclude_none=True)
+    # Attach version fields to the response
+    result["commit_sha"] = body.commit_sha
+    result["version_tag"] = body.version_tag
+    result["branch"] = body.branch
     # Publish real-time event so connected clients update without polling
     if request:
         redis = getattr(request.app.state, "redis", None)
@@ -113,6 +142,9 @@ async def get_promotion_readiness(
         "blockers": evaluation.blockers,
         "rule_results": evaluation.rule_results,
         "evaluated_at": evaluation.evaluated_at.isoformat() if evaluation.evaluated_at else None,
+        "commit_sha": evaluation.commit_sha,
+        "version_tag": evaluation.version_tag,
+        "branch": evaluation.branch,
     }
 
 
@@ -120,16 +152,51 @@ async def get_promotion_readiness(
 async def request_promotion(
     project_id: str,
     background_tasks: BackgroundTasks,
+    body: RequestPromotionBody = None,
     request: Request = None,
     db: AsyncSession = Depends(get_db),
     trace_id: str = Depends(get_trace_id),
 ) -> dict:
-    # Evaluate first
+    body = body or RequestPromotionBody()
+
+    # ── Sequential gate enforcement ──────────────────────────────────────────
+    # A project must progress through gates in order: sandbox→dev→preprod→prod.
+    # We load the project's actual current_environment and determine the correct
+    # next gate.  Any attempt to skip a gate (e.g. sandbox directly requesting
+    # preprod→prod) is rejected here before an evaluation or approval record
+    # is ever created.
+    from pearl.repositories.project_repo import ProjectRepository as _ProjRepo
+    from pearl.services.promotion.gate_evaluator import next_environment as _next_env
+    _proj = await _ProjRepo(db).get(project_id)
+    if not _proj:
+        raise ValidationError(f"Project '{project_id}' not found")
+    _current = _proj.current_environment or "sandbox"
+    _expected_target = await _next_env(_current, db)
+    if _expected_target is None:
+        raise ValidationError(
+            f"Project '{project_id}' is already at the final environment ('{_current}'). "
+            "No further promotion is possible."
+        )
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # Evaluate first — evaluate_promotion will use project.current_environment
+    # as the authoritative source, so the gate it selects will always be the
+    # correct next step for this project's actual position in the pipeline.
     evaluation = await evaluate_promotion(
         project_id=project_id,
         trace_id=trace_id,
         session=db,
     )
+    # Store version fields on the evaluation row
+    eval_repo = PromotionEvaluationRepository(db)
+    eval_row = await eval_repo.get(evaluation.evaluation_id)
+    if eval_row and (body.commit_sha or body.version_tag or body.branch):
+        await eval_repo.update(
+            eval_row,
+            commit_sha=body.commit_sha,
+            version_tag=body.version_tag,
+            branch=body.branch,
+        )
 
     # Check the gate's approval_mode
     gate_repo = PromotionGateRepository(db)
@@ -258,7 +325,17 @@ async def request_promotion(
             promoted_by="pearl-auto-approval",
             promoted_at=datetime.now(timezone.utc),
             details={"auto_approved": True, "approval_request_id": approval_id},
+            commit_sha=body.commit_sha,
+            version_tag=body.version_tag,
+            branch=body.branch,
         )
+
+        # Update both the project row (authoritative) and env_profile (legacy sync)
+        from pearl.repositories.project_repo import ProjectRepository as _ProjRepo
+        _proj_repo = _ProjRepo(db)
+        _proj = await _proj_repo.get(project_id)
+        if _proj:
+            await _proj_repo.update(_proj, current_environment=evaluation.target_environment)
 
         env_repo = EnvironmentProfileRepository(db)
         env_profile = await env_repo.get_by_project(project_id)
@@ -340,6 +417,9 @@ async def get_promotion_history(
             "target_environment": h.target_environment,
             "promoted_by": h.promoted_by,
             "promoted_at": h.promoted_at.isoformat() if h.promoted_at else None,
+            "commit_sha": h.commit_sha,
+            "version_tag": h.version_tag,
+            "branch": h.branch,
         }
         for h in history
     ]
@@ -665,6 +745,100 @@ async def rollback_promotion(
         "from_environment": from_environment,
         "reason": reason,
         "rolled_back_at": now.isoformat(),
+    }
+
+
+@router.post("/projects/{project_id}/promotions/reset-to-sandbox", status_code=200)
+async def reset_to_sandbox(
+    project_id: str,
+    body: dict = None,
+    request=None,
+    db: AsyncSession = Depends(get_db),
+    trace_id: str = Depends(get_trace_id),
+) -> dict:
+    """Reset a project back to sandbox, clearing all promotion history and evaluations.
+
+    Admin-only. Use this to start the promotion pipeline from scratch — useful after
+    significant architectural changes or when re-validating with new gate tools.
+    """
+    from pearl.errors.exceptions import AuthorizationError, NotFoundError
+    from pearl.repositories.project_repo import ProjectRepository as _ProjRepo
+    from sqlalchemy import delete
+
+    body = body or {}
+
+    if request:
+        user = getattr(request.state, "user", {})
+        if "admin" not in user.get("roles", []):
+            raise AuthorizationError("Admin role required for reset-to-sandbox")
+
+    proj_repo = _ProjRepo(db)
+    project = await proj_repo.get(project_id)
+    if not project:
+        raise NotFoundError("Project", project_id)
+
+    reason = body.get("reason", "Manual reset to sandbox")
+    promoted_by = getattr(getattr(request, "state", None), "user", {}).get("sub", "system") if request else "system"
+    now = datetime.now(timezone.utc)
+
+    # Record the reset as a history entry
+    history_id = generate_id("hist_")
+    history_repo = PromotionHistoryRepository(db)
+    await history_repo.create(
+        history_id=history_id,
+        project_id=project_id,
+        source_environment=project.current_environment or "unknown",
+        target_environment="sandbox",
+        evaluation_id="reset",
+        promoted_by=promoted_by,
+        promoted_at=now,
+        details={
+            "type": "reset_to_sandbox",
+            "reason": reason,
+            "trace_id": trace_id,
+            "previous_environment": project.current_environment,
+        },
+    )
+
+    # Clear all prior evaluations and history (except this reset entry) if requested
+    clear_history = body.get("clear_history", True)
+    if clear_history:
+        from pearl.db.models.promotion import PromotionEvaluationRow, PromotionHistoryRow
+        await db.execute(
+            delete(PromotionEvaluationRow).where(PromotionEvaluationRow.project_id == project_id)
+        )
+        await db.execute(
+            delete(PromotionHistoryRow)
+            .where(PromotionHistoryRow.project_id == project_id)
+            .where(PromotionHistoryRow.history_id != history_id)
+        )
+
+    # Set current environment to sandbox on both the project row and env_profile
+    # so that all environment reads (project.current_environment and env_profile.environment)
+    # agree after a reset.
+    await proj_repo.update(project, current_environment="sandbox")
+    env_profile = await EnvironmentProfileRepository(db).get_by_project(project_id)
+    if env_profile:
+        env_profile.environment = "sandbox"
+    await db.commit()
+
+    # Emit SSE event
+    if request:
+        _redis = getattr(request.app.state, "redis", None)
+        await publish_event(_redis, "project_reset", {
+            "project_id": project_id,
+            "target_environment": "sandbox",
+            "triggered_by": promoted_by,
+        })
+
+    return {
+        "project_id": project_id,
+        "type": "reset_to_sandbox",
+        "current_environment": "sandbox",
+        "reason": reason,
+        "history_cleared": clear_history,
+        "reset_at": now.isoformat(),
+        "next_step": f"POST /api/v1/projects/{project_id}/promotions/evaluate to begin elevation from sandbox → dev",
     }
 
 

@@ -10,11 +10,22 @@ export function usePromotionReadiness(projectId: string) {
   });
 }
 
+export interface PromotionHistoryItem {
+  history_id: string;
+  source_environment: string;
+  target_environment: string;
+  promoted_by: string;
+  promoted_at: string | null;
+  commit_sha?: string | null;
+  version_tag?: string | null;
+  branch?: string | null;
+}
+
 export function usePromotionHistory(projectId: string) {
   return useQuery({
     queryKey: ["promotions", "history", projectId],
     queryFn: () =>
-      apiFetch<Record<string, unknown>[]>(`/projects/${projectId}/promotions/history`),
+      apiFetch<PromotionHistoryItem[]>(`/projects/${projectId}/promotions/history`),
     enabled: !!projectId,
   });
 }

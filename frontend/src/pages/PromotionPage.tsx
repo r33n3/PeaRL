@@ -286,6 +286,7 @@ export function PromotionPage() {
               <tr className="text-xs font-heading uppercase tracking-wider text-bone-muted border-b border-slate-border">
                 <th className="text-left py-2 px-3">From</th>
                 <th className="text-left py-2 px-3">To</th>
+                <th className="text-left py-2 px-3">Version</th>
                 <th className="text-left py-2 px-3">Promoted By</th>
                 <th className="text-left py-2 px-3">Date</th>
               </tr>
@@ -295,6 +296,9 @@ export function PromotionPage() {
                 <tr key={h.history_id} className="border-b border-slate-border/50 hover:bg-wet-stone/50">
                   <td className="py-2 px-3"><EnvBadge env={h.source_environment} /></td>
                   <td className="py-2 px-3"><EnvBadge env={h.target_environment} /></td>
+                  <td className="py-2 px-3 font-mono text-xs text-bone-muted">
+                    {h.version_tag ?? (h.commit_sha ? h.commit_sha.slice(0, 7) : "—")}
+                  </td>
                   <td className="py-2 px-3 font-mono text-xs text-bone-muted">{h.promoted_by}</td>
                   <td className="py-2 px-3"><MonoText className="text-xs">{formatTimestamp(h.promoted_at)}</MonoText></td>
                 </tr>

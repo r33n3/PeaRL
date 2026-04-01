@@ -12,6 +12,7 @@ from pearl.api.routes import (
     audit,
     auth,
     business_units,
+    ci_snippet,
     compile,
     compliance,
     context,
@@ -61,6 +62,7 @@ api_router.include_router(fairness.router)
 api_router.include_router(context.router)
 api_router.include_router(scan_targets.router)
 api_router.include_router(scanning.router)
+api_router.include_router(ci_snippet.router)
 api_router.include_router(guardrails.router)
 api_router.include_router(compliance.router)
 api_router.include_router(audit.router)

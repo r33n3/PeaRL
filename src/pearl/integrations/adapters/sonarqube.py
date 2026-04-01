@@ -185,6 +185,40 @@ class SonarQubeAdapter(SourceAdapter):
             return {"status": "UNKNOWN", "conditions": []}
 
     # ------------------------------------------------------------------
+    # Metrics
+    # ------------------------------------------------------------------
+
+    async def get_metrics(
+        self, endpoint: IntegrationEndpoint, project_key: str
+    ) -> dict:
+        """Fetch key code-quality metrics for a project.
+
+        Returns a dict of metric key → value for coverage, bugs,
+        vulnerabilities, code_smells, security_hotspots, ncloc.
+        """
+        base = endpoint.base_url.rstrip("/")
+        url = f"{base}/api/measures/component"
+        headers = self._build_auth_headers(endpoint)
+        metric_keys = "coverage,bugs,vulnerabilities,code_smells,security_hotspots,ncloc"
+        params = {"component": project_key, "metricKeys": metric_keys}
+
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, headers=headers, params=params, timeout=15.0)
+                resp.raise_for_status()
+            data = resp.json()
+            measures = data.get("component", {}).get("measures", [])
+            return {m["metric"]: m.get("value") for m in measures}
+        except httpx.HTTPError as exc:
+            logger.error(
+                "Error fetching metrics for %s/%s: %s",
+                endpoint.endpoint_id,
+                project_key,
+                exc,
+            )
+            return {}
+
+    # ------------------------------------------------------------------
     # Provision project
     # ------------------------------------------------------------------
 

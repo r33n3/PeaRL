@@ -17,6 +17,7 @@ services:
       PEARL_HOST: "0.0.0.0"
       PEARL_PORT: "8080"
       PEARL_PUBLIC_API_URL: "http://localhost:8080/api/v1"
+      PEARL_SONAR_URL: "http://localhost:9090"
       PEARL_LOG_LEVEL: info
       PEARL_LOCAL_REVIEWER_MODE: "1"
     depends_on:

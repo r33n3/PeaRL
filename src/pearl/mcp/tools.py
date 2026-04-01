@@ -1,6 +1,6 @@
 """MCP tool definitions mapping to PeaRL API operations.
 
-48 tools total (43 existing + 5 new: fairness attestation signing, SonarQube integration, PDF export).
+49 tools total (48 existing + 1 new: MASS scan trigger).
 """
 
 TOOL_DEFINITIONS = [
@@ -730,6 +730,54 @@ TOOL_DEFINITIONS = [
                 "task_packet_id": {"type": "string", "description": "Task packet ID for Layer 3 extensions (optional)"},
             },
             "required": ["profile_id", "action", "agent_id"],
+        },
+    },
+    # ─── MASS 2.0 AI Security Scan ───────────────────
+    {
+        "name": "pearl_trigger_mass_scan",
+        "description": (
+            "Trigger a MASS 2.0 Claude Agent SDK security scan on an AI application or agent. "
+            "Spawns 7 specialized subagents (prompt_injection, rag_vulnerability, mcp_vulnerability, "
+            "secret_leak, infra_misconfiguration, model_file_risk, bias_toxicity) to scan the "
+            "target codebase, then pushes findings to PeaRL. "
+            "Gate rules evaluated: AI_SCAN_COMPLETED, AI_RISK_ACCEPTABLE (threshold 7.0), "
+            "NO_PROMPT_INJECTION, CRITICAL_FINDINGS_ZERO. "
+            "Blocks gate elevation if risk score >= 7.0. "
+            "Re-ingest validates fixes — previously-open findings absent from the new scan are "
+            "automatically resolved. "
+            "Requires MASS 2.0 SDK installed: cd /path/to/MASS-2.0/sdk && pip install -e ."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "string",
+                    "description": "PeaRL project ID to push findings to (e.g. proj_benderbox)",
+                },
+                "target_path": {
+                    "type": "string",
+                    "description": "Absolute path to the AI application/agent codebase to scan",
+                },
+                "pearl_api_url": {
+                    "type": "string",
+                    "description": "PeaRL API base URL (default: http://pearl-api:8080/api/v1)",
+                    "default": "http://pearl-api:8080/api/v1",
+                },
+                "pearl_api_token": {
+                    "type": "string",
+                    "description": "PeaRL bearer token (leave empty for local dev)",
+                    "default": "",
+                },
+                "commit_sha": {
+                    "type": "string",
+                    "description": "Git commit SHA to anchor this scan (optional)",
+                },
+                "branch": {
+                    "type": "string",
+                    "description": "Git branch name (optional, e.g. dev, main)",
+                },
+            },
+            "required": ["project_id", "target_path"],
         },
     },
     # ─── Governance Verification ─────────────────────
