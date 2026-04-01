@@ -5,6 +5,7 @@ from pearl.api.routes import (
     admin as admin_routes,
     agentcore,
     agent,
+    allowance_profiles,
     onboarding,
     approvals,
     org_baseline,
@@ -77,3 +78,4 @@ api_router.include_router(onboarding.router)
 api_router.include_router(org_baseline.router)
 api_router.include_router(admin_routes.router)
 api_router.include_router(agentcore.router)
+api_router.include_router(allowance_profiles.router)

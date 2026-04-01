@@ -94,6 +94,8 @@ class MCPServer:
             "ingestSecurityReview": self._ingest_security_review,
             "claimTaskPacket": self._claim_task_packet,
             "completeTaskPacket": self._complete_task_packet,
+            # Agent allowance profiles
+            "pearl_allowance_check": self._allowance_check,
             # Governance verification
             "confirmClaudeMd": self._confirm_claude_md,
             # Fairness attestation
@@ -390,6 +392,15 @@ class MCPServer:
             "finding_ids_resolved": args.get("finding_ids_resolved", []),
         }
         return await self._request("POST", f"/task-packets/{packet_id}/complete", body)
+
+    async def _allowance_check(self, args: dict) -> dict:
+        profile_id = args["profile_id"]
+        body = {
+            "action": args["action"],
+            "agent_id": args["agent_id"],
+            "task_packet_id": args.get("task_packet_id"),
+        }
+        return await self._request("POST", f"/allowance-profiles/{profile_id}/check", body)
 
     async def _confirm_claude_md(self, args: dict) -> dict:
         pid = args["project_id"]

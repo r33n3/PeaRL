@@ -27,3 +27,7 @@ class TaskPacketRow(Base, TimestampMixin):
     # Execution phase tracking
     execution_phase: Mapped[str] = mapped_column(String(50), nullable=False, default="planning")
     phase_history: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+
+    # Layer 3 allowance extensions — per-task grants
+    allowed_paths: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    pre_approved_commands: Mapped[list | None] = mapped_column(JSON, nullable=True)

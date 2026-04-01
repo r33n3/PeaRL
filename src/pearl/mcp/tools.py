@@ -713,6 +713,25 @@ TOOL_DEFINITIONS = [
             "required": ["packet_id", "status"],
         },
     },
+    # ─── Agent Allowance Profiles ─────────────────────
+    {
+        "name": "pearl_allowance_check",
+        "description": (
+            "Check whether an agent action is permitted under its allowance profile. "
+            "Evaluates all three enforcement layers: baseline rules, environment tier overrides, "
+            "and per-task extensions from the task packet. Returns allowed/denied with reason."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "profile_id": {"type": "string", "description": "Allowance profile ID (alp_...)"},
+                "action": {"type": "string", "description": "The action/command string to evaluate"},
+                "agent_id": {"type": "string", "description": "Unique identifier for the agent instance"},
+                "task_packet_id": {"type": "string", "description": "Task packet ID for Layer 3 extensions (optional)"},
+            },
+            "required": ["profile_id", "action", "agent_id"],
+        },
+    },
     # ─── Governance Verification ─────────────────────
     {
         "name": "confirmClaudeMd",
