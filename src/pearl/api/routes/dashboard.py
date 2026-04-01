@@ -20,6 +20,7 @@ from pearl.errors.exceptions import NotFoundError
 from pearl.repositories.approval_comment_repo import ApprovalCommentRepository
 from pearl.repositories.approval_repo import ApprovalRequestRepository
 from pearl.repositories.notification_repo import NotificationRepository
+from pearl.repositories.workload_repo import WorkloadRepository
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
@@ -755,6 +756,11 @@ async def dashboard_metrics(db: AsyncSession = Depends(get_db)) -> dict:
             if status == "failed":
                 blocked_projects += 1
 
+    # --- Active workloads ---
+    workload_repo = WorkloadRepository(db)
+    active_workload_count = await workload_repo.count_active()
+    await db.commit()  # persist any stale→inactive transitions from count_active
+
     # --- Total PeaRL cost ---
     total_pearl_cost_usd = round(
         (await db.execute(select(func.sum(ClientCostEntryRow.cost_usd)))).scalar() or 0.0,
@@ -794,6 +800,7 @@ async def dashboard_metrics(db: AsyncSession = Depends(get_db)) -> dict:
         "open_critical": open_sev.get("critical", 0),
         "open_high": open_sev.get("high", 0),
         "total_pearl_cost_usd": total_pearl_cost_usd,
+        "active_workload_count": active_workload_count,
     }
 
 

@@ -40,6 +40,7 @@ from pearl.api.routes import (
     stream,
     task_packets,
     timeline,
+    workloads,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -81,3 +82,4 @@ api_router.include_router(org_baseline.router)
 api_router.include_router(admin_routes.router)
 api_router.include_router(agentcore.router)
 api_router.include_router(allowance_profiles.router)
+api_router.include_router(workloads.router)
