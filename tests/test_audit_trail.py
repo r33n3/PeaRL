@@ -160,3 +160,49 @@ async def test_promotion_requested_writes_audit_event(reviewer_client):
     events = r.json()
     action_types = [e["action_type"] for e in events]
     assert "promotion.requested" in action_types, f"Expected promotion.requested in {action_types}"
+
+
+@pytest.mark.asyncio
+async def test_audit_events_requires_auth(app):
+    """GET /audit/events returns 401 when called without authentication."""
+    from httpx import ASGITransport, AsyncClient
+    from pearl.config import settings
+
+    original_local = settings.local_mode
+    original_reviewer = settings.local_reviewer_mode
+    settings.local_mode = False
+    settings.local_reviewer_mode = False
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            r = await ac.get("/api/v1/audit/events?resource_id=proj_test")
+            assert r.status_code == 401, f"Expected 401, got {r.status_code}: {r.text}"
+    finally:
+        settings.local_mode = original_local
+        settings.local_reviewer_mode = original_reviewer
+
+
+@pytest.mark.asyncio
+async def test_audit_events_returns_hmac_valid(reviewer_client):
+    """GET /audit/events includes hmac_valid per event."""
+    # Create an exception to generate an audit event via the exception.created write
+    exc_id = "exc_hmac_test002"
+    r = await reviewer_client.post("/api/v1/exceptions", json={
+        "exception_id": exc_id,
+        "project_id": "proj_hmac_verify",
+        "scope": {"controls": ["test"], "environment": "sandbox"},
+        "status": "pending",
+        "requested_by": "usr_tester",
+        "rationale": "hmac verify test",
+        "schema_version": "1.0",
+        "trace_id": "trace_hmac_test",
+    })
+    assert r.status_code == 201
+
+    r = await reviewer_client.get(f"/api/v1/audit/events?resource_id={exc_id}")
+    assert r.status_code == 200
+    events = r.json()
+    assert len(events) > 0, "Expected at least one audit event"
+    for evt in events:
+        assert "hmac_valid" in evt, f"hmac_valid missing from event: {evt}"
+        assert evt["hmac_valid"] is True, f"Expected hmac_valid=True, got False for event: {evt}"
