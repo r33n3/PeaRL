@@ -46,3 +46,40 @@ async def test_append_stores_hmac_signature(db_session):
         hashlib.sha256,
     ).hexdigest()
     assert evt.signature == expected_sig, f"HMAC signature mismatch"
+
+
+@pytest.mark.asyncio
+async def test_decide_approval_writes_audit_event(reviewer_client):
+    """POST /approvals/{id}/decide writes an audit_events row with action_type approval.decided."""
+    appr_id = "appr_aud_test001"
+    r = await reviewer_client.post("/api/v1/approvals/requests", json={
+        "schema_version": "1.0",
+        "approval_request_id": appr_id,
+        "project_id": "proj_aud_appr01",
+        "environment": "dev",
+        "request_type": "deployment_gate",
+        "trigger": "manual",
+        "requested_by": "usr_tester",
+        "status": "pending",
+        "created_at": "2026-04-01T00:00:00Z",
+        "trace_id": "trace-audit-test-001",
+    })
+    assert r.status_code == 201
+
+    r = await reviewer_client.post(f"/api/v1/approvals/{appr_id}/decide", json={
+        "schema_version": "1.0",
+        "approval_request_id": appr_id,
+        "decision": "approve",
+        "decided_by": "usr_reviewer",
+        "decider_role": "reviewer",
+        "reason": "looks good",
+        "decided_at": "2026-04-01T00:01:00Z",
+        "trace_id": "trace-audit-test-002",
+    })
+    assert r.status_code == 200
+
+    r = await reviewer_client.get(f"/api/v1/audit/events?resource_id={appr_id}")
+    assert r.status_code == 200
+    events = r.json()
+    action_types = [e["action_type"] for e in events]
+    assert "approval.decided" in action_types, f"Expected approval.decided in {action_types}"
