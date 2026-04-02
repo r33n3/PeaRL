@@ -174,4 +174,27 @@ class AuditEventRepository(BaseRepository):
         return list(result.scalars().all())
 
     async def append(self, **kwargs) -> AuditEventRow:
+        import hashlib
+        import hmac as _hmac
+        from datetime import datetime, timezone
+
+        from pearl.config import settings
+
+        if "timestamp" not in kwargs:
+            kwargs["timestamp"] = datetime.now(timezone.utc)
+
+        ts = kwargs["timestamp"]
+        payload = (
+            f"{kwargs.get('event_id', '')}:"
+            f"{kwargs.get('resource_id', '')}:"
+            f"{kwargs.get('action_type', '')}:"
+            f"{kwargs.get('actor', '') or ''}:"
+            f"{ts.isoformat()}"
+        )
+        kwargs["signature"] = _hmac.new(
+            settings.audit_hmac_key.encode(),
+            payload.encode(),
+            hashlib.sha256,
+        ).hexdigest()
+
         return await self.create(**kwargs)
