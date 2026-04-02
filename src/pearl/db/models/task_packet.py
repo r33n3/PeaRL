@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, JSON, ForeignKey, String
+from sqlalchemy import DateTime, Integer, JSON, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pearl.db.base import Base, TimestampMixin
@@ -31,3 +31,7 @@ class TaskPacketRow(Base, TimestampMixin):
     # Layer 3 allowance extensions — per-task grants
     allowed_paths: Mapped[list | None] = mapped_column(JSON, nullable=True)
     pre_approved_commands: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
+    # Allowance profile snapshot — version recorded at claim time
+    allowance_profile_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    allowance_profile_version: Mapped[int | None] = mapped_column(Integer, nullable=True)

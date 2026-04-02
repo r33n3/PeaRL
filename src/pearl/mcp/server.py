@@ -40,10 +40,37 @@ class MCPServer:
         if handler is None:
             return {"error": f"Unknown tool: {tool_name}"}
         try:
-            return await handler(arguments)
+            result = await handler(arguments)
         except Exception as exc:
             logger.error("MCP tool %s failed: %s", tool_name, exc)
             return {"error": str(exc)}
+        # GAP-10: write a best-effort audit event for every MCP tool call
+        try:
+            from datetime import datetime, timezone
+            project_id = arguments.get("project_id") or arguments.get("packet_id") or arguments.get("profile_id")
+            if project_id:
+                await self._write_mcp_audit(tool_name, project_id, arguments)
+        except Exception:
+            pass  # Telemetry is best-effort
+        return result
+
+    async def _write_mcp_audit(self, tool_name: str, project_id: str, arguments: dict) -> None:
+        """Write a ClientAuditEventRow via the governance telemetry push endpoint (GAP-10)."""
+        from datetime import datetime, timezone
+        body = {
+            "events": [
+                {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "event_type": "mcp_tool_call",
+                    "action": "mcp_tool_call",
+                    "decision": "called",
+                    "tool_name": tool_name,
+                    "details": {"args_keys": list(arguments.keys())},
+                    "source": "mcp",
+                }
+            ]
+        }
+        await self._request("POST", f"/projects/{project_id}/audit-events", body)
 
     def _route(self, tool_name: str):
         routes = {

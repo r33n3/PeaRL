@@ -1,6 +1,7 @@
 """Rate limiting middleware using slowapi."""
 
 import logging
+import time
 
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
@@ -12,6 +13,34 @@ logger = logging.getLogger(__name__)
 
 # HTTP methods considered "writes"
 _WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+class RateLimitHeadersMiddleware(BaseHTTPMiddleware):
+    """Inject X-RateLimit-* headers on every response."""
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        if not settings.rate_limit_enabled:
+            return await call_next(request)
+
+        response = await call_next(request)
+
+        # Limit value depends on method
+        if request.method in _WRITE_METHODS:
+            limit = settings.rate_limit_writes_per_minute
+        else:
+            limit = settings.rate_limit_reads_per_minute
+
+        response.headers["X-RateLimit-Limit"] = str(limit)
+
+        # Copy remaining from slowapi if present
+        remaining = response.headers.get("RateLimit-Remaining")
+        if remaining is not None:
+            response.headers["X-RateLimit-Remaining"] = remaining
+
+        # Next minute boundary as unix timestamp
+        response.headers["X-RateLimit-Reset"] = str(int((time.time() // 60 + 1) * 60))
+
+        return response
 
 
 def setup_rate_limiter(app) -> None:
@@ -39,6 +68,7 @@ def setup_rate_limiter(app) -> None:
         )
         app.state.limiter = limiter
         app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+        app.add_middleware(RateLimitHeadersMiddleware)
         logger.info("Rate limiter configured (writes=%d/min, reads=%d/min)",
                     settings.rate_limit_writes_per_minute,
                     settings.rate_limit_reads_per_minute)

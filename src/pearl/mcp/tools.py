@@ -1,6 +1,6 @@
 """MCP tool definitions mapping to PeaRL API operations.
 
-49 tools total (48 existing + 1 new: MASS scan trigger).
+50 tools total.
 """
 
 TOOL_DEFINITIONS = [
@@ -19,8 +19,8 @@ TOOL_DEFINITIONS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "name": {"type": "string", "description": "Human-readable project name (e.g. 'Saga of the Norsemen')"},
-                "owner_team": {"type": "string", "description": "Team responsible for this project (e.g. 'APE_Exp_Team')"},
+                "name": {"type": "string", "maxLength": 512, "description": "Human-readable project name (e.g. 'Saga of the Norsemen')"},
+                "owner_team": {"type": "string", "maxLength": 512, "description": "Team responsible for this project (e.g. 'APE_Exp_Team')"},
                 "business_criticality": {
                     "type": "string",
                     "enum": ["low", "moderate", "high", "mission_critical"],
@@ -38,8 +38,8 @@ TOOL_DEFINITIONS = [
                     "default": True,
                     "description": "Whether this project uses AI/LLM capabilities",
                 },
-                "description": {"type": "string", "description": "Optional short description"},
-                "bu_id": {"type": "string", "description": "Optional business unit ID"},
+                "description": {"type": "string", "maxLength": 512, "description": "Optional short description"},
+                "bu_id": {"type": "string", "maxLength": 512, "description": "Optional business unit ID"},
             },
             "required": ["name", "owner_team"],
         },
@@ -50,11 +50,11 @@ TOOL_DEFINITIONS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "schema_version": {"type": "string", "pattern": r"^\d+\.\d+(\.\d+)?$", "default": "1.1"},
-                "project_id": {"type": "string", "pattern": "^proj_[A-Za-z0-9_-]+$", "description": "Unique project ID (prefix: proj_)"},
-                "name": {"type": "string", "description": "Human-readable project name"},
-                "description": {"type": "string"},
-                "owner_team": {"type": "string", "description": "Team that owns this project"},
+                "schema_version": {"type": "string", "minLength": 1, "pattern": r"^\d+\.\d+(\.\d+)?$", "default": "1.1"},
+                "project_id": {"type": "string", "minLength": 1, "pattern": "^proj_[A-Za-z0-9_-]+$", "description": "Unique project ID (prefix: proj_)"},
+                "name": {"type": "string", "maxLength": 512, "description": "Human-readable project name"},
+                "description": {"type": "string", "maxLength": 512},
+                "owner_team": {"type": "string", "maxLength": 512, "description": "Team that owns this project"},
                 "business_criticality": {"type": "string", "enum": ["low", "moderate", "high", "mission_critical"]},
                 "external_exposure": {"type": "string", "enum": ["internal_only", "partner", "customer_facing", "public"]},
                 "ai_enabled": {"type": "boolean", "description": "Whether this project uses AI/LLM capabilities"},
@@ -78,9 +78,9 @@ TOOL_DEFINITIONS = [
             "type": "object",
             "properties": {
                 "project_id": {"type": "string"},
-                "name": {"type": "string"},
-                "description": {"type": "string"},
-                "owner_team": {"type": "string"},
+                "name": {"type": "string", "maxLength": 512},
+                "description": {"type": "string", "maxLength": 512},
+                "owner_team": {"type": "string", "maxLength": 512},
                 "business_criticality": {"type": "string", "enum": ["low", "moderate", "high", "mission_critical"]},
                 "external_exposure": {"type": "string", "enum": ["internal_only", "partner", "customer_facing", "public"]},
                 "ai_enabled": {"type": "boolean"},
@@ -102,7 +102,7 @@ TOOL_DEFINITIONS = [
                     "description": "Organization baseline with schema_version, baseline_id, defaults (coding, iam, network, logging, responsible_ai, testing), and optional environment_defaults for per-env overrides.",
                     "properties": {
                         "schema_version": {"type": "string", "default": "1.1"},
-                        "baseline_id": {"type": "string", "pattern": "^orgb_[A-Za-z0-9_-]+$"},
+                        "baseline_id": {"type": "string", "minLength": 1, "pattern": "^orgb_[A-Za-z0-9_-]+$"},
                         "defaults": {"type": "object"},
                         "environment_defaults": {"type": "object"},
                     },
@@ -125,8 +125,8 @@ TOOL_DEFINITIONS = [
                     "properties": {
                         "schema_version": {"type": "string", "default": "1.1"},
                         "application": {"type": "object"},
-                        "components": {"type": "array"},
-                        "trust_boundaries": {"type": "array"},
+                        "components": {"type": "array", "maxItems": 100},
+                        "trust_boundaries": {"type": "array", "maxItems": 100},
                         "data": {"type": "object"},
                     },
                     "required": ["schema_version"],
@@ -146,13 +146,13 @@ TOOL_DEFINITIONS = [
                     "type": "object",
                     "properties": {
                         "schema_version": {"type": "string", "default": "1.1"},
-                        "profile_id": {"type": "string", "pattern": "^envp_[A-Za-z0-9_-]+$"},
+                        "profile_id": {"type": "string", "minLength": 1, "pattern": "^envp_[A-Za-z0-9_-]+$"},
                         "environment": {"type": "string", "enum": ["sandbox", "dev", "pilot", "preprod", "prod"]},
                         "delivery_stage": {"type": "string", "enum": ["bootstrap", "prototype", "pilot", "hardening", "preprod", "prod"]},
                         "risk_level": {"type": "string", "enum": ["low", "moderate", "high", "critical"]},
                         "autonomy_mode": {"type": "string", "enum": ["assistive", "supervised_autonomous", "delegated_autonomous", "read_only"]},
-                        "allowed_capabilities": {"type": "array", "items": {"type": "string"}},
-                        "blocked_capabilities": {"type": "array", "items": {"type": "string"}},
+                        "allowed_capabilities": {"type": "array", "maxItems": 100, "items": {"type": "string"}},
+                        "blocked_capabilities": {"type": "array", "maxItems": 100, "items": {"type": "string"}},
                         "approval_level": {"type": "string", "enum": ["minimal", "standard", "elevated", "high", "strict"]},
                     },
                     "required": ["schema_version", "profile_id", "environment"],
@@ -198,7 +198,7 @@ TOOL_DEFINITIONS = [
             "properties": {
                 "project_id": {"type": "string"},
                 "task_type": {"type": "string", "enum": ["feature", "fix", "remediation", "refactor", "config", "policy"]},
-                "task_summary": {"type": "string"},
+                "task_summary": {"type": "string", "maxLength": 512},
                 "environment": {"type": "string", "enum": ["sandbox", "dev", "pilot", "preprod", "prod"]},
             },
             "required": ["project_id", "task_type", "task_summary", "environment"],
@@ -212,7 +212,7 @@ TOOL_DEFINITIONS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "findings": {"type": "array", "description": "Array of finding objects with finding_id, project_id, source, environment, category, severity, title, and optional cvss_score, cwe_ids, verdict"},
+                "findings": {"type": "array", "maxItems": 100, "description": "Array of finding objects with finding_id, project_id, source, environment, category, severity, title, and optional cvss_score, cwe_ids, verdict"},
                 "source_batch": {
                     "type": "object",
                     "properties": {
@@ -234,7 +234,7 @@ TOOL_DEFINITIONS = [
             "type": "object",
             "properties": {
                 "project_id": {"type": "string"},
-                "finding_refs": {"type": "array", "items": {"type": "string"}},
+                "finding_refs": {"type": "array", "maxItems": 100, "items": {"type": "string"}},
                 "environment": {"type": "string", "enum": ["sandbox", "dev", "pilot", "preprod", "prod"]},
             },
             "required": ["project_id", "finding_refs", "environment"],
@@ -248,7 +248,7 @@ TOOL_DEFINITIONS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "approval_request_id": {"type": "string", "pattern": "^appr_[A-Za-z0-9_-]+$"},
+                "approval_request_id": {"type": "string", "minLength": 1, "pattern": "^appr_[A-Za-z0-9_-]+$"},
                 "project_id": {"type": "string"},
                 "request_type": {"type": "string", "enum": ["deployment_gate", "auth_flow_change", "network_policy_change", "exception", "remediation_execution", "promotion_gate"]},
                 "environment": {"type": "string", "enum": ["sandbox", "dev", "pilot", "preprod", "prod"]},
@@ -266,7 +266,7 @@ TOOL_DEFINITIONS = [
                 "approval_request_id": {"type": "string"},
                 "decision": {"type": "string", "enum": ["approve", "reject"]},
                 "decided_by": {"type": "string"},
-                "reason": {"type": "string"},
+                "reason": {"type": "string", "maxLength": 512},
             },
             "required": ["approval_request_id", "decision", "decided_by"],
         },
@@ -277,9 +277,9 @@ TOOL_DEFINITIONS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "exception_id": {"type": "string", "pattern": "^exc_[A-Za-z0-9_-]+$"},
+                "exception_id": {"type": "string", "minLength": 1, "pattern": "^exc_[A-Za-z0-9_-]+$"},
                 "project_id": {"type": "string"},
-                "rationale": {"type": "string"},
+                "rationale": {"type": "string", "maxLength": 512},
                 "scope": {"type": "object"},
                 "expires_at": {"type": "string", "format": "date-time"},
             },
@@ -441,7 +441,7 @@ TOOL_DEFINITIONS = [
             "properties": {
                 "project_id": {"type": "string"},
                 "environment": {"type": "string", "enum": ["sandbox", "dev", "pilot", "preprod", "prod"]},
-                "signal_type": {"type": "string", "description": "Signal type (e.g., fairness_drift, policy_violation, stereotype_leakage)"},
+                "signal_type": {"type": "string", "maxLength": 512, "description": "Signal type (e.g., fairness_drift, policy_violation, stereotype_leakage)"},
                 "value": {"type": "number", "description": "Signal value (numeric)"},
                 "threshold": {"type": "number", "description": "Optional threshold for comparison"},
                 "metadata": {"type": "object"},
@@ -458,7 +458,7 @@ TOOL_DEFINITIONS = [
                 "project_id": {"type": "string"},
                 "commit_hash": {"type": "string"},
                 "agent_id": {"type": "string"},
-                "tool_calls": {"type": "array", "items": {"type": "string"}},
+                "tool_calls": {"type": "array", "maxItems": 100, "items": {"type": "string"}},
                 "artifact_hashes": {"type": "object"},
             },
             "required": ["project_id"],
@@ -492,9 +492,9 @@ TOOL_DEFINITIONS = [
                 "project_id": {"type": "string"},
                 "repo_url": {"type": "string", "description": "Repository URL to scan"},
                 "tool_type": {"type": "string", "enum": ["pearl_ai", "mass", "sonarqube", "sast", "dast", "sca", "container_scan", "iac_scan", "custom"], "description": "Scan provider. 'pearl_ai' uses PeaRL's built-in analyzers. Others require the adapter to be configured."},
-                "branch": {"type": "string", "default": "main", "description": "Branch to scan"},
+                "branch": {"type": "string", "maxLength": 512, "default": "main", "description": "Branch to scan"},
                 "scan_frequency": {"type": "string", "enum": ["on_push", "hourly", "daily", "weekly", "on_demand"], "default": "daily"},
-                "environment_scope": {"type": "array", "items": {"type": "string"}, "description": "Environments this target applies to"},
+                "environment_scope": {"type": "array", "maxItems": 100, "items": {"type": "string"}, "description": "Environments this target applies to"},
                 "labels": {"type": "object", "description": "Key-value labels for filtering"},
             },
             "required": ["project_id", "repo_url", "tool_type"],
@@ -522,7 +522,7 @@ TOOL_DEFINITIONS = [
                 "branch": {"type": "string"},
                 "scan_frequency": {"type": "string", "enum": ["on_push", "hourly", "daily", "weekly", "on_demand"]},
                 "status": {"type": "string", "enum": ["active", "paused", "disabled"]},
-                "environment_scope": {"type": "array", "items": {"type": "string"}},
+                "environment_scope": {"type": "array", "maxItems": 100, "items": {"type": "string"}},
                 "labels": {"type": "object"},
             },
             "required": ["project_id", "scan_target_id"],
@@ -538,7 +538,7 @@ TOOL_DEFINITIONS = [
             "properties": {
                 "project_id": {"type": "string"},
                 "target_path": {"type": "string", "description": "Path to directory or file to scan"},
-                "analyzers": {"type": "array", "items": {"type": "string", "enum": ["context", "mcp", "workflow", "attack_surface", "rag", "model_file"]}, "description": "Optional: specific analyzers to run (default: all)"},
+                "analyzers": {"type": "array", "maxItems": 100, "items": {"type": "string", "enum": ["context", "mcp", "workflow", "attack_surface", "rag", "model_file"]}, "description": "Optional: specific analyzers to run (default: all)"},
                 "environment": {"type": "string", "enum": ["sandbox", "dev", "pilot", "preprod", "prod"], "default": "dev"},
             },
             "required": ["project_id", "target_path"],
@@ -568,8 +568,8 @@ TOOL_DEFINITIONS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "category": {"type": "string", "description": "Filter by guardrail category"},
-                "severity": {"type": "string", "description": "Filter by severity"},
+                "category": {"type": "string", "maxLength": 512, "description": "Filter by guardrail category"},
+                "severity": {"type": "string", "maxLength": 512, "description": "Filter by severity"},
             },
         },
     },
@@ -617,7 +617,7 @@ TOOL_DEFINITIONS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "category": {"type": "string", "description": "Filter by policy category"},
+                "category": {"type": "string", "maxLength": 512, "description": "Filter by policy category"},
             },
         },
     },
@@ -637,7 +637,7 @@ TOOL_DEFINITIONS = [
             "type": "object",
             "properties": {
                 "project_id": {"type": "string"},
-                "markdown": {"type": "string", "description": "Raw markdown output from /security-review"},
+                "markdown": {"type": "string", "maxLength": 512, "description": "Raw markdown output from /security-review"},
                 "environment": {"type": "string", "enum": ["sandbox", "dev", "pilot", "preprod", "prod"], "default": "dev"},
             },
             "required": ["project_id", "markdown"],
@@ -703,9 +703,10 @@ TOOL_DEFINITIONS = [
             "properties": {
                 "packet_id": {"type": "string", "description": "Task packet ID to complete"},
                 "status": {"type": "string", "enum": ["success", "failed", "partial"], "description": "Outcome status"},
-                "changes_summary": {"type": "string", "description": "Human-readable summary of changes made"},
+                "changes_summary": {"type": "string", "maxLength": 512, "description": "Human-readable summary of changes made"},
                 "finding_ids_resolved": {
                     "type": "array",
+                    "maxItems": 100,
                     "items": {"type": "string"},
                     "description": "List of finding IDs that were resolved",
                 },
@@ -725,7 +726,7 @@ TOOL_DEFINITIONS = [
             "type": "object",
             "properties": {
                 "profile_id": {"type": "string", "description": "Allowance profile ID (alp_...)"},
-                "action": {"type": "string", "description": "The action/command string to evaluate"},
+                "action": {"type": "string", "maxLength": 512, "description": "The action/command string to evaluate"},
                 "agent_id": {"type": "string", "description": "Unique identifier for the agent instance"},
                 "task_packet_id": {"type": "string", "description": "Task packet ID for Layer 3 extensions (optional)"},
             },
@@ -774,6 +775,7 @@ TOOL_DEFINITIONS = [
                 },
                 "branch": {
                     "type": "string",
+                    "maxLength": 512,
                     "description": "Git branch name (optional, e.g. dev, main)",
                 },
             },

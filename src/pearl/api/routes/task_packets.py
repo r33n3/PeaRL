@@ -202,6 +202,14 @@ async def claim_task_packet(
     packet.completed_at = None
     packet.outcome = None
 
+    # Snapshot allowance profile version at claim time
+    if packet.allowance_profile_id:
+        from pearl.repositories.allowance_profile_repo import AllowanceProfileRepository
+        ap_repo = AllowanceProfileRepository(db)
+        ap_row = await ap_repo.get(packet.allowance_profile_id)
+        if ap_row:
+            packet.allowance_profile_version = ap_row.profile_version
+
     # Update status in packet_data
     data = dict(packet.packet_data)
     data["status"] = "in_progress"
