@@ -122,3 +122,4 @@ class AuditEventRow(Base):
     actor: Mapped[str | None] = mapped_column(String(200), nullable=True)
     details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    signature: Mapped[str | None] = mapped_column(String(64), nullable=True)

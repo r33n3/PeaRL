@@ -18,6 +18,7 @@ from pearl.repositories.promotion_repo import (
     PromotionGateRepository,
     PromotionHistoryRepository,
 )
+from pearl.repositories.fairness_repo import AuditEventRepository
 from pearl.services.id_generator import generate_id
 from pearl.services.promotion.gate_evaluator import evaluate_promotion
 from pearl.api.routes.stream import publish_event
@@ -266,6 +267,19 @@ async def request_promotion(
             )
 
         status = PromotionRequestStatus.APPROVED
+        await AuditEventRepository(db).append(
+            event_id=generate_id("evt_"),
+            resource_id=approval_id,
+            action_type="promotion.requested",
+            actor=getattr(getattr(request, "state", None), "user", {}).get("sub") if request else None,
+            details={
+                "project_id": project_id,
+                "source_environment": evaluation.source_environment,
+                "target_environment": evaluation.target_environment,
+                "auto_pass": True,
+                "trace_id": trace_id,
+            },
+        )
         await db.commit()
 
         _schedule_anomaly_checks(background_tasks, request, project_id, datetime.now(timezone.utc), trace_id)
@@ -352,6 +366,19 @@ async def request_promotion(
             )
 
         status = PromotionRequestStatus.APPROVED
+        await AuditEventRepository(db).append(
+            event_id=generate_id("evt_"),
+            resource_id=approval_id,
+            action_type="promotion.requested",
+            actor=getattr(getattr(request, "state", None), "user", {}).get("sub") if request else None,
+            details={
+                "project_id": project_id,
+                "source_environment": evaluation.source_environment,
+                "target_environment": evaluation.target_environment,
+                "auto_approved": True,
+                "trace_id": trace_id,
+            },
+        )
         await db.commit()
 
         _schedule_anomaly_checks(background_tasks, request, project_id, datetime.now(timezone.utc), trace_id)
@@ -386,6 +413,19 @@ async def request_promotion(
     )
 
     status = PromotionRequestStatus.PENDING_APPROVAL if evaluation_passed else PromotionRequestStatus.EVALUATION_FAILED
+    await AuditEventRepository(db).append(
+        event_id=generate_id("evt_"),
+        resource_id=approval_id,
+        action_type="promotion.requested",
+        actor=getattr(getattr(request, "state", None), "user", {}).get("sub") if request else None,
+        details={
+            "project_id": project_id,
+            "source_environment": evaluation.source_environment,
+            "target_environment": evaluation.target_environment,
+            "auto_approved": False,
+            "trace_id": trace_id,
+        },
+    )
     await db.commit()
 
     _schedule_anomaly_checks(background_tasks, request, project_id, datetime.now(timezone.utc), trace_id)

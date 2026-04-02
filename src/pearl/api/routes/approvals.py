@@ -12,6 +12,7 @@ from pearl.models.approval import ApprovalCommentCreate, ApprovalDecision, Appro
 from pearl.repositories.approval_comment_repo import ApprovalCommentRepository
 from pearl.repositories.approval_repo import ApprovalDecisionRepository, ApprovalRequestRepository
 from pearl.repositories.exception_repo import ExceptionRepository
+from pearl.repositories.fairness_repo import AuditEventRepository
 from pearl.services.id_generator import generate_id
 from pearl.api.routes.stream import publish_event
 
@@ -185,6 +186,18 @@ async def decide_approval(
                         if drift_count == 0:
                             gate.auto_pass = True
 
+    await AuditEventRepository(db).append(
+        event_id=generate_id("evt_"),
+        resource_id=approval_request_id,
+        action_type="approval.decided",
+        actor=_reviewer.get("sub"),
+        details={
+            "decision": decision.decision,
+            "project_id": approval.project_id,
+            "environment": approval.environment,
+            "request_type": approval.request_type,
+        },
+    )
     await db.commit()
 
     # Publish real-time event so dashboard and developer console update

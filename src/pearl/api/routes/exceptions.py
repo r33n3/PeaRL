@@ -11,6 +11,8 @@ from pearl.dependencies import get_current_user, get_db, get_trace_id, RequireRe
 from pearl.errors.exceptions import NotFoundError
 from pearl.models.exception import ExceptionRecord
 from pearl.repositories.exception_repo import ExceptionRepository
+from pearl.repositories.fairness_repo import AuditEventRepository
+from pearl.services.id_generator import generate_id
 
 router = APIRouter(tags=["Exceptions"])
 
@@ -89,6 +91,17 @@ async def create_exception(
         risk_rating=exception.risk_rating,
         remediation_plan=exception.remediation_plan,
         finding_ids=exception.finding_ids,
+    )
+    await AuditEventRepository(db).append(
+        event_id=generate_id("evt_"),
+        resource_id=exception.exception_id,
+        action_type="exception.created",
+        actor=_current_user.get("sub"),
+        details={
+            "project_id": exception.project_id,
+            "scope": scope_dict,
+            "rationale": exception.rationale,
+        },
     )
     await db.commit()
 

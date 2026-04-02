@@ -1,10 +1,13 @@
 """Fairness governance repositories."""
 
-from datetime import datetime
+import hashlib
+import hmac as _hmac
+from datetime import datetime, timezone
 
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pearl.config import settings
 from pearl.db.models.fairness import (
     AuditEventRow,
     ContextContractRow,
@@ -174,4 +177,24 @@ class AuditEventRepository(BaseRepository):
         return list(result.scalars().all())
 
     async def append(self, **kwargs) -> AuditEventRow:
+        if "timestamp" not in kwargs:
+            kwargs["timestamp"] = datetime.now(timezone.utc)
+
+        ts = kwargs["timestamp"]
+        # Canonical form: naive UTC string (tz stripped) — _verify_signature() must match this
+        if ts.tzinfo is not None:
+            ts = ts.replace(tzinfo=None)
+        payload = (
+            f"{kwargs.get('event_id', '')}:"
+            f"{kwargs.get('resource_id', '')}:"
+            f"{kwargs.get('action_type', '')}:"
+            f"{kwargs.get('actor', '') or ''}:"
+            f"{ts.isoformat()}"
+        )
+        kwargs["signature"] = _hmac.new(
+            settings.audit_hmac_key.encode(),
+            payload.encode(),
+            hashlib.sha256,
+        ).hexdigest()
+
         return await self.create(**kwargs)
