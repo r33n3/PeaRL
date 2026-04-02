@@ -274,8 +274,6 @@ class GateRuleType(StrEnum):
     FRAMEWORK_CONTROL_REQUIRED = "framework_control_required"
     # Governance compliance
     CLAUDE_MD_GOVERNANCE_PRESENT = "claude_md_governance_present"
-    # Snyk SCA dependency scan
-    SNYK_OPEN_HIGH_CRITICAL = "snyk_open_high_critical"
 
 
 class GateEvaluationStatus(StrEnum):
