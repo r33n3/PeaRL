@@ -1,10 +1,13 @@
 """Fairness governance repositories."""
 
-from datetime import datetime
+import hashlib
+import hmac as _hmac
+from datetime import datetime, timezone
 
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pearl.config import settings
 from pearl.db.models.fairness import (
     AuditEventRow,
     ContextContractRow,
@@ -174,16 +177,13 @@ class AuditEventRepository(BaseRepository):
         return list(result.scalars().all())
 
     async def append(self, **kwargs) -> AuditEventRow:
-        import hashlib
-        import hmac as _hmac
-        from datetime import datetime, timezone
-
-        from pearl.config import settings
-
         if "timestamp" not in kwargs:
             kwargs["timestamp"] = datetime.now(timezone.utc)
 
         ts = kwargs["timestamp"]
+        # Normalize to naive UTC so the isoformat() matches what SQLite returns
+        if ts.tzinfo is not None:
+            ts = ts.replace(tzinfo=None)
         payload = (
             f"{kwargs.get('event_id', '')}:"
             f"{kwargs.get('resource_id', '')}:"
