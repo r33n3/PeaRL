@@ -1,6 +1,6 @@
 """AllowanceProfile table — per-agent-type baseline enforcement rules."""
 
-from sqlalchemy import JSON, Float, ForeignKey, String
+from sqlalchemy import JSON, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pearl.db.base import Base, TimestampMixin
@@ -27,3 +27,6 @@ class AllowanceProfileRow(Base, TimestampMixin):
     project_id: Mapped[str | None] = mapped_column(
         String(128), ForeignKey("projects.project_id"), nullable=True, index=True
     )
+
+    # Versioning — incremented on every update
+    profile_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")

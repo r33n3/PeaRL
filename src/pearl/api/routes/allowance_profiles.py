@@ -59,6 +59,7 @@ def _profile_to_dict(row) -> dict:
         "budget_cap_usd": row.budget_cap_usd,
         "env_tier_overrides": row.env_tier_overrides or {},
         "project_id": row.project_id,
+        "profile_version": row.profile_version,
     }
 
 
@@ -177,6 +178,7 @@ async def update_allowance_profile(
 
     updates = {k: v for k, v in body.model_dump(exclude_none=True).items()}
     row = await repo.update(row, **updates)
+    row.profile_version = (row.profile_version or 0) + 1
     await db.commit()
     return _profile_to_dict(row)
 
