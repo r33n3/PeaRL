@@ -181,7 +181,7 @@ class AuditEventRepository(BaseRepository):
             kwargs["timestamp"] = datetime.now(timezone.utc)
 
         ts = kwargs["timestamp"]
-        # Normalize to naive UTC so the isoformat() matches what SQLite returns
+        # Canonical form: naive UTC string (tz stripped) — _verify_signature() must match this
         if ts.tzinfo is not None:
             ts = ts.replace(tzinfo=None)
         payload = (
