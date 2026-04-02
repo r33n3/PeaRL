@@ -133,3 +133,30 @@ async def test_gate_evaluated_writes_audit_event(reviewer_client):
     events = r.json()
     action_types = [e["action_type"] for e in events]
     assert "gate.evaluated" in action_types, f"Expected gate.evaluated in {action_types}"
+
+
+@pytest.mark.asyncio
+async def test_promotion_requested_writes_audit_event(reviewer_client):
+    """POST /projects/{id}/promotions/request writes an audit_events row with action_type promotion.requested."""
+    pid = "proj_aud_prom01"
+    r = await reviewer_client.post("/api/v1/projects", json={
+        "project_id": pid,
+        "name": "Promotion Audit Test",
+        "owner_team": "platform",
+        "business_criticality": "low",
+        "external_exposure": "internal_only",
+        "ai_enabled": False,
+        "schema_version": "1.0",
+    })
+    assert r.status_code == 201
+
+    r = await reviewer_client.post(f"/api/v1/projects/{pid}/promotions/request")
+    assert r.status_code == 202
+    approval_id = r.json().get("approval_request_id")
+    assert approval_id
+
+    r = await reviewer_client.get(f"/api/v1/audit/events?resource_id={approval_id}")
+    assert r.status_code == 200
+    events = r.json()
+    action_types = [e["action_type"] for e in events]
+    assert "promotion.requested" in action_types, f"Expected promotion.requested in {action_types}"
