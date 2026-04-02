@@ -23,6 +23,7 @@ from pearl.repositories.compiled_package_repo import CompiledPackageRepository
 from pearl.repositories.environment_profile_repo import EnvironmentProfileRepository
 from pearl.repositories.exception_repo import ExceptionRepository
 from pearl.repositories.fairness_repo import (
+    AuditEventRepository,
     ContextReceiptRepository,
     EvidencePackageRepository,
     FairnessCaseRepository,
@@ -193,6 +194,21 @@ async def evaluate_promotion(
         blockers=blockers if blockers else None,
         trace_id=trace_id,
         evaluated_at=evaluation.evaluated_at,
+    )
+
+    await AuditEventRepository(session).append(
+        event_id=generate_id("evt_"),
+        resource_id=gate.gate_id,
+        action_type="gate.evaluated",
+        actor=None,
+        details={
+            "project_id": project_id,
+            "evaluation_id": evaluation.evaluation_id,
+            "source_environment": current_env,
+            "target_environment": target_environment,
+            "result": status.value,
+            "auto_pass": gate.auto_pass,
+        },
     )
 
     # Auto-pass eligibility check: gate has accumulated enough trust to skip human queue

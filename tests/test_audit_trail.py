@@ -106,3 +106,30 @@ async def test_create_exception_writes_audit_event(reviewer_client):
     events = r.json()
     action_types = [e["action_type"] for e in events]
     assert "exception.created" in action_types, f"Expected exception.created in {action_types}"
+
+
+@pytest.mark.asyncio
+async def test_gate_evaluated_writes_audit_event(reviewer_client):
+    """POST /projects/{id}/promotions/evaluate writes an audit_events row with action_type gate.evaluated."""
+    pid = "proj_aud_gate01"
+    r = await reviewer_client.post("/api/v1/projects", json={
+        "schema_version": "1.0",
+        "project_id": pid,
+        "name": "Gate Audit Test",
+        "owner_team": "audit-team",
+        "business_criticality": "low",
+        "external_exposure": "internal_only",
+        "ai_enabled": False,
+    })
+    assert r.status_code == 201
+
+    r = await reviewer_client.post(f"/api/v1/projects/{pid}/promotions/evaluate")
+    assert r.status_code == 200
+    gate_id = r.json().get("gate_id")
+    assert gate_id, "evaluation must return a gate_id"
+
+    r = await reviewer_client.get(f"/api/v1/audit/events?resource_id={gate_id}")
+    assert r.status_code == 200
+    events = r.json()
+    action_types = [e["action_type"] for e in events]
+    assert "gate.evaluated" in action_types, f"Expected gate.evaluated in {action_types}"
