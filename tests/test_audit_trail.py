@@ -86,10 +86,10 @@ async def test_decide_approval_writes_audit_event(reviewer_client):
 
 
 @pytest.mark.asyncio
-async def test_create_exception_writes_audit_event(client):
+async def test_create_exception_writes_audit_event(reviewer_client):
     """POST /exceptions writes an audit_events row with action_type exception.created."""
     exc_id = "exc_aud_test001"
-    r = await client.post("/api/v1/exceptions", json={
+    r = await reviewer_client.post("/api/v1/exceptions", json={
         "schema_version": "1.0",
         "exception_id": exc_id,
         "project_id": "proj_aud_exc01",
@@ -101,7 +101,7 @@ async def test_create_exception_writes_audit_event(client):
     })
     assert r.status_code == 201
 
-    r = await client.get(f"/api/v1/audit/events?resource_id={exc_id}")
+    r = await reviewer_client.get(f"/api/v1/audit/events?resource_id={exc_id}")
     assert r.status_code == 200
     events = r.json()
     action_types = [e["action_type"] for e in events]
