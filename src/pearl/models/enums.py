@@ -259,6 +259,8 @@ class GateRuleType(StrEnum):
     FAIRNESS_EXCEPTIONS_CONTROLLED = "fairness_exceptions_controlled"
     FAIRNESS_POLICY_DEPLOYED = "fairness_policy_deployed"
     CEDAR_POLICY_DEPLOYED = "cedar_policy_deployed"
+    # Snyk SCA rules
+    SNYK_OPEN_HIGH_CRITICAL = "snyk_open_high_critical"
     # Scanning integration rules
     COMPLIANCE_SCORE_THRESHOLD = "compliance_score_threshold"
     REQUIRED_ANALYZERS_COMPLETED = "required_analyzers_completed"
