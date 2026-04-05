@@ -43,6 +43,7 @@ async def emit_event(
     event_type: str,
     payload: dict,
     source_system: str = "pearl-api",
+    db=None,
 ) -> list[dict]:
     """Emit a webhook event to all matching subscribers.
 
@@ -56,14 +57,36 @@ async def emit_event(
     results = []
 
     for sub in subscribers:
-        result = await _deliver(envelope, sub)
+        result = await _deliver(envelope, sub, db=db)
         results.append(result)
 
     return results
 
 
-async def _deliver(envelope: WebhookEnvelope, sub: WebhookSubscription) -> dict:
+async def _deliver(envelope: WebhookEnvelope, sub: WebhookSubscription, db=None) -> dict:
     """Deliver a signed webhook to a single subscriber with retry."""
+    import hashlib as _hashlib
+    from datetime import timedelta
+    from pearl.db.models.idempotency import IdempotencyKeyRow
+
+    idem_key = _hashlib.sha256(
+        f"{envelope.event_id}:{sub.url}".encode("utf-8")
+    ).hexdigest()
+
+    # Idempotency check — skip if already delivered
+    if db is not None:
+        existing = await db.get(IdempotencyKeyRow, idem_key)
+        if existing is not None and (
+            existing.expires_at.replace(tzinfo=timezone.utc) if existing.expires_at.tzinfo is None
+            else existing.expires_at
+        ) > datetime.now(timezone.utc):
+            logger.debug(
+                "Webhook delivery skipped (idempotent): event_id=%s url=%s",
+                envelope.event_id,
+                sub.url,
+            )
+            return {"url": sub.url, "status": 200, "error": None, "idempotent": True}
+
     body_dict = envelope.model_dump(mode="json")
     body_bytes = json.dumps(body_dict, separators=(",", ":")).encode("utf-8")
     signature = _sign_payload(body_bytes, sub.secret)
@@ -83,6 +106,20 @@ async def _deliver(envelope: WebhookEnvelope, sub: WebhookSubscription) -> dict:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.post(sub.url, content=signed_body, headers=headers)
                 if resp.status_code < 300:
+                    if db is not None:
+                        now = datetime.now(timezone.utc)
+                        db.add(IdempotencyKeyRow(
+                            key_hash=idem_key,
+                            endpoint=sub.url,
+                            response_status=resp.status_code,
+                            response_body={},
+                            created_at=now,
+                            expires_at=now + timedelta(hours=24),
+                        ))
+                        try:
+                            await db.flush()
+                        except Exception as flush_exc:
+                            logger.debug("Idempotency key flush failed (non-fatal): %s", flush_exc)
                     return {"url": sub.url, "status": resp.status_code, "error": None}
                 if resp.status_code == 429 and attempt < max_retries - 1:
                     retry_after = resp.headers.get("Retry-After")

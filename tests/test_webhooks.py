@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import json
+from datetime import datetime, timezone
 
 import pytest
 
@@ -187,3 +188,77 @@ async def test_webhook_retry_after_malformed_uses_backoff():
     assert len(sleep_calls) >= 1
     # Fallback delay should be 2^0=1 + jitter, not some huge number
     assert sleep_calls[0] < 60
+
+
+@pytest.mark.asyncio
+async def test_webhook_idempotency_skips_duplicate(db_session):
+    """Pre-seeded idempotency key causes _deliver to skip HTTP delivery."""
+    from datetime import timedelta
+    import hashlib
+    from pearl.events.webhook_emitter import _deliver, build_envelope
+    from pearl.events.webhook_config import WebhookSubscription
+    from pearl.db.models.idempotency import IdempotencyKeyRow
+
+    sub = WebhookSubscription(url="http://idem.example.com/hook", secret="idem-secret")
+    envelope = build_envelope("test.idempotency", {"x": 1})
+
+    idem_key = hashlib.sha256(
+        f"{envelope.event_id}:{sub.url}".encode("utf-8")
+    ).hexdigest()
+
+    # Pre-seed: delivery already happened
+    now = datetime.now(timezone.utc)
+    db_session.add(IdempotencyKeyRow(
+        key_hash=idem_key,
+        endpoint=sub.url,
+        response_status=200,
+        response_body={},
+        created_at=now,
+        expires_at=now + timedelta(hours=24),
+    ))
+    await db_session.flush()
+
+    # _deliver must skip HTTP and return idempotent=True
+    result = await _deliver(envelope, sub, db=db_session)
+
+    assert result.get("idempotent") is True
+    assert result["status"] == 200
+    assert result["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_webhook_idempotency_stores_key_on_success(db_session):
+    """After a successful delivery with db session, idempotency key is stored."""
+    import hashlib
+    from unittest.mock import AsyncMock, patch
+    from pearl.events.webhook_emitter import _deliver, build_envelope
+    from pearl.events.webhook_config import WebhookSubscription
+    from pearl.db.models.idempotency import IdempotencyKeyRow
+
+    sub = WebhookSubscription(url="http://store-test.example.com/hook", secret="s")
+    envelope = build_envelope("test.store", {})
+
+    idem_key = hashlib.sha256(
+        f"{envelope.event_id}:{sub.url}".encode("utf-8")
+    ).hexdigest()
+
+    mock_resp = AsyncMock()
+    mock_resp.status_code = 200
+    mock_resp.headers = {}
+
+    with patch("httpx.AsyncClient") as mock_cls:
+        mock_instance = AsyncMock()
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_instance.post = AsyncMock(return_value=mock_resp)
+        mock_cls.return_value = mock_instance
+
+        result = await _deliver(envelope, sub, db=db_session)
+
+    assert result["status"] == 200
+    assert result.get("idempotent") is not True  # Was a real delivery
+
+    # Key must be stored in DB
+    stored = await db_session.get(IdempotencyKeyRow, idem_key)
+    assert stored is not None
+    assert stored.endpoint == sub.url
