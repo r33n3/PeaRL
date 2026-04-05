@@ -121,7 +121,9 @@ async def push_audit_events(
     rows = []
     for evt in body.events:
         event_id = generate_id("cae_")
-        timestamp_dt = datetime.fromisoformat(evt.timestamp)
+        # Strip timezone to naive UTC — SQLite drops tz on round-trip, so sign and
+        # verify must both use the same naive form or the digest will never match.
+        timestamp_dt = datetime.fromisoformat(evt.timestamp).replace(tzinfo=None)
         # Fields used for HMAC signature (canonical subset — no mutable DB fields)
         signable = {
             "event_id": event_id,
