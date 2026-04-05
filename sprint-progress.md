@@ -5,6 +5,7 @@ Agents: update your row when you raise your PR. Do not modify other rows.
 
 | Agent | Status | PR | Notes |
 |---|---|---|---|
+| auth-hardening | pr-raised | TBD | API key hashing upgraded to HMAC-SHA256 (auth.py:97, routes/auth.py:84, main.py:58-60). main.py:44 nosec added. integrations.py:215,341,427 stack trace exposure fixed. |
 | server-audit-trail | pr-raised | https://github.com/r33n3/PeaRL/pull/9 | Open question in decisions.md: auto_pass field semantic ambiguity in gate.evaluated events (should it be renamed auto_pass_eligible?). |
 | security-hardening | pr-raised | https://github.com/r33n3/PeaRL/pull/7 | All 4 items complete. Pre-existing test failures (153) are FileNotFoundError for PeaRL_spec/examples/ — not in scope. |
 | security-validation | pr-raised | https://github.com/r33n3/PeaRL/pull/8 | Rebase on main after server-audit-trail merges to activate 4 xfail audit trail tests. Pre-existing HMAC bug in governance_telemetry.py documented in decisions.md. |

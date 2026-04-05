@@ -70,6 +70,11 @@ class Settings(BaseSettings):
     rate_limit_writes_per_minute: int = 100
     rate_limit_reads_per_minute: int = 1000
 
+    # API key HMAC secret — used to derive the stored key_hash via HMAC-SHA256.
+    # Falls back to jwt_secret when empty so existing dev setups work without config changes.
+    # Set PEARL_API_KEY_HMAC_SECRET to a distinct secret in production.
+    api_key_hmac_secret: str = ""
+
     # Audit HMAC (for immutable audit event signatures)
     audit_hmac_key: str = "dev-audit-hmac-key-change-in-production"
 
