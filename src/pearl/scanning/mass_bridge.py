@@ -17,6 +17,7 @@ class MassClient:
     def __init__(self, base_url: str, api_key: str) -> None:
         self._base = base_url.rstrip("/")
         self._headers = {"Authorization": f"Bearer {api_key}"}
+        self._client = httpx.AsyncClient(timeout=30)
 
     async def create_scan(
         self,
@@ -25,18 +26,17 @@ class MassClient:
         project_id: str,
     ) -> str:
         """Submit a new scan and return the scan_id."""
-        async with httpx.AsyncClient(timeout=30) as client:
-            r = await client.post(
-                f"{self._base}/scans",
-                json={
-                    "target_url": target_url,
-                    "target_type": target_type,
-                    "pearl_project_id": project_id,
-                },
-                headers=self._headers,
-            )
-            r.raise_for_status()
-            return r.json()["scan_id"]
+        r = await self._client.post(
+            f"{self._base}/scans",
+            json={
+                "target_url": target_url,
+                "target_type": target_type,
+                "pearl_project_id": project_id,
+            },
+            headers=self._headers,
+        )
+        r.raise_for_status()
+        return r.json()["scan_id"]
 
     async def wait_for_completion(self, scan_id: str, timeout: int = 600) -> dict:
         """Poll until the scan finishes, returning the full report dict."""

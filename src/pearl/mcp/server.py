@@ -25,6 +25,7 @@ class MCPServer:
         self.base_url = base_url.rstrip("/")
         self.auth_token = auth_token
         self.api_key = api_key
+        self._http_client = httpx.AsyncClient(timeout=30.0)
         # Derive dashboard URL from API base
         # e.g. http://localhost:8081/api/v1 → http://localhost:5173
         import re
@@ -158,13 +159,13 @@ class MCPServer:
 
     async def _request(self, method: str, path: str, body: dict | None = None, params: dict | None = None) -> dict:
         url = f"{self.base_url}{path}"
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
             if method == "GET":
-                resp = await client.get(url, headers=self._headers(), params=params)
+                resp = await self._http_client.get(url, headers=self._headers(), params=params)
             elif method == "POST":
-                resp = await client.post(url, json=body, headers=self._headers())
+                resp = await self._http_client.post(url, json=body, headers=self._headers())
             elif method == "PUT":
-                resp = await client.put(url, json=body, headers=self._headers())
+                resp = await self._http_client.put(url, json=body, headers=self._headers())
             else:
                 return {"error": f"Unsupported method: {method}"}
             if not resp.content:
@@ -173,6 +174,8 @@ class MCPServer:
                 return resp.json()
             except Exception:
                 return {"error": f"HTTP {resp.status_code}: {resp.text[:300]}"}
+        except httpx.HTTPError as exc:
+            return {"error": f"HTTP error: {exc}"}
 
     # --- Original tool handlers ---
 
