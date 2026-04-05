@@ -1,9 +1,11 @@
 """Webhook event emission with HMAC-SHA256 signing."""
 
+import asyncio
 import hashlib
 import hmac
 import json
 import logging
+import random
 from datetime import datetime, timezone
 
 import httpx
@@ -82,11 +84,21 @@ async def _deliver(envelope: WebhookEnvelope, sub: WebhookSubscription) -> dict:
                 resp = await client.post(sub.url, content=signed_body, headers=headers)
                 if resp.status_code < 300:
                     return {"url": sub.url, "status": resp.status_code, "error": None}
+                if resp.status_code == 429 and attempt < max_retries - 1:
+                    retry_after = resp.headers.get("Retry-After")
+                    try:
+                        delay = float(retry_after) if retry_after else 2 ** attempt
+                    except (ValueError, TypeError):
+                        delay = 2 ** attempt
+                    await asyncio.sleep(delay + random.random())
+                    continue
                 if resp.status_code >= 500 and attempt < max_retries - 1:
+                    await asyncio.sleep(2 ** attempt + random.random())
                     continue
                 return {"url": sub.url, "status": resp.status_code, "error": f"HTTP {resp.status_code}"}
         except Exception as exc:
             if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt + random.random())
                 continue
             logger.warning("Webhook delivery failed to %s: %s", sub.url, exc)
             return {"url": sub.url, "status": None, "error": str(exc)}

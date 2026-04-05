@@ -40,7 +40,7 @@ class MassClient:
 
     async def wait_for_completion(self, scan_id: str, timeout: int = 600) -> dict:
         """Poll until the scan finishes, returning the full report dict."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
         async with httpx.AsyncClient(timeout=15) as client:
             while loop.time() < deadline:
