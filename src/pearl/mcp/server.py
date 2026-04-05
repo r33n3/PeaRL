@@ -46,10 +46,13 @@ class MCPServer:
             return {"error": str(exc)}
         # GAP-10: write a best-effort audit event for every MCP tool call
         try:
-            from datetime import datetime, timezone
-            project_id = arguments.get("project_id") or arguments.get("packet_id") or arguments.get("profile_id")
-            if project_id:
-                await self._write_mcp_audit(tool_name, project_id, arguments)
+            project_id = (
+                arguments.get("project_id")
+                or arguments.get("packet_id")
+                or arguments.get("profile_id")
+                or "_global"
+            )
+            await self._write_mcp_audit(tool_name, project_id, arguments)
         except Exception:
             pass  # Telemetry is best-effort
         return result
@@ -57,6 +60,13 @@ class MCPServer:
     async def _write_mcp_audit(self, tool_name: str, project_id: str, arguments: dict) -> None:
         """Write a ClientAuditEventRow via the governance telemetry push endpoint (GAP-10)."""
         from datetime import datetime, timezone
+        if project_id == "_global":
+            logger.info(
+                "MCP tool called (no project scope): tool=%s args_keys=%s",
+                tool_name,
+                list(arguments.keys()),
+            )
+            return
         body = {
             "events": [
                 {
