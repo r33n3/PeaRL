@@ -193,7 +193,7 @@ class MCPAnalyzer:
         try:
             config = json.loads(config_path.read_text())
         except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in {config_path}: {e}")
+            logger.error("Invalid JSON in %s: %s", config_path, e)
             return []
 
         results = []
