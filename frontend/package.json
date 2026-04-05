@@ -18,7 +18,8 @@
     "recharts": "^2.15.0"
   },
   "overrides": {
-    "picomatch": "^4.0.2"
+    "picomatch": "^4.0.2",
+    "lodash": "4.17.23"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",
