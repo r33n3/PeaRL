@@ -8,6 +8,8 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, Query, Request
+
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -199,9 +201,14 @@ async def ingest_security_review(
             accepted += 1
         except Exception as exc:
             logger.warning(
-                "Finding %d quarantined during ingest",
-                accepted + quarantined,
-                exc_info=exc,
+                "Finding quarantined during security review ingest",
+                extra={
+                    "finding_id": finding_data.get("external_id", "unknown"),
+                    "project_id": project_id,
+                    "batch_id": batch_id,
+                    "trace_id": trace_id,
+                    "error": str(exc),
+                },
             )
             quarantined += 1
 
