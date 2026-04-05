@@ -44,12 +44,12 @@ class SlackAdapter(SinkAdapter):
         """
         payload = {"text": "PeaRL integration test"}
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    endpoint.base_url,
-                    json=payload,
-                    timeout=10.0,
-                )
+            client = await self._get_client()
+            response = await client.post(
+                endpoint.base_url,
+                json=payload,
+                timeout=10.0,
+            )
             if response.status_code == 200:
                 logger.info("Slack connection test succeeded for %s", endpoint.endpoint_id)
                 return True
@@ -81,12 +81,12 @@ class SlackAdapter(SinkAdapter):
         blocks = self._build_event_blocks(event, emoji)
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    endpoint.base_url,
-                    json={"blocks": blocks},
-                    timeout=10.0,
-                )
+            client = await self._get_client()
+            response = await client.post(
+                endpoint.base_url,
+                json={"blocks": blocks},
+                timeout=10.0,
+            )
             if response.status_code == 200:
                 logger.info(
                     "Slack event delivered for %s (event_type=%s)",
@@ -137,12 +137,12 @@ class SlackAdapter(SinkAdapter):
             payload["channel"] = channel
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    endpoint.base_url,
-                    json=payload,
-                    timeout=10.0,
-                )
+            client = await self._get_client()
+            response = await client.post(
+                endpoint.base_url,
+                json=payload,
+                timeout=10.0,
+            )
             if response.status_code == 200:
                 logger.info(
                     "Slack notification delivered for %s (subject=%s)",
@@ -204,12 +204,12 @@ class SlackAdapter(SinkAdapter):
             payload["channel"] = channel
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    endpoint.base_url,
-                    json=payload,
-                    timeout=10.0,
-                )
+            client = await self._get_client()
+            response = await client.post(
+                endpoint.base_url,
+                json=payload,
+                timeout=10.0,
+            )
             if response.status_code == 200:
                 logger.info(
                     "Slack approval notification delivered for %s (approval=%s)",

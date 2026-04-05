@@ -52,8 +52,8 @@ class JiraAdapter(SinkAdapter):
         headers = endpoint.auth.get_headers()
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(url, headers=headers, timeout=10.0)
+            client = await self._get_client()
+            response = await client.get(url, headers=headers, timeout=10.0)
             if response.status_code == 200:
                 logger.info("Jira connection test succeeded for %s", endpoint.endpoint_id)
                 return True
@@ -157,13 +157,13 @@ class JiraAdapter(SinkAdapter):
         }
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    url,
-                    json=payload,
-                    headers=headers,
-                    timeout=15.0,
-                )
+            client = await self._get_client()
+            response = await client.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=15.0,
+            )
             if response.status_code == 201:
                 issue_key = response.json().get("key", "?")
                 logger.info(

@@ -40,6 +40,16 @@ from pearl.scanning.types import AttackCategory, ComponentType, ScanSeverity
 logger = logging.getLogger(__name__)
 
 
+def _validate_scan_path(path: Path | str, allowed_root: str = "/") -> Path:
+    """Prevent path traversal by resolving and checking prefix."""
+    resolved = Path(path).resolve()
+    allowed = Path(allowed_root).resolve()
+    if not str(resolved).startswith(str(allowed)):
+        from pearl.errors.exceptions import ValidationError
+        raise ValidationError(f"Path '{path}' is outside allowed scan root")
+    return resolved
+
+
 # ---------------------------------------------------------------------------
 # Analyzer registry — maps name → lazy-import callable
 # ---------------------------------------------------------------------------
@@ -190,7 +200,7 @@ class ScanningService:
         """
         from pearl.services.id_generator import generate_id
 
-        target_path = Path(target_path)
+        target_path = _validate_scan_path(target_path)
         scan_id = generate_id("scan_")
         started_at = datetime.now(timezone.utc).isoformat()
 

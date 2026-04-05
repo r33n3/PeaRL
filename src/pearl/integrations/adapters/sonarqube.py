@@ -51,8 +51,8 @@ class SonarQubeAdapter(SourceAdapter):
         url = f"{endpoint.base_url.rstrip('/')}/api/system/status"
         headers = self._build_auth_headers(endpoint)
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, headers=headers, timeout=15.0)
+            client = await self._get_client()
+            resp = await client.get(url, headers=headers, timeout=15.0)
             if resp.status_code == 200:
                 logger.info("SonarQube connection test succeeded for %s", endpoint.endpoint_id)
                 return True
@@ -97,9 +97,9 @@ class SonarQubeAdapter(SourceAdapter):
         all_findings: list[NormalizedFinding] = []
         while True:
             try:
-                async with httpx.AsyncClient() as client:
-                    resp = await client.get(url, headers=headers, params=params, timeout=30.0)
-                    resp.raise_for_status()
+                client = await self._get_client()
+                resp = await client.get(url, headers=headers, params=params, timeout=30.0)
+                resp.raise_for_status()
             except httpx.HTTPStatusError as exc:
                 logger.error(
                     "SonarQube API HTTP %s pulling findings for %s: %s",
@@ -166,9 +166,9 @@ class SonarQubeAdapter(SourceAdapter):
         params = {"projectKey": project_key}
 
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, headers=headers, params=params, timeout=15.0)
-                resp.raise_for_status()
+            client = await self._get_client()
+            resp = await client.get(url, headers=headers, params=params, timeout=15.0)
+            resp.raise_for_status()
             data = resp.json()
             project_status = data.get("projectStatus", {})
             return {
@@ -203,9 +203,9 @@ class SonarQubeAdapter(SourceAdapter):
         params = {"component": project_key, "metricKeys": metric_keys}
 
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, headers=headers, params=params, timeout=15.0)
-                resp.raise_for_status()
+            client = await self._get_client()
+            resp = await client.get(url, headers=headers, params=params, timeout=15.0)
+            resp.raise_for_status()
             data = resp.json()
             measures = data.get("component", {}).get("measures", [])
             return {m["metric"]: m.get("value") for m in measures}
@@ -236,9 +236,9 @@ class SonarQubeAdapter(SourceAdapter):
         data = {"project": project_key, "name": project_name}
 
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(url, headers=headers, data=data, timeout=15.0)
-                resp.raise_for_status()
+            client = await self._get_client()
+            resp = await client.post(url, headers=headers, data=data, timeout=15.0)
+            resp.raise_for_status()
             return resp.json()
         except httpx.HTTPStatusError as exc:
             # 400 = project already exists — not an error in our context
