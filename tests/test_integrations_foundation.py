@@ -30,6 +30,8 @@ from pearl.integrations.bridge import (
     normalized_to_finding,
 )
 from pearl.integrations.adapters import AVAILABLE_ADAPTERS, import_adapter
+from pearl.integrations.adapters.snyk import SnykAdapter
+from pearl.integrations.adapters.slack import SlackAdapter
 
 
 # ---------------------------------------------------------------------------
@@ -692,3 +694,83 @@ class TestAdapterRegistry:
     def test_import_adapter_raises_on_bad_path(self):
         with pytest.raises((ModuleNotFoundError, AttributeError)):
             import_adapter("pearl.integrations.adapters.nonexistent.FakeAdapter")
+
+
+# =========================================================================
+# 12. Connection pool lifecycle tests
+# =========================================================================
+
+
+class TestAdapterConnectionPool:
+    """Tests for shared httpx.AsyncClient pool management on adapters."""
+
+    @pytest.mark.asyncio
+    async def test_source_adapter_client_starts_none(self):
+        """SourceAdapter._client is None before first use."""
+        adapter = SnykAdapter()
+        assert adapter._client is None
+
+    @pytest.mark.asyncio
+    async def test_source_adapter_get_client_creates_instance(self):
+        """_get_client() creates and caches an AsyncClient."""
+        adapter = SnykAdapter()
+        client = await adapter._get_client()
+        assert client is not None
+        assert adapter._client is client
+        await adapter.close()
+
+    @pytest.mark.asyncio
+    async def test_source_adapter_get_client_returns_same_instance(self):
+        """Repeated _get_client() calls return the same object."""
+        adapter = SnykAdapter()
+        c1 = await adapter._get_client()
+        c2 = await adapter._get_client()
+        assert c1 is c2
+        await adapter.close()
+
+    @pytest.mark.asyncio
+    async def test_source_adapter_close_sets_client_to_none(self):
+        """close() closes the client and resets _client to None."""
+        adapter = SnykAdapter()
+        await adapter._get_client()
+        assert adapter._client is not None
+        await adapter.close()
+        assert adapter._client is None
+
+    @pytest.mark.asyncio
+    async def test_source_adapter_close_is_idempotent(self):
+        """close() on an adapter that was never used does not raise."""
+        adapter = SnykAdapter()
+        await adapter.close()  # should not raise
+        assert adapter._client is None
+
+    @pytest.mark.asyncio
+    async def test_source_adapter_context_manager_closes_on_exit(self):
+        """async with adapter closes the client on __aexit__."""
+        async with SnykAdapter() as adapter:
+            await adapter._get_client()
+            assert adapter._client is not None
+        assert adapter._client is None
+
+    @pytest.mark.asyncio
+    async def test_sink_adapter_client_starts_none(self):
+        """SinkAdapter._client is None before first use."""
+        adapter = SlackAdapter()
+        assert adapter._client is None
+
+    @pytest.mark.asyncio
+    async def test_sink_adapter_close_sets_client_to_none(self):
+        """close() on a SinkAdapter resets _client to None."""
+        adapter = SlackAdapter()
+        await adapter._get_client()
+        assert adapter._client is not None
+        await adapter.close()
+        assert adapter._client is None
+
+    @pytest.mark.asyncio
+    async def test_sink_adapter_context_manager_closes_on_exit(self):
+        """async with sink adapter closes the client on __aexit__."""
+        async with SlackAdapter() as adapter:
+            await adapter._get_client()
+            assert adapter._client is not None
+        assert adapter._client is None

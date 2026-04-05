@@ -50,8 +50,8 @@ class SemgrepAdapter(SourceAdapter):
         url = f"{endpoint.base_url.rstrip('/')}/api/v1/deployments"
         headers = endpoint.auth.get_headers()
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, headers=headers, timeout=15.0)
+            client = await self._get_client()
+            resp = await client.get(url, headers=headers, timeout=15.0)
             if resp.status_code == 200:
                 logger.info("Semgrep connection test succeeded for %s", endpoint.endpoint_id)
                 return True
@@ -89,14 +89,14 @@ class SemgrepAdapter(SourceAdapter):
             params["since"] = since.strftime("%Y-%m-%dT%H:%M:%SZ")
 
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(
-                    url,
-                    headers=headers,
-                    params=params,
-                    timeout=30.0,
-                )
-                resp.raise_for_status()
+            client = await self._get_client()
+            resp = await client.get(
+                url,
+                headers=headers,
+                params=params,
+                timeout=30.0,
+            )
+            resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
             logger.error(
                 "Semgrep API returned HTTP %s when pulling findings for %s: %s",

@@ -1,8 +1,11 @@
 """Scanning API routes — trigger scans, get results, ingest security reviews."""
 
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
@@ -36,6 +39,14 @@ class SecurityReviewIngestRequest(BaseModel):
 # --- Helpers ---
 
 
+def _validate_scan_path(path: str, allowed_root: str = "/") -> Path:
+    resolved = Path(path).resolve()
+    allowed = Path(allowed_root).resolve()
+    if not str(resolved).startswith(str(allowed)):
+        raise ValidationError(f"Path '{path}' is outside allowed scan root")
+    return resolved
+
+
 async def _ensure_project(project_id: str, db: AsyncSession):
     repo = ProjectRepository(db)
     row = await repo.get(project_id)
@@ -57,7 +68,7 @@ async def trigger_scan(
     """Trigger an AI security scan on a target path."""
     await _ensure_project(project_id, db)
 
-    target = Path(body.target_path)
+    target = _validate_scan_path(body.target_path)
     if not target.exists():
         raise ValidationError(f"Target path does not exist: {body.target_path}")
 
@@ -186,7 +197,12 @@ async def ingest_security_review(
                 status=finding_data.get("status", "open"),
             )
             accepted += 1
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "Finding %d quarantined during ingest",
+                accepted + quarantined,
+                exc_info=exc,
+            )
             quarantined += 1
 
     # Create batch record
@@ -1237,9 +1253,7 @@ async def sonarqube_scan(
     await _ensure_project(project_id, db)
 
     # Validate path — no traversal
-    resolved = Path(body.target_path).resolve()
-    if ".." in body.target_path:
-        raise ValidationError("target_path must not contain path traversal sequences")
+    resolved = _validate_scan_path(body.target_path)
 
     # Verify target_path is registered for this project
     target_repo = ScanTargetRepository(db)

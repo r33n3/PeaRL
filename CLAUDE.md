@@ -113,6 +113,10 @@ dev → pilot → preprod → prod (each has its own approval level)
 - Don't add workers without registering in `registry.py`
 - Don't modify `PEARL_spec/` OpenAPI spec without updating corresponding routes
 
+## Anti-Patterns
+
+- **Duplicate enum members on merge** — when two branches both add a value to `src/pearl/models/enums.py`, Python raises `TypeError: '<value>' already a member` at import time and the entire test suite fails to collect. Before merging any PR that touches `enums.py`, check for duplicates: `grep -n "= \"" src/pearl/models/enums.py | sort | uniq -d`
+
 ## Governance — Correct Action Sequence
 
 When a gate blocks an action:

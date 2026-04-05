@@ -41,8 +41,8 @@ class SnykAdapter(SourceAdapter):
         url = f"{endpoint.base_url.rstrip('/')}/v1/user"
         headers = endpoint.auth.get_headers()
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, headers=headers, timeout=15.0)
+            client = await self._get_client()
+            resp = await client.get(url, headers=headers, timeout=15.0)
             if resp.status_code == 200:
                 logger.info("Snyk connection test succeeded for %s", endpoint.endpoint_id)
                 return True
@@ -80,14 +80,14 @@ class SnykAdapter(SourceAdapter):
             params["from"] = since.strftime("%Y-%m-%dT%H:%M:%SZ")
 
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(
-                    url,
-                    headers=headers,
-                    params=params,
-                    timeout=30.0,
-                )
-                resp.raise_for_status()
+            client = await self._get_client()
+            resp = await client.get(
+                url,
+                headers=headers,
+                params=params,
+                timeout=30.0,
+            )
+            resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
             logger.error(
                 "Snyk API returned HTTP %s when pulling findings for %s: %s",

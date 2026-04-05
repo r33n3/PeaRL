@@ -39,20 +39,19 @@ class WebhookAdapter(SinkAdapter):
         """
         headers = endpoint.auth.get_headers() if endpoint.auth else {}
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.head(
+            client = await self._get_client()
+            response = await client.head(
+                endpoint.base_url,
+                headers=headers,
+                timeout=10.0,
+            )
+            # HEAD may return 405 on some webhooks — fall back to GET
+            if response.status_code == 405:
+                response = await client.get(
                     endpoint.base_url,
                     headers=headers,
                     timeout=10.0,
                 )
-            # HEAD may return 405 on some webhooks — fall back to GET
-            if response.status_code == 405:
-                async with httpx.AsyncClient() as client:
-                    response = await client.get(
-                        endpoint.base_url,
-                        headers=headers,
-                        timeout=10.0,
-                    )
             if response.status_code < 400:
                 logger.info(
                     "Webhook connection test succeeded for %s", endpoint.endpoint_id
@@ -148,13 +147,13 @@ class WebhookAdapter(SinkAdapter):
         headers.setdefault("Content-Type", "application/json")
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    endpoint.base_url,
-                    json=payload,
-                    headers=headers,
-                    timeout=10.0,
-                )
+            client = await self._get_client()
+            response = await client.post(
+                endpoint.base_url,
+                json=payload,
+                headers=headers,
+                timeout=10.0,
+            )
             if 200 <= response.status_code < 300:
                 logger.info(
                     "Webhook %s delivered for %s", context, endpoint.endpoint_id

@@ -146,14 +146,6 @@ async def test_l5_forged_approval_event_not_in_server_trail_by_action(client, te
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason=(
-        "Known pre-existing bug: SQLite drops timezone on timestamp round-trip. "
-        "governance_telemetry.py signs with timestamp_dt.isoformat() (UTC-aware) but "
-        "verify recomputes with row.timestamp.isoformat() (naive after SQLite round-trip), "
-        "producing a HMAC mismatch. Fix: normalise timestamp to UTC before store/verify."
-    )
-)
 async def test_l5_client_event_signature_is_server_computed(client, test_project):
     """
     L5 HMAC integrity: client events carry a server-computed HMAC signature.

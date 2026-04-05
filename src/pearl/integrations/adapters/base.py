@@ -5,6 +5,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from datetime import datetime
 
+import httpx
+
 from pearl.integrations.config import IntegrationEndpoint
 from pearl.integrations.normalized import (
     NormalizedFinding,
@@ -18,6 +20,27 @@ class SourceAdapter(ABC):
     """Pulls data from an external tool and converts to NormalizedFindings."""
 
     adapter_type: str = "unknown"
+
+    def __init__(self) -> None:
+        self._client: httpx.AsyncClient | None = None
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Return the shared AsyncClient, creating it on first use."""
+        if self._client is None:
+            self._client = httpx.AsyncClient()
+        return self._client
+
+    async def close(self) -> None:
+        """Close and discard the shared AsyncClient."""
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+
+    async def __aenter__(self) -> "SourceAdapter":
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        await self.close()
 
     @abstractmethod
     async def pull_findings(
@@ -50,6 +73,27 @@ class SinkAdapter(ABC):
     """Pushes PeaRL data to an external system."""
 
     adapter_type: str = "unknown"
+
+    def __init__(self) -> None:
+        self._client: httpx.AsyncClient | None = None
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Return the shared AsyncClient, creating it on first use."""
+        if self._client is None:
+            self._client = httpx.AsyncClient()
+        return self._client
+
+    async def close(self) -> None:
+        """Close and discard the shared AsyncClient."""
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+
+    async def __aenter__(self) -> "SinkAdapter":
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        await self.close()
 
     @abstractmethod
     async def push_event(
