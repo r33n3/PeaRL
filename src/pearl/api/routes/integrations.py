@@ -1,6 +1,9 @@
 """Integration endpoint management and sync routes."""
 
+import logging
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends
 import pydantic
@@ -212,7 +215,8 @@ async def test_integration(
             labels=row.labels,
         )
     except pydantic.ValidationError as exc:
-        raise ValidationError(f"Stored integration config is invalid: {exc}") from exc
+        logger.warning("Stored integration config is invalid", exc_info=True)
+        raise ValidationError("Stored integration config is invalid") from exc
 
     registry = IntegrationRegistry(endpoints=[endpoint])
     service = IntegrationService(registry)
@@ -338,7 +342,8 @@ async def test_org_integration(
             labels=row.labels,
         )
     except pydantic.ValidationError as exc:
-        raise ValidationError(f"Stored integration config is invalid: {exc}") from exc
+        logger.warning("Stored integration config is invalid", exc_info=True)
+        raise ValidationError("Stored integration config is invalid") from exc
 
     registry = IntegrationRegistry(endpoints=[endpoint])
     service = IntegrationService(registry)
@@ -424,7 +429,8 @@ async def pull_from_integration(
             labels=row.labels,
         )
     except pydantic.ValidationError as exc:
-        raise ValidationError(f"Stored integration config is invalid: {exc}") from exc
+        logger.warning("Stored integration config is invalid", exc_info=True)
+        raise ValidationError("Stored integration config is invalid") from exc
 
     registry = IntegrationRegistry(endpoints=[endpoint])
     service = IntegrationService(registry)

@@ -8,6 +8,10 @@ The human checks this file periodically during the sprint.
 
 <!-- Format: [agent-name] question -->
 
+[auth-hardening] main.py lines changed (for antipatterns rebase): line 44 had `# nosec` appended inline; line 58 (single SHA256 line) replaced by 3 lines (import hmac as _hmac, compute secret, compute HMAC hash). Net delta: +2 lines starting at old line 58. Antipatterns ALTER TABLE removal is likely below line 80 — should be clean.
+
+[auth-hardening] No data migration needed: API key hashing change is forward-only. Existing hashed keys (including bootstrap admin) are re-seeded at startup if missing (idempotent seed). Any existing API keys in a live DB will stop working after the config change until re-issued. This is expected — document in release notes.
+
 ## Resolved
 
 [security-validation] action_type strings — tests use "approval.decided" and "exception.created" as documented. Confirmed correct — server-audit-trail used the same strings.

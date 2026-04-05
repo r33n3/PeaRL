@@ -1,6 +1,7 @@
 """JWT Bearer and API key authentication middleware."""
 
 import hashlib
+import hmac
 import logging
 
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -94,7 +95,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
         }
 
     async def _validate_api_key(self, raw_key: str, request: Request) -> dict:
-        key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+        _hmac_secret = (settings.api_key_hmac_secret or settings.jwt_secret).encode()
+        key_hash = hmac.new(_hmac_secret, raw_key.encode(), hashlib.sha256).hexdigest()
 
         session_factory = getattr(request.app.state, "db_session_factory", None)
         if not session_factory:
