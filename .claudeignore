@@ -1,0 +1,18 @@
+# Exclude from Claude Code context loading
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+__pycache__/
+.git/
+*.pyc
+*.pyo
+.venv/
+.uv/
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+PEARL_spec/
+docs/security_research/
+deploy/
