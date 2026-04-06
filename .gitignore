@@ -60,6 +60,14 @@ alembic/versions/__pycache__/
 # MCP config (machine-specific paths)
 .mcp.json
 
+# Frontend local env (may contain API keys)
+frontend/.env.local
+
+# Sprint coordination — machine/session specific, generated per sprint
+sprint-progress.md
+decisions.md
+launch-worktrees.sh
+
 # PeaRL internal build spec (not for public repo)
 PeaRL_spec/
 
