@@ -59,12 +59,12 @@ class TeamsAdapter(SinkAdapter):
             ],
         }
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    endpoint.base_url,
-                    json=payload,
-                    timeout=10.0,
-                )
+            client = await self._get_client()
+            response = await client.post(
+                endpoint.base_url,
+                json=payload,
+                timeout=10.0,
+            )
             if response.status_code == 200:
                 logger.info(
                     "Teams connection test succeeded for %s", endpoint.endpoint_id
@@ -120,12 +120,12 @@ class TeamsAdapter(SinkAdapter):
         }
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    endpoint.base_url,
-                    json=payload,
-                    timeout=10.0,
-                )
+            client = await self._get_client()
+            response = await client.post(
+                endpoint.base_url,
+                json=payload,
+                timeout=10.0,
+            )
             if response.status_code == 200:
                 logger.info(
                     "Teams event delivered for %s (event_type=%s)",
@@ -184,12 +184,12 @@ class TeamsAdapter(SinkAdapter):
         }
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    endpoint.base_url,
-                    json=payload,
-                    timeout=10.0,
-                )
+            client = await self._get_client()
+            response = await client.post(
+                endpoint.base_url,
+                json=payload,
+                timeout=10.0,
+            )
             if response.status_code == 200:
                 logger.info(
                     "Teams notification delivered for %s (subject=%s)",

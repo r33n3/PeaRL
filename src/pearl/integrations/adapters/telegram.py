@@ -58,8 +58,8 @@ class TelegramAdapter(SinkAdapter):
 
         url = f"{self._base(endpoint)}/bot{token}/getMe"
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(url, timeout=10.0)
+            client = await self._get_client()
+            response = await client.get(url, timeout=10.0)
             if response.status_code == 200 and response.json().get("ok"):
                 logger.info(
                     "Telegram connection test succeeded for %s", endpoint.endpoint_id
@@ -180,8 +180,8 @@ class TelegramAdapter(SinkAdapter):
             "parse_mode": "Markdown",
         }
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(url, json=payload, timeout=10.0)
+            client = await self._get_client()
+            response = await client.post(url, json=payload, timeout=10.0)
             if response.status_code == 200 and response.json().get("ok"):
                 logger.info(
                     "Telegram message delivered for %s", endpoint.endpoint_id
