@@ -41,7 +41,7 @@ async def _seed_bootstrap_admin(session: AsyncSession) -> None:
 
     if not existing:
         salt = secrets.token_bytes(16)
-        h = hashlib.scrypt(ADMIN_PASSWORD.encode(), salt=salt, n=2**14, r=8, p=1)
+        h = hashlib.scrypt(ADMIN_PASSWORD.encode(), salt=salt, n=2**14, r=8, p=1)  # nosec GH-32 — scrypt is a strong KDF, CodeQL false positive
         hashed_pw = f"{salt.hex()}:{h.hex()}"
 
         session.add(UserRow(
@@ -55,7 +55,9 @@ async def _seed_bootstrap_admin(session: AsyncSession) -> None:
         ))
         await session.flush()  # persist user before FK reference
 
-        key_hash = hashlib.sha256(ADMIN_API_KEY_RAW.encode()).hexdigest()  # nosec B324 — high-entropy token identifier, not a password
+        import hmac as _hmac
+        _hmac_secret = (settings.api_key_hmac_secret or settings.jwt_secret).encode()
+        key_hash = _hmac.new(_hmac_secret, ADMIN_API_KEY_RAW.encode(), hashlib.sha256).hexdigest()
         session.add(ApiKeyRow(
             key_id=ADMIN_KEY_ID,
             user_id=ADMIN_USER_ID,

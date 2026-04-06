@@ -1,6 +1,7 @@
 """Authentication and user management routes."""
 
 import hashlib
+import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -81,7 +82,8 @@ def _verify_password(password: str, hashed: str) -> bool:
 
 
 def _hash_api_key(raw_key: str) -> str:
-    return hashlib.sha256(raw_key.encode()).hexdigest()  # nosec B324 — high-entropy token identifier, not a password
+    _secret = (settings.api_key_hmac_secret or settings.jwt_secret).encode()
+    return hmac.new(_secret, raw_key.encode(), hashlib.sha256).hexdigest()
 
 
 # ── Auth endpoints ─────────────────────────────────────────────────────────────
