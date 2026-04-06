@@ -68,6 +68,12 @@ sprint-progress.md
 decisions.md
 launch-worktrees.sh
 
+# Local dev / machine-specific docs
+local_network.md
+
+# MASS 2.0 session hook — requires MASS SDK installed, not for general use
+scripts/pearl_mass_scan_hook.sh
+
 # PeaRL internal build spec (not for public repo)
 PeaRL_spec/
 
