@@ -1,12 +1,12 @@
 # SPEC — PeaRL Security Review
 
-> Last updated: 2026-03-31
+> Last updated: 2026-04-05
 > Status: Active
 > Context: Open-source research platform — ease of setup is a first-class requirement
 
 ## Overview
 
-PeaRL (Policy-enforced Autonomous Risk Layer) is an open-source research platform that enforces governance gates between AI agents and production deployments. It serves researchers, platform engineers, and security teams studying human-in-the-loop AI control. As a research/OSS project, the design prioritises `git clone` → `docker compose up` → working demo over enterprise hardening. Security findings are triaged accordingly: **setup-convenience items are by design; code-quality and runtime-stability issues are not**.
+PeaRL is the model-free platform for human oversight and governance of the Secure Agent Dark Factory. It serves platform engineers, security teams, and researchers who need deterministic, auditable control over AI agent promotion and autonomy elevation. PeaRL enforces governance gates, approval workflows, and promotion controls without making model calls — trust adjudication belongs to MASS 2.0, human reviewers make final decisions on consequential elevation. As an OSS project, the design prioritises `git clone` → `docker compose up` → working demo over enterprise hardening. Security findings are triaged accordingly: **setup-convenience items are by design; code-quality and runtime-stability issues are not**.
 
 ## Goals
 
@@ -420,6 +420,29 @@ SPIRE SVID → task packet mapping for control-room visibility. Agents register 
 
 ---
 
+### Feature: Agent Registry
+
+**Status:** Planned
+**Priority:** Medium
+
+Central registry of all agent configs, versions, owners, and quality scores (Dark Factory P5). Enables factory-level visibility into which agents are running what tasks, their version history, and deepagents-harbor quality scores. Long-term dependency for nemotron fine-tuning feedback loop.
+
+**Acceptance criteria:**
+- [ ] `AgentRow` model with `agnt_` ID prefix: `name`, `version`, `owner`, `config_path`, `quality_score`, `registered_at`, `last_active_at`
+- [ ] `POST /agents/register` — register agent config + briefing hash
+- [ ] `GET /agents` — list with quality scores, filterable by owner/version
+- [ ] `GET /agents/{id}` — full agent record including version history
+- [ ] Quality score update endpoint callable by deepagents-harbor eval runs
+- [ ] `active_agent_count` added to `GET /dashboard` summary
+- [ ] `pearl_agent_register` MCP tool for agents to self-register on startup
+
+**Key files:**
+- `src/pearl/db/models/agent_registry.py` — AgentRow (to create)
+- `src/pearl/api/routes/agent_registry.py` — CRUD routes (to create)
+- `src/pearl/mcp/tools.py` — pearl_agent_register tool (to add)
+
+---
+
 ### Feature: Server-Authoritative Audit Trail (Security Sprint)
 
 **Status:** Complete
@@ -490,6 +513,38 @@ Contract tests and integration validation for the security sprint. Validates tha
 
 ---
 
+### Feature: Security Code Scanning Fixes (Cleanup Sprint)
+
+**Status:** In Progress (6/9 criteria met — 3 antipatterns gaps carry to next sprint)
+**Priority:** High
+
+Four-track cleanup sprint addressing GitHub Code Scanning alerts (×17), httpx connection pool antipattern (×27, 10 files), CI/CD permissions hardening (×5), and Dependabot dependency alerts. Sprint merged. Three antipatterns criteria (WebhookRegistry cap, gate re-eval hard block, migration 005) were not implemented by the antipatterns agent — they carry forward as the highest-priority open tech debt.
+
+**Acceptance criteria:**
+- [x] Path injection fixed: `scanning.py:61`, `scanning.py:1240`, `service.py` ×7 — `resolve(strict=False)` + forbidden prefix + allowlist at route and service layer
+- [x] httpx per-request clients replaced with shared class-level `AsyncClient` across 10 adapter files (27 occurrences)
+- [x] API key hashing migrated from raw SHA256 → HMAC-SHA256 with `PEARL_API_KEY_HMAC_SECRET`
+- [x] Stack trace exposure fixed in `integrations.py:215` and `:341` — generic message to user, full exc server-side logged only
+- [x] GitHub Actions jobs have explicit least-privilege `permissions:` blocks (`ci.yml` ×4, `pearl-gate.yml` ×1)
+- [x] Dependabot resolved: aiohttp, Pygments, cryptography (Python); picomatch ×2 (frontend); lodash pinned with stagnancy note
+- [ ] WebhookRegistry capped at `PEARL_MAX_WEBHOOK_SUBSCRIPTIONS` (default 1000) — `ConflictError` on overflow *(antipatterns PR merged without this)*
+- [ ] Gate re-evaluation in manual mode (`gate.auto_pass=False`) raises instead of swallowing exception — hard block enforced *(antipatterns PR merged without this — task_packets.py:293,344,432 still bare except)*
+- [ ] Raw `ALTER TABLE` calls removed from `main.py` lifespan, replaced with Alembic migration `005_cleanup_lifespan_alters.py` *(antipatterns PR merged without this)*
+
+**Key files:**
+- `src/pearl/api/routes/scanning.py` — path injection fixes (scanning-fixes)
+- `src/pearl/scanning/service.py` — service-layer path guard (scanning-fixes)
+- `src/pearl/integrations/adapters/` — httpx pool refactor, 10 files (scanning-fixes)
+- `src/pearl/api/middleware/auth.py` — API key HMAC fix (auth-hardening)
+- `src/pearl/api/routes/integrations.py` — stack trace sanitization (auth-hardening)
+- `.github/workflows/ci.yml`, `.github/workflows/pearl-gate.yml` — permissions (ci-deps)
+- `pyproject.toml` + `frontend/package.json` — dependency bumps (ci-deps)
+- `src/pearl/events/webhook_config.py` — subscription cap (antipatterns)
+- `src/pearl/api/routes/task_packets.py:336` — gate re-eval hard block (antipatterns)
+- `src/pearl/main.py` — remove ALTER TABLE, add Alembic migration (antipatterns)
+
+---
+
 ### Feature: MASS 2.0 / Snyk SCA Integration
 
 **Status:** Complete
@@ -550,6 +605,14 @@ Ingest routes for Snyk SCA (`snyk test --json`) and MASS 2.0 AI scan output. Fin
 | `src/pearl/db/models/allowance_profile.py` | No version field — profile changes affect running agents retroactively | Medium | security-hardening |
 | `src/pearl/api/middleware/rate_limit.py` | No `X-RateLimit-*` response headers | Low | security-hardening |
 | `src/pearl/api/routes/auth.py:143` | Refresh tokens not rotated on refresh — old token remains valid until expiry | Low | — |
+| `src/pearl/api/routes/scanning.py:61,:1240` | Path injection — user-supplied path not validated before filesystem access (×8 GitHub Code Scanning) | High | scanning-fixes |
+| `src/pearl/integrations/adapters/` ×10 files | httpx per-request `AsyncClient()` — connection pool exhaustion under load (27 occurrences) | High | scanning-fixes |
+| `src/pearl/api/middleware/auth.py:97` | API key hashed with raw SHA256 — CodeQL py/weak-sensitive-data-hashing | Medium | auth-hardening |
+| `src/pearl/api/routes/integrations.py:215,:341` | Stack trace exposed in API error response — CodeQL py/stack-trace-exposure | Medium | auth-hardening |
+| `.github/workflows/ci.yml`, `pearl-gate.yml` | Jobs missing explicit `permissions:` blocks — overly broad default token (×5) | Medium | ci-deps |
+| `src/pearl/events/webhook_config.py` | `_subscriptions` unbounded in-memory list — no cap, no persistence, restarts lose all registrations | High | antipatterns |
+| `src/pearl/api/routes/task_packets.py:336` | `bare except: pass` after gate re-evaluation — manual mode silently returns 200 on failure | High | antipatterns |
+| `src/pearl/main.py` | Raw `ALTER TABLE` calls in app lifespan bypass Alembic — diverge between SQLite and PostgreSQL | High | antipatterns |
 
 ## Open Questions
 

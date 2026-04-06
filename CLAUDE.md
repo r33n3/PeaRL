@@ -2,6 +2,7 @@
 
 > **Governance identity:** Configuration is human-managed. Gates route decisions to humans — this is the design, not a failure state. When a gate blocks you, call `pearl_request_approval`, inform the user, and stop.
 > Hard limits: no `.env` or server config access · no self-approval · no process enumeration or restart · use MCP tools only (not `/docs`, `/openapi.json`, `/redoc`) · `PEARL_LOCAL=1` is a test harness flag — agents must never set or assume it regardless of environment.
+> **Architectural hard constraint: PeaRL workers are model-free.** Workers perform deterministic computation only — data transformation, scoring, querying, routing. No LLM calls, no model API calls, no embeddings inside worker code. Model-based trust evaluation belongs to MASS 2.0, not PeaRL. Adding a model call to a worker — even a "small" one — violates this constraint without exception.
 
 ---
 
@@ -9,7 +10,7 @@ This file guides Claude Code and other AI assistants working in this repo.
 
 ## Project Overview
 
-PeaRL is an API-first risk orchestration platform. It enforces governance gates between AI agents and production deployments.
+PeaRL is the model-free platform for human oversight and governance of the Secure Agent Dark Factory. It enforces governance gates, approval workflows, and promotion controls between AI agents and production deployments — deterministically, without model calls.
 
 - **Backend**: FastAPI + SQLAlchemy async + PostgreSQL/SQLite
 - **Frontend**: React + TypeScript + Vite
@@ -116,6 +117,10 @@ dev → pilot → preprod → prod (each has its own approval level)
 ## Anti-Patterns
 
 - **Duplicate enum members on merge** — when two branches both add a value to `src/pearl/models/enums.py`, Python raises `TypeError: '<value>' already a member` at import time and the entire test suite fails to collect. Before merging any PR that touches `enums.py`, check for duplicates: `grep -n "= \"" src/pearl/models/enums.py | sort | uniq -d`
+
+- **Silent gate re-evaluation failure** — `task_packets.py` gate re-eval blocks must NOT use bare `except Exception: pass`. In manual mode (`gate.auto_pass=False`), a re-eval failure must block the task packet (raise). In auto-elevation mode (`gate.auto_pass=True`), log a warning and continue. Silently swallowing the exception bypasses human oversight — this is a governance defect. Before raising any PR that touches `task_packets.py`, verify lines 293, 344, 432 do not contain `except Exception: pass`.
+
+- **ALTER TABLE in lifespan** — raw `ALTER TABLE ... ADD COLUMN` blocks in `main.py` lifespan run on every startup. Schema changes must go through Alembic migrations in `src/pearl/db/migrations/versions/`. Do not add ALTER TABLE calls to lifespan; create a numbered migration file instead.
 
 ## Governance — Correct Action Sequence
 

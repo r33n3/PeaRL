@@ -380,23 +380,11 @@ class TestWebhookAdapter:
         mock_resp_head = _mock_response(405)
         mock_resp_get = _mock_response(200)
 
-        call_count = {"n": 0}
-        clients: list[AsyncMock] = []
+        mock_client = AsyncMock()
+        mock_client.head = AsyncMock(return_value=mock_resp_head)
+        mock_client.get = AsyncMock(return_value=mock_resp_get)
 
-        def make_client():
-            mock_client = AsyncMock()
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            n = call_count["n"]
-            call_count["n"] += 1
-            if n == 0:
-                mock_client.head = AsyncMock(return_value=mock_resp_head)
-            else:
-                mock_client.get = AsyncMock(return_value=mock_resp_get)
-            clients.append(mock_client)
-            return mock_client
-
-        with patch("pearl.integrations.adapters.webhook.httpx.AsyncClient", side_effect=make_client):
+        with patch.object(adapter, "_get_client", return_value=mock_client):
             result = await adapter.test_connection(endpoint)
 
         assert result is True
