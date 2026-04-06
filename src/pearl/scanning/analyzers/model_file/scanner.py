@@ -264,7 +264,7 @@ class ModelFileScanner:
             result.findings.extend(findings)
         except Exception as e:
             result.errors.append(f"Analysis error: {e}")
-            logger.exception(f"Error analyzing {file_path}")
+            logger.exception("Error analyzing %s", file_path)
 
         # Basic supply chain check (no external dependency)
         if self.check_supply_chain:

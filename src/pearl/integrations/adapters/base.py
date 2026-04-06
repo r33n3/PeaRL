@@ -128,3 +128,11 @@ class SinkAdapter(ABC):
     async def test_connection(self, endpoint: IntegrationEndpoint) -> bool:
         """Test connectivity to the external sink."""
         ...
+
+
+# Module-level shared client for all integration adapter HTTP calls.
+# Pools TCP connections to prevent file-descriptor exhaustion under parallel load.
+_shared_adapter_client = httpx.AsyncClient(
+    limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
+    timeout=httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=5.0),
+)

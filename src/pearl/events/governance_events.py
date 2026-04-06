@@ -61,7 +61,7 @@ async def emit_governance_event(
     event_id = generate_id("gevt_")
 
     # Emit to webhook subscribers
-    webhook_results = await emit_event(event_type, {**payload, "event_id": event_id})
+    webhook_results = await emit_event(event_type, {**payload, "event_id": event_id}, db=db_session)
 
     result = {
         "event_id": event_id,
