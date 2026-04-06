@@ -207,7 +207,7 @@ async def evaluate_promotion(
             "source_environment": current_env,
             "target_environment": target_environment,
             "result": status.value,
-            "auto_pass": gate.auto_pass,
+            "auto_pass_eligible": gate.auto_pass,
         },
     )
 

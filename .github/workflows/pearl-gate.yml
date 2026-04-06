@@ -4,10 +4,16 @@ on:
   pull_request:
     branches: [dev, preprod, main]
 
+# Default: deny all — job opts in to only what it needs
+permissions:
+  contents: read
+
 jobs:
   pearl-gate:
     name: PeaRL Gate
     runs-on: self-hosted
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
