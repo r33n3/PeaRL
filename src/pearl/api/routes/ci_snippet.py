@@ -17,36 +17,113 @@ router = APIRouter(tags=["CI Snippet"])
 
 def _github_actions_snippet(project_id: str) -> str:
     return f"""\
-# Add to .github/workflows/pearl-scan.yml
-# Required: set PEARL_PROJECT_ID variable and PEARL_API_KEY secret in repo settings
+# PeaRL governance gate
+# Add to .github/workflows/pearl-gate.yml
+#
+# Required GitHub repository settings:
+#   Secrets : PEARL_API_KEY, SNYK_TOKEN (if scan enabled)
+#   Variables: PEARL_API_URL, PEARL_SCAN_ENABLED (set to 'true' to enable scanning)
 
-name: PeaRL Gate Scan
+name: PeaRL Gate
+
 on:
   push:
     branches: [dev, main]
   pull_request:
 
+env:
+  PEARL_PROJECT_ID: {project_id}
+  PEARL_API_URL: ${{{{ vars.PEARL_API_URL }}}}
+  PEARL_API_KEY: ${{{{ secrets.PEARL_API_KEY }}}}
+
 jobs:
-  pearl-scan:
+  scan:
+    name: Scan \u2192 PeaRL
     runs-on: ubuntu-latest
+    if: vars.PEARL_SCAN_ENABLED == 'true'
     steps:
       - uses: actions/checkout@v4
 
-      - name: Snyk SCA Scan → PeaRL
-        uses: r33n3/pearl-actions/snyk@v1
-        with:
-          project_id: {project_id}
-          pearl_api_url: ${{{{ vars.PEARL_API_URL }}}}
-          pearl_api_key: ${{{{ secrets.PEARL_API_KEY }}}}
-          snyk_token: ${{{{ secrets.SNYK_TOKEN }}}}
+      - name: Install Snyk
+        run: npm install -g snyk
 
-      - name: MASS AI Security Scan → PeaRL
-        uses: r33n3/pearl-actions/mass@v1
-        with:
-          project_id: {project_id}
-          pearl_api_url: ${{{{ vars.PEARL_API_URL }}}}
-          pearl_api_key: ${{{{ secrets.PEARL_API_KEY }}}}
-          anthropic_api_key: ${{{{ secrets.ANTHROPIC_API_KEY }}}}
+      - name: Run Snyk scan
+        run: snyk test --json --all-projects > snyk_results.json || true
+        env:
+          SNYK_TOKEN: ${{{{ secrets.SNYK_TOKEN }}}}
+
+      - name: Push findings to PeaRL
+        run: |
+          python3 - <<'EOF'
+          import json, urllib.request, os, sys
+          with open("snyk_results.json") as f:
+              results = json.load(f)
+          payload = json.dumps(results).encode()
+          req = urllib.request.Request(
+              f"{{os.environ['PEARL_API_URL']}}/projects/{{os.environ['PEARL_PROJECT_ID']}}/integrations/snyk/ingest",
+              data=payload,
+              headers={{
+                  "X-API-Key": os.environ["PEARL_API_KEY"],
+                  "Content-Type": "application/json",
+              }},
+              method="POST",
+          )
+          with urllib.request.urlopen(req, timeout=30) as resp:
+              data = json.load(resp)
+          print(f"PeaRL: {{data.get('findings_created', 0)}} findings ingested")
+          EOF
+        env:
+          PEARL_API_URL: ${{{{ env.PEARL_API_URL }}}}
+          PEARL_API_KEY: ${{{{ env.PEARL_API_KEY }}}}
+          PEARL_PROJECT_ID: ${{{{ env.PEARL_PROJECT_ID }}}}
+
+  gate:
+    name: PeaRL Gate Check
+    runs-on: ubuntu-latest
+    needs: [scan]
+    if: always()
+    steps:
+      - name: Evaluate promotion gate
+        run: |
+          python3 - <<'EOF'
+          import json, urllib.request, os, sys
+          payload = json.dumps({{
+              "branch": os.environ["GITHUB_REF_NAME"],
+              "commit_sha": os.environ["GITHUB_SHA"],
+          }}).encode()
+          req = urllib.request.Request(
+              f"{{os.environ['PEARL_API_URL']}}/projects/{{os.environ['PEARL_PROJECT_ID']}}/promotions/evaluate",
+              data=payload,
+              headers={{
+                  "X-API-Key": os.environ["PEARL_API_KEY"],
+                  "Content-Type": "application/json",
+              }},
+              method="POST",
+          )
+          try:
+              with urllib.request.urlopen(req, timeout=30) as resp:
+                  result = json.load(resp)
+          except urllib.request.HTTPError as e:
+              print(f"::error::PeaRL gate request failed: {{e.code}} {{e.reason}}")
+              sys.exit(1)
+          status = result.get("status", "unknown")
+          blockers = result.get("blockers", [])
+          print(f"PeaRL gate status: {{status}}")
+          if blockers:
+              print("Blockers:")
+              for b in blockers:
+                  print(f"  - {{b}}")
+          if status != "passed":
+              print(f"::error::PeaRL gate blocked \u2014 status={{status}}")
+              sys.exit(1)
+          print("Gate passed \u2713")
+          EOF
+        env:
+          PEARL_API_URL: ${{{{ env.PEARL_API_URL }}}}
+          PEARL_API_KEY: ${{{{ env.PEARL_API_KEY }}}}
+          PEARL_PROJECT_ID: ${{{{ env.PEARL_PROJECT_ID }}}}
+          GITHUB_REF_NAME: ${{{{ github.ref_name }}}}
+          GITHUB_SHA: ${{{{ github.sha }}}}
 """
 
 
@@ -145,11 +222,11 @@ async def get_ci_snippet(
         platform = "github_actions"
         snippet = _github_actions_snippet(project_id)
         instructions = [
-            f"Add PEARL_PROJECT_ID = {project_id} as a repository variable",
-            "Add PEARL_API_KEY as a repository secret",
-            "Add PEARL_API_URL = http://your-pearl-instance/api/v1 as a repository variable",
-            "Add SNYK_TOKEN as a repository secret (optional for public repos)",
-            "Add ANTHROPIC_API_KEY as a repository secret (for AI projects)",
+            "Add PEARL_API_KEY as a GitHub repository secret",
+            f"Add PEARL_API_URL as a GitHub repository variable (e.g. http://your-pearl-host/api/v1)",
+            "Set PEARL_SCAN_ENABLED=true as a repository variable only if you want PeaRL to run Snyk scans — skip if your org already pushes findings via Snyk Enterprise, SonarQube, or MASS",
+            "Add SNYK_TOKEN as a repository secret (required only if PEARL_SCAN_ENABLED=true)",
+            f"Commit .github/workflows/pearl-gate.yml — project ID {project_id} is already embedded",
         ]
 
     return {
