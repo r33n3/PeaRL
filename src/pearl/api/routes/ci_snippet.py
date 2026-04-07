@@ -86,7 +86,7 @@ jobs:
       - name: Evaluate promotion gate
         run: |
           python3 - <<'EOF'
-          import json, urllib.request, os, sys
+          import json, urllib.request, urllib.error, os, sys
           payload = json.dumps({{
               "branch": os.environ["GITHUB_REF_NAME"],
               "commit_sha": os.environ["GITHUB_SHA"],
@@ -105,6 +105,9 @@ jobs:
                   result = json.load(resp)
           except urllib.request.HTTPError as e:
               print(f"::error::PeaRL gate request failed: {{e.code}} {{e.reason}}")
+              sys.exit(1)
+          except urllib.error.URLError as e:
+              print(f"::error::PeaRL gate network error: {{e.reason}}")
               sys.exit(1)
           status = result.get("status", "unknown")
           blockers = result.get("blockers", [])
