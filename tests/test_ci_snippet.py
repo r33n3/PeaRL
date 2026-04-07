@@ -38,7 +38,6 @@ async def _create_project(db_session, project_id: str | None = None) -> str:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.anyio
 async def test_ci_snippet_returns_github_actions_by_default(client, db_session):
     """GET returns 200 with platform=github_actions (no Azure DevOps integration)."""
     pid = await _create_project(db_session)
@@ -53,7 +52,6 @@ async def test_ci_snippet_returns_github_actions_by_default(client, db_session):
     assert "instructions" in data
 
 
-@pytest.mark.anyio
 async def test_ci_snippet_contains_project_id(client, db_session):
     """The project_id string appears inside the returned snippet YAML."""
     pid = await _create_project(db_session)
@@ -65,7 +63,6 @@ async def test_ci_snippet_contains_project_id(client, db_session):
     assert pid in snippet
 
 
-@pytest.mark.anyio
 async def test_ci_snippet_contains_two_jobs(client, db_session):
     """Snippet has both the scan: and gate: jobs plus required keywords."""
     pid = await _create_project(db_session)
@@ -81,7 +78,6 @@ async def test_ci_snippet_contains_two_jobs(client, db_session):
     assert "promotions/evaluate" in snippet
 
 
-@pytest.mark.anyio
 async def test_ci_snippet_404_for_unknown_project(client):
     """Non-existent project returns 404."""
     resp = await client.get("/api/v1/projects/proj_doesnotexist/ci-snippet")
@@ -89,7 +85,6 @@ async def test_ci_snippet_404_for_unknown_project(client):
     assert resp.status_code == 404
 
 
-@pytest.mark.anyio
 async def test_ci_snippet_instructions_count(client, db_session):
     """GitHub Actions path returns exactly 5 instruction items."""
     pid = await _create_project(db_session)
@@ -98,4 +93,4 @@ async def test_ci_snippet_instructions_count(client, db_session):
 
     assert resp.status_code == 200
     instructions = resp.json()["instructions"]
-    assert len(instructions) == 5
+    assert len(instructions) == 5, f"expected 5 instructions, got {len(instructions)}: {instructions}"
