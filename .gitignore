@@ -93,3 +93,4 @@ pearl_local.db
 # Windows artifacts
 NUL
 tests/security/attack_chain/results/
+.superpowers/
