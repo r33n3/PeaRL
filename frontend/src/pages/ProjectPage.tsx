@@ -11,6 +11,7 @@ import { GateProgress } from "@/components/shared/GateProgress";
 import { MonoText } from "@/components/shared/MonoText";
 import { TimelinePanel } from "@/components/shared/TimelinePanel";
 import { GuardrailsTab } from "@/components/pipeline/GuardrailsTab";
+import { SetupTab } from "@/components/pipeline/SetupTab";
 import { Bug, ArrowUpCircle, FileText, Shield, DollarSign, Cpu, CheckCircle, Package, AlertTriangle, XCircle, Clock, ShieldCheck, Tag } from "lucide-react";
 import type { ApprovalStatus, Environment } from "@/lib/types";
 import { formatTimestamp } from "@/lib/utils";
@@ -26,7 +27,7 @@ function fmtDays(d: number | null | undefined): string {
 export function ProjectPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"overview" | "guardrails">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "guardrails" | "setup">("overview");
   const { data, isLoading } = useProjectOverview(projectId!);
   const { data: agentBrief } = useAgentBrief(projectId);
   const { data: pkgIntegrity } = usePackageIntegrity(projectId);
@@ -204,7 +205,7 @@ export function ProjectPage() {
 
       {/* Tab bar */}
       <div className="flex gap-0 border-b border-white/10 mb-8">
-        {(["overview", "guardrails"] as const).map((tab) => (
+        {(["overview", "guardrails", "setup"] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -222,6 +223,11 @@ export function ProjectPage() {
       {/* Guardrails tab */}
       {activeTab === "guardrails" && (
         <GuardrailsTab projectId={projectId} />
+      )}
+
+      {/* Setup tab */}
+      {activeTab === "setup" && (
+        <SetupTab projectId={projectId} />
       )}
 
       {/* Overview tab content */}
