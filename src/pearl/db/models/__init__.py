@@ -52,6 +52,7 @@ from pearl.db.models.cedar_deployment import CedarDeploymentRow
 from pearl.db.models.agentcore_scan_state import AgentCoreScanStateRow
 from pearl.db.models.allowance_profile import AllowanceProfileRow
 from pearl.db.models.workload import WorkloadRow
+from pearl.db.models.scanner_policy import ScannerPolicyRow  # noqa: F401
 
 __all__ = [
     "ProjectRow",
@@ -101,4 +102,5 @@ __all__ = [
     "AgentCoreScanStateRow",
     "AllowanceProfileRow",
     "WorkloadRow",
+    "ScannerPolicyRow",
 ]
