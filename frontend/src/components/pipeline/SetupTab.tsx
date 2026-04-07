@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Copy, Check, Terminal, AlertCircle } from "lucide-react";
 import { useCiSnippet } from "@/api/ciSnippet";
 import { VaultCard } from "@/components/shared/VaultCard";
@@ -11,11 +11,20 @@ export function SetupTab({ projectId }: SetupTabProps) {
   const { data, isLoading, isError } = useCiSnippet(projectId);
   const [copied, setCopied] = useState(false);
 
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(timer);
+  }, [copied]);
+
   const handleCopy = async () => {
     if (!data?.snippet) return;
-    await navigator.clipboard.writeText(data.snippet);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(data.snippet);
+      setCopied(true);
+    } catch (err) {
+      console.error("Copy failed:", err);
+    }
   };
 
   if (isLoading) {
