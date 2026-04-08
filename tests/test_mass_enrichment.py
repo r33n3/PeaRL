@@ -1,4 +1,4 @@
-"""Tests for MassClient enrichment methods and mass_ingest BackgroundTask."""
+"""Tests for MassClient enrichment methods."""
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 import httpx
@@ -53,6 +53,23 @@ async def test_get_policies_returns_list():
         result = await client.get_policies("scan-123")
     assert len(result) == 2
     assert result[0]["policy_type"] == "cedar"
+
+
+@pytest.mark.asyncio
+async def test_get_policies_normalizes_dict_response():
+    client = MassClient(base_url="http://mass-test", api_key="key")
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {
+        "cedar": {"statement": "permit(...);"},
+        "bedrock": {"topicPolicyConfig": {}},
+    }
+    with patch.object(client._client, "get", new=AsyncMock(return_value=mock_response)):
+        result = await client.get_policies("scan-123")
+    assert len(result) == 2
+    policy_types = {p["policy_type"] for p in result}
+    assert policy_types == {"cedar", "bedrock"}
+    assert result[0]["content"] is not None
 
 
 @pytest.mark.asyncio
