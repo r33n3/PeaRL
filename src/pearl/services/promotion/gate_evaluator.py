@@ -312,6 +312,7 @@ class _EvalContext:
         # MASS 2.0 context
         self.mass_scan_seen: bool = False
         self.mass_risk_score: float = 0.0
+        self.mass_verdict_risk_level: str | None = None  # "low"|"medium"|"high"|"critical"
 
 
 async def _build_eval_context(
@@ -515,6 +516,8 @@ async def _build_eval_context(
     ctx.mass_scan_seen = mass_marker is not None
     if mass_marker:
         ctx.mass_risk_score = float((mass_marker.full_data or {}).get("risk_score", 0.0))
+        verdict = (mass_marker.full_data or {}).get("verdict", {})
+        ctx.mass_verdict_risk_level = verdict.get("risk_level") if isinstance(verdict, dict) else None
 
     # Check CLAUDE.md governance block confirmation
     ctx.has_claude_md_governance = bool(getattr(project, "claude_md_verified", False))
@@ -961,10 +964,20 @@ def _eval_owasp_llm_top10_clear(rule, ctx):
     return passed, "OWASP LLM Top 10 clear" if passed else f"{len(owasp_findings)} OWASP LLM Top 10 finding(s)", None
 
 
+_BLOCKING_RISK_LEVELS = {"critical", "high"}
+
+
 def _eval_ai_risk_acceptable(rule, ctx):
     threshold = rule.threshold or 7.0
     # Check MASS 2.0 risk score if a scan was ingested
     if ctx.mass_scan_seen:
+        # Verdict risk_level takes precedence over numeric score when present
+        if ctx.mass_verdict_risk_level in _BLOCKING_RISK_LEVELS:
+            return (
+                False,
+                f"MASS 2.0 verdict risk level '{ctx.mass_verdict_risk_level}' exceeds acceptable threshold",
+                {"verdict_risk_level": ctx.mass_verdict_risk_level, "threshold": threshold},
+            )
         if ctx.mass_risk_score <= threshold:
             return True, f"MASS 2.0 risk score {ctx.mass_risk_score:.1f} is within threshold {threshold}", {"risk_score": ctx.mass_risk_score, "threshold": threshold}
         return False, f"MASS 2.0 risk score {ctx.mass_risk_score:.1f} exceeds threshold {threshold}", {"risk_score": ctx.mass_risk_score, "threshold": threshold}
