@@ -6,11 +6,13 @@ AVAILABLE_ADAPTERS: dict[str, str] = {
     "semgrep": "pearl.integrations.adapters.semgrep.SemgrepAdapter",
     "trivy": "pearl.integrations.adapters.trivy.TrivyAdapter",
     "sonarqube": "pearl.integrations.adapters.sonarqube.SonarQubeAdapter",
+    "mass": "pearl.integrations.adapters.mass.MassAdapter",
     # CI/CD
     "azure_devops": None,  # CI/CD integration — no pull/push adapter; used for snippet generation
     # Sinks
     "jira": "pearl.integrations.adapters.jira.JiraAdapter",
     "slack": "pearl.integrations.adapters.slack.SlackAdapter",
+    "github": "pearl.integrations.adapters.github_issues.GitHubIssuesAdapter",
     "github_issues": "pearl.integrations.adapters.github_issues.GitHubIssuesAdapter",
     "teams": "pearl.integrations.adapters.teams.TeamsAdapter",
     "telegram": "pearl.integrations.adapters.telegram.TelegramAdapter",

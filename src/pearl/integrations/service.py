@@ -143,18 +143,20 @@ class IntegrationService:
 
         try:
             adapter = self._get_adapter(endpoint.adapter_type)
-            success = await adapter.test_connection(endpoint)
+            ok = await adapter.test_connection(endpoint)
             return {
                 "endpoint_id": endpoint_id,
                 "endpoint_name": endpoint.name,
-                "status": "connected" if success else "failed",
+                "status": "connected" if ok else "failed",
+                "success": ok,
             }
         except Exception as exc:
             return {
                 "endpoint_id": endpoint_id,
                 "endpoint_name": endpoint.name,
                 "status": "error",
-                "error": str(exc),
+                "success": False,
+                "message": str(exc),
             }
 
     def _get_adapter(self, adapter_type: str) -> SourceAdapter | SinkAdapter:

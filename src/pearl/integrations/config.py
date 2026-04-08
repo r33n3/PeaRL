@@ -230,4 +230,13 @@ INTEGRATION_CATALOGUE: list[dict] = [
         "auth_types": ["api_key", "bearer", "none"],
         "labels_schema": {"url": "Webhook target URL"},
     },
+    {
+        "adapter_type": "mass",
+        "integration_type": "source",
+        "category": "dast",
+        "name": "MASS 2.0",
+        "description": "AI deployment security scanner — scans agent deployments for security and governance risks",
+        "auth_types": ["bearer", "none"],
+        "labels_schema": {},
+    },
 ]
