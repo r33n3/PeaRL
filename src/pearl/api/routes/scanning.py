@@ -7,13 +7,14 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 
 logger = logging.getLogger(__name__)
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pearl.config import settings
 from pearl.dependencies import get_db, get_trace_id
 from pearl.errors.exceptions import NotFoundError, ValidationError
 from pearl.repositories.project_repo import ProjectRepository
@@ -468,10 +469,75 @@ class MassIngestRequest(BaseModel):
     findings: list[MassFinding] = []
 
 
+async def _enrich_from_mass(project_id: str, scan_id: str, session_factory) -> None:
+    """BackgroundTask: pull verdict, compliance, and policies from MASS after ingest."""
+    import asyncio
+    from sqlalchemy import select as _select
+    from pearl.scanning.mass_bridge import MassClient
+    from pearl.repositories.scanner_policy_repo import ScannerPolicyRepository
+    from pearl.db.models.finding import FindingRow
+
+    mass_url = settings.mass_url
+    mass_api_key = settings.mass_api_key
+    if not mass_url or not mass_api_key:
+        return  # MASS not configured — skip silently
+
+    client = MassClient(base_url=mass_url, api_key=mass_api_key)
+
+    verdict, compliance, policies = await asyncio.gather(
+        client.get_verdict(scan_id),
+        client.get_compliance(scan_id),
+        client.get_policies(scan_id),
+        return_exceptions=True,
+    )
+
+    # Normalise exceptions to empty defaults
+    verdict = verdict if isinstance(verdict, dict) else {}
+    compliance = compliance if isinstance(compliance, dict) else {}
+    policies = policies if isinstance(policies, list) else []
+
+    async with session_factory() as session:
+        # Update mass2_marker with verdict + compliance
+        marker_ext_id = f"mass-marker-{project_id}"
+        stmt = _select(FindingRow).where(
+            FindingRow.project_id == project_id,
+            FindingRow.source["external_id"].as_string() == marker_ext_id,
+        ).limit(1)
+        result = await session.execute(stmt)
+        marker = result.scalar_one_or_none()
+        if marker:
+            marker.full_data = {
+                **(marker.full_data or {}),
+                "verdict": verdict,
+                "compliance": compliance,
+                "has_agent_trace": bool(verdict),
+            }
+            await session.flush()
+
+        # Upsert scanner policies
+        if policies:
+            policy_repo = ScannerPolicyRepository(session)
+            for policy in policies:
+                policy_type = policy.get("policy_type", "")
+                content = policy.get("content", policy)
+                if policy_type:
+                    await policy_repo.upsert(
+                        project_id=project_id,
+                        source="mass",
+                        scan_id=scan_id,
+                        policy_type=policy_type,
+                        content=content if isinstance(content, dict) else {"raw": content},
+                    )
+
+        await session.commit()
+
+
 @router.post("/projects/{project_id}/integrations/mass/ingest", status_code=200)
 async def mass_ingest(
     project_id: str,
     body: MassIngestRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Ingest MASS 2.0 AI security scan results into PeaRL.
@@ -560,6 +626,11 @@ async def mass_ingest(
         if f.status == "open" and ext_id not in current_ext_ids:
             f.status = "resolved"
             f.resolved_at = datetime.now(timezone.utc)
+            f.full_data = {
+                **(f.full_data or {}),
+                "confirmed_by": "mass2",
+                "confirmed_scan_id": body.scan_id,
+            }
             await db.flush()
             resolved += 1
 
@@ -606,6 +677,16 @@ async def mass_ingest(
         )
 
     await db.commit()
+
+    # Fire enrichment in background — pull verdict, compliance, policies from MASS
+    session_factory = getattr(request.app.state, "db_session_factory", None)
+    if session_factory is not None:
+        background_tasks.add_task(
+            _enrich_from_mass,
+            project_id=project_id,
+            scan_id=body.scan_id,
+            session_factory=session_factory,
+        )
 
     return {
         "project_id": project_id,

@@ -82,3 +82,81 @@ async def test_get_verdict_returns_empty_dict_on_404():
     with patch.object(client._client, "get", new=AsyncMock(return_value=mock_response)):
         result = await client.get_verdict("scan-123")
     assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# Integration test: confirmed_by stamped on auto-resolve
+# ---------------------------------------------------------------------------
+
+import datetime
+
+from pearl.repositories.project_repo import ProjectRepository
+from pearl.services.id_generator import generate_id
+
+
+async def _make_project(db_session) -> str:
+    pid = generate_id("proj")
+    repo = ProjectRepository(db_session)
+    await repo.create(
+        project_id=pid,
+        name="Test Project",
+        description="test",
+        owner_team="test-team",
+        business_criticality="medium",
+        external_exposure="internal",
+        ai_enabled=True,
+    )
+    await db_session.commit()
+    return pid
+
+
+@pytest.mark.asyncio
+async def test_mass_ingest_stamps_confirmed_by_on_resolve(client, db_session):
+    """Re-scan auto-resolve stamps confirmed_by on the finding."""
+    from pearl.db.models.finding import FindingRow
+    from pearl.repositories.finding_repo import FindingRepository
+    from sqlalchemy import select
+
+    pid = await _make_project(db_session)
+    find_repo = FindingRepository(db_session)
+
+    # Create an existing open MASS finding
+    ext_id = "mass-scan-old-find-001"
+    await find_repo.create(
+        finding_id=generate_id("find"),
+        project_id=pid,
+        environment="dev",
+        category="security",
+        severity="high",
+        title="Old finding",
+        source={"tool_name": "mass2", "system": "mass_scan", "external_id": ext_id},
+        full_data={"finding_id": "find-001"},
+        normalized=True,
+        detected_at=datetime.datetime.now(datetime.timezone.utc),
+        batch_id=None,
+        status="open",
+        schema_version="1.1",
+    )
+    await db_session.commit()
+
+    # Ingest a new scan that does NOT include the old finding → should auto-resolve it
+    payload = {
+        "scan_id": "scan-new",
+        "risk_score": 2.0,
+        "categories_completed": ["jailbreak"],
+        "findings": [],  # old finding absent → resolved
+    }
+    resp = await client.post(f"/api/v1/projects/{pid}/integrations/mass/ingest", json=payload)
+    assert resp.status_code == 200
+    assert resp.json()["findings_resolved"] == 1
+
+    # Verify confirmed_by stamped
+    stmt = select(FindingRow).where(
+        FindingRow.project_id == pid,
+        FindingRow.source["external_id"].as_string() == ext_id,
+    )
+    result = await db_session.execute(stmt)
+    finding = result.scalar_one()
+    assert finding.status == "resolved"
+    assert finding.full_data.get("confirmed_by") == "mass2"
+    assert finding.full_data.get("confirmed_scan_id") == "scan-new"
