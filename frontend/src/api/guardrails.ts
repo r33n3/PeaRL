@@ -27,6 +27,9 @@ export interface GuardrailRecommendation {
   code_examples?: Record<string, string>;
   bedrock_config?: BedrockConfig;
   cedar_policy?: CedarPolicy;
+  source?: string;        // "pearl" | "mass" | "snyk" | "sonarqube"
+  policy_type?: string;   // "cedar" | "bedrock" | "litellm" | "nginx" | "nemo"
+  content?: Record<string, unknown> | string;  // raw policy content from scanner
 }
 
 export interface GuardrailsResponse {

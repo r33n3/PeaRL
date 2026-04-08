@@ -53,6 +53,22 @@ function PlatformTag({ platform }: { platform: string }) {
   );
 }
 
+// ── Scanner source badge ──────────────────────────────────────────────────────
+
+function SourceBadge({ source }: { source?: string }) {
+  if (!source || source === "pearl") return null;
+  const label =
+    source === "mass" ? "MASS 2.0" :
+    source === "snyk" ? "Snyk" :
+    source === "sonarqube" ? "SonarQube" :
+    source.toUpperCase();
+  return (
+    <span className="text-[10px] font-mono px-2 py-0.5 rounded border bg-cyan-500/10 text-cyan-300 border-cyan-500/20">
+      {label}
+    </span>
+  );
+}
+
 // ── Code block ────────────────────────────────────────────────────────────────
 
 function CodeBlock({ children }: { children: string }) {
@@ -161,6 +177,7 @@ function GuardrailCard({ rec }: { rec: GuardrailRecommendation }) {
       <div className="flex items-center gap-2 mb-2">
         <SeverityDot severity={rec.severity} />
         <span className="text-sm font-heading text-white font-semibold">{rec.name}</span>
+        <SourceBadge source={rec.source} />
         <span className="ml-auto text-[10px] font-mono px-2 py-0.5 rounded bg-white/10 text-white/50 border border-white/10">
           {rec.category}
         </span>
@@ -201,6 +218,15 @@ function GuardrailCard({ rec }: { rec: GuardrailRecommendation }) {
             )}
           </div>
         )
+      )}
+
+      {/* Scanner policy content (when no bedrock/cedar config) */}
+      {!hasPlatformConfig && rec.content && (
+        <CodeBlock>
+          {typeof rec.content === "string"
+            ? rec.content
+            : JSON.stringify(rec.content, null, 2)}
+        </CodeBlock>
       )}
     </VaultCard>
   );
