@@ -160,3 +160,73 @@ async def test_mass_ingest_stamps_confirmed_by_on_resolve(client, db_session):
     assert finding.status == "resolved"
     assert finding.full_data.get("confirmed_by") == "mass2"
     assert finding.full_data.get("confirmed_scan_id") == "scan-new"
+
+
+@pytest.mark.asyncio
+async def test_enrich_from_mass_updates_marker_and_policies(db_session):
+    """_enrich_from_mass updates the mass2_marker full_data and upserts scanner policies."""
+    from contextlib import asynccontextmanager
+    from unittest.mock import AsyncMock, patch
+    from sqlalchemy import select
+
+    from pearl.api.routes.scanning import _enrich_from_mass
+    from pearl.db.models.finding import FindingRow
+    from pearl.repositories.finding_repo import FindingRepository
+    from pearl.repositories.scanner_policy_repo import ScannerPolicyRepository
+
+    pid = await _make_project(db_session)
+
+    # Create the mass2_marker finding
+    find_repo = FindingRepository(db_session)
+    marker_ext_id = f"mass-marker-{pid}"
+    await find_repo.create(
+        finding_id=generate_id("find"),
+        project_id=pid,
+        environment="dev",
+        category="security",
+        severity="info",
+        title="MASS 2.0 Scan Marker",
+        source={"tool_name": "mass2_marker", "system": "mass_scan", "external_id": marker_ext_id},
+        full_data={"scan_id": "scan-001", "risk_score": 3.0},
+        normalized=True,
+        detected_at=datetime.datetime.now(datetime.timezone.utc),
+        batch_id=None,
+        status="open",
+        schema_version="1.1",
+    )
+    await db_session.commit()
+
+    # Mock MassClient methods
+    mock_verdict = {"risk_level": "medium", "summary": "ok", "confidence": 0.8, "finding_counts": {}}
+    mock_compliance = {"overall_passed": True, "frameworks": {}, "failed_controls": []}
+    mock_policies = [{"policy_type": "cedar", "content": {"statement": "permit(...);"}}]
+
+    # Create a session_factory that returns db_session as an async context manager
+    @asynccontextmanager
+    async def session_factory():
+        yield db_session
+
+    with patch("pearl.scanning.mass_bridge.MassClient.get_verdict", new=AsyncMock(return_value=mock_verdict)), \
+         patch("pearl.scanning.mass_bridge.MassClient.get_compliance", new=AsyncMock(return_value=mock_compliance)), \
+         patch("pearl.scanning.mass_bridge.MassClient.get_policies", new=AsyncMock(return_value=mock_policies)), \
+         patch("pearl.api.routes.scanning.settings") as mock_settings:
+        mock_settings.mass_url = "http://mass-test"
+        mock_settings.mass_api_key = "test-key"
+        await _enrich_from_mass(pid, "scan-001", session_factory)
+
+    # Verify marker full_data updated
+    stmt = select(FindingRow).where(
+        FindingRow.project_id == pid,
+        FindingRow.source["external_id"].as_string() == marker_ext_id,
+    )
+    result = await db_session.execute(stmt)
+    marker = result.scalar_one()
+    assert marker.full_data.get("verdict") == mock_verdict
+    assert marker.full_data.get("compliance") == mock_compliance
+    assert marker.full_data.get("has_agent_trace") is True
+
+    # Verify scanner policy upserted
+    policy_repo = ScannerPolicyRepository(db_session)
+    policies = await policy_repo.list_by_project(pid, source="mass")
+    assert len(policies) == 1
+    assert policies[0].policy_type == "cedar"

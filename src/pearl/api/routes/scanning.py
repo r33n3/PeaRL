@@ -285,172 +285,6 @@ async def list_analyzers() -> list[dict]:
     return _service.get_analyzer_info()
 
 
-# ---------------------------------------------------------------------------
-# Snyk SCA ingest route
-# ---------------------------------------------------------------------------
-
-_SNYK_SEVERITY_MAP = {
-    "critical": "critical",
-    "high": "high",
-    "medium": "moderate",
-    "low": "low",
-}
-
-
-class SnykVuln(BaseModel):
-    model_config = {"populate_by_name": True}
-
-    id: str
-    title: str | None = None
-    severity: str = "low"
-    packageName: str = ""
-    version: str | None = None
-    fixedIn: list[str] = []
-    description: str | None = None
-    identifiers: dict[str, Any] = {}
-    references: list[dict[str, Any]] = []
-    from_path: list[str] = Field(default=[], alias="from")
-
-
-class SnykIngestRequest(BaseModel):
-    vulnerabilities: list[SnykVuln] = []
-
-
-@router.post("/projects/{project_id}/integrations/snyk/ingest", status_code=200)
-async def snyk_ingest(
-    project_id: str,
-    body: SnykIngestRequest,
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    """Ingest raw `snyk test --json` output and upsert findings into PeaRL.
-
-    Upserts by external_id (stored in source.external_id).
-    Auto-resolves open snyk_sca findings not present in the current scan.
-    """
-    from pearl.db.models.finding import FindingRow
-    from pearl.repositories.finding_repo import FindingRepository
-    from pearl.services.id_generator import generate_id
-
-    await _ensure_project(project_id, db)
-
-    # Load all existing snyk findings for this project (any status)
-    stmt = select(FindingRow).where(
-        FindingRow.project_id == project_id,
-        FindingRow.source["tool_name"].as_string() == "snyk_sca",
-    )
-    result = await db.execute(stmt)
-    existing_findings: list[FindingRow] = list(result.scalars().all())
-    existing_by_ext_id: dict[str, FindingRow] = {
-        (f.source or {}).get("external_id", ""): f
-        for f in existing_findings
-    }
-
-    finding_repo = FindingRepository(db)
-    created = 0
-    updated = 0
-    current_ext_ids: set[str] = set()
-
-    for vuln in body.vulnerabilities:
-        ext_id = f"snyk-{vuln.id}-{vuln.packageName}"
-        current_ext_ids.add(ext_id)
-        severity = _SNYK_SEVERITY_MAP.get(vuln.severity.lower(), "low")
-        title = vuln.title or f"Snyk: {vuln.packageName} - {vuln.id}"
-        source = {
-            "tool_name": "snyk_sca",
-            "system": "snyk",
-            "external_id": ext_id,
-        }
-        full_data = {
-            "id": vuln.id,
-            "title": vuln.title,
-            "severity": vuln.severity,
-            "packageName": vuln.packageName,
-            "version": vuln.version,
-            "fixedIn": vuln.fixedIn,
-            "description": vuln.description,
-            "identifiers": vuln.identifiers,
-            "references": vuln.references,
-            "from": vuln.from_path,
-        }
-
-        existing = existing_by_ext_id.get(ext_id)
-        if existing:
-            existing.full_data = full_data
-            existing.title = title
-            existing.severity = severity
-            await db.flush()
-            updated += 1
-        else:
-            await finding_repo.create(
-                finding_id=generate_id("find_"),
-                project_id=project_id,
-                environment="dev",
-                category="security",
-                severity=severity,
-                title=title,
-                source=source,
-                full_data=full_data,
-                normalized=True,
-                detected_at=datetime.now(timezone.utc),
-                batch_id=None,
-                status="open",
-                schema_version="1.1",
-            )
-            created += 1
-
-    # Auto-resolve open snyk_sca findings not in current scan
-    resolved = 0
-    for f in existing_findings:
-        ext_id = (f.source or {}).get("external_id", "")
-        if f.status == "open" and ext_id not in current_ext_ids:
-            f.status = "resolved"
-            f.resolved_at = datetime.now(timezone.utc)
-            await db.flush()
-            resolved += 1
-
-    await db.commit()
-
-    # Count open snyk findings by severity after ingest
-    sev_stmt = select(FindingRow).where(
-        FindingRow.project_id == project_id,
-        FindingRow.source["tool_name"].as_string() == "snyk_sca",
-        FindingRow.status == "open",
-    )
-    sev_result = await db.execute(sev_stmt)
-    open_snyk = list(sev_result.scalars().all())
-    sev_counts: dict[str, int] = {}
-    for f in open_snyk:
-        sev_counts[f.severity] = sev_counts.get(f.severity, 0) + 1
-
-    return {
-        "project_id": project_id,
-        "findings_created": created,
-        "findings_updated": updated,
-        "findings_resolved": resolved,
-        "critical": sev_counts.get("critical", 0),
-        "high": sev_counts.get("high", 0),
-        "medium": sev_counts.get("moderate", 0),
-        "low": sev_counts.get("low", 0),
-    }
-
-
-# ---------------------------------------------------------------------------
-# MASS 2.0 ingest route
-# ---------------------------------------------------------------------------
-
-_MASS_CATEGORY_MAP: dict[str, str] = {
-    "prompt_injection": "security",
-    "jailbreak": "security",
-    "secret_leak": "security",
-    "infra_misconfiguration": "security",
-    "mcp_vulnerability": "security",
-    "rag_vulnerability": "security",
-    "model_file_risk": "security",
-    "bias": "responsible_ai",
-    "toxicity": "responsible_ai",
-}
-
-
 class MassFinding(BaseModel):
     finding_id: str
     category: str
@@ -471,65 +305,73 @@ class MassIngestRequest(BaseModel):
 
 async def _enrich_from_mass(project_id: str, scan_id: str, session_factory) -> None:
     """BackgroundTask: pull verdict, compliance, and policies from MASS after ingest."""
-    import asyncio
-    from sqlalchemy import select as _select
-    from pearl.scanning.mass_bridge import MassClient
-    from pearl.repositories.scanner_policy_repo import ScannerPolicyRepository
-    from pearl.db.models.finding import FindingRow
+    try:
+        import asyncio
+        from sqlalchemy import select as _select
+        from pearl.scanning.mass_bridge import MassClient
+        from pearl.repositories.scanner_policy_repo import ScannerPolicyRepository
+        from pearl.db.models.finding import FindingRow
 
-    mass_url = settings.mass_url
-    mass_api_key = settings.mass_api_key
-    if not mass_url or not mass_api_key:
-        return  # MASS not configured — skip silently
+        mass_url = settings.mass_url
+        mass_api_key = settings.mass_api_key
+        if not mass_url or not mass_api_key:
+            return  # MASS not configured — skip silently
 
-    client = MassClient(base_url=mass_url, api_key=mass_api_key)
+        client = MassClient(base_url=mass_url, api_key=mass_api_key)
 
-    verdict, compliance, policies = await asyncio.gather(
-        client.get_verdict(scan_id),
-        client.get_compliance(scan_id),
-        client.get_policies(scan_id),
-        return_exceptions=True,
-    )
+        verdict, compliance, policies = await asyncio.gather(
+            client.get_verdict(scan_id),
+            client.get_compliance(scan_id),
+            client.get_policies(scan_id),
+            return_exceptions=True,
+        )
 
-    # Normalise exceptions to empty defaults
-    verdict = verdict if isinstance(verdict, dict) else {}
-    compliance = compliance if isinstance(compliance, dict) else {}
-    policies = policies if isinstance(policies, list) else []
+        # Normalise exceptions to empty defaults
+        verdict = verdict if isinstance(verdict, dict) else {}
+        compliance = compliance if isinstance(compliance, dict) else {}
+        policies = policies if isinstance(policies, list) else []
 
-    async with session_factory() as session:
-        # Update mass2_marker with verdict + compliance
-        marker_ext_id = f"mass-marker-{project_id}"
-        stmt = _select(FindingRow).where(
-            FindingRow.project_id == project_id,
-            FindingRow.source["external_id"].as_string() == marker_ext_id,
-        ).limit(1)
-        result = await session.execute(stmt)
-        marker = result.scalar_one_or_none()
-        if marker:
-            marker.full_data = {
-                **(marker.full_data or {}),
-                "verdict": verdict,
-                "compliance": compliance,
-                "has_agent_trace": bool(verdict),
-            }
-            await session.flush()
+        async with session_factory() as session:
+            # Update mass2_marker with verdict + compliance
+            marker_ext_id = f"mass-marker-{project_id}"
+            stmt = _select(FindingRow).where(
+                FindingRow.project_id == project_id,
+                FindingRow.source["external_id"].as_string() == marker_ext_id,
+            ).limit(1)
+            result = await session.execute(stmt)
+            marker = result.scalar_one_or_none()
+            if marker:
+                marker.full_data = {
+                    **(marker.full_data or {}),
+                    "verdict": verdict,
+                    "compliance": compliance,
+                    "has_agent_trace": bool(verdict),
+                }
+                await session.flush()
 
-        # Upsert scanner policies
-        if policies:
-            policy_repo = ScannerPolicyRepository(session)
-            for policy in policies:
-                policy_type = policy.get("policy_type", "")
-                content = policy.get("content", policy)
-                if policy_type:
-                    await policy_repo.upsert(
-                        project_id=project_id,
-                        source="mass",
-                        scan_id=scan_id,
-                        policy_type=policy_type,
-                        content=content if isinstance(content, dict) else {"raw": content},
-                    )
+            # Upsert scanner policies
+            if policies:
+                policy_repo = ScannerPolicyRepository(session)
+                for policy in policies:
+                    policy_type = policy.get("policy_type", "")
+                    content = policy.get("content", policy)
+                    if policy_type:
+                        await policy_repo.upsert(
+                            project_id=project_id,
+                            source="mass",
+                            scan_id=scan_id,
+                            policy_type=policy_type,
+                            content=content if isinstance(content, dict) else {"raw": content},
+                        )
 
-        await session.commit()
+            await session.commit()
+    except Exception as exc:
+        logger.exception(
+            "MASS enrichment background task failed project_id=%s scan_id=%s: %s",
+            project_id,
+            scan_id,
+            exc,
+        )
 
 
 @router.post("/projects/{project_id}/integrations/mass/ingest", status_code=200)
