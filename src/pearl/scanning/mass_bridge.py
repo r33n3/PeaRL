@@ -26,13 +26,15 @@ class MassClient:
         project_id: str,
     ) -> str:
         """Submit a new scan and return the scan_id."""
+        # MASS 2.0 expects deployment_path, github_url, or api_url — not target_url
+        body: dict = {"pearl_project_id": project_id}
+        if target_url.startswith(("http://", "https://")):
+            body["api_url"] = target_url
+        else:
+            body["deployment_path"] = target_url
         r = await self._client.post(
             f"{self._base}/scans",
-            json={
-                "target_url": target_url,
-                "target_type": target_type,
-                "pearl_project_id": project_id,
-            },
+            json=body,
             headers=self._headers,
         )
         r.raise_for_status()
@@ -56,6 +58,60 @@ class MassClient:
         raise TimeoutError(
             f"MASS scan {scan_id} did not complete within {timeout}s"
         )
+
+    async def get_verdict(self, scan_id: str) -> dict:
+        """GET /scans/{scan_id}/verdict — returns verdict dict or {} on error."""
+        try:
+            resp = await self._client.get(
+                f"{self._base}/scans/{scan_id}/verdict",
+                headers=self._headers,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except httpx.HTTPStatusError as exc:
+            logger.warning("MASS verdict fetch failed scan_id=%s status=%s", scan_id, exc.response.status_code)
+            return {}
+        except Exception as exc:
+            logger.warning("MASS verdict fetch error scan_id=%s: %s", scan_id, exc)
+            return {}
+
+    async def get_compliance(self, scan_id: str) -> dict:
+        """GET /scans/{scan_id}/compliance — returns compliance dict or {} on error."""
+        try:
+            resp = await self._client.get(
+                f"{self._base}/scans/{scan_id}/compliance",
+                headers=self._headers,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except httpx.HTTPStatusError as exc:
+            logger.warning("MASS compliance fetch failed scan_id=%s status=%s", scan_id, exc.response.status_code)
+            return {}
+        except Exception as exc:
+            logger.warning("MASS compliance fetch error scan_id=%s: %s", scan_id, exc)
+            return {}
+
+    async def get_policies(self, scan_id: str) -> list[dict]:
+        """GET /scans/{scan_id}/policies — returns list of {policy_type, content} or [] on error."""
+        try:
+            resp = await self._client.get(
+                f"{self._base}/scans/{scan_id}/policies",
+                headers=self._headers,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            # Accept list or dict keyed by policy_type
+            if isinstance(data, list):
+                return data
+            if isinstance(data, dict):
+                return [{"policy_type": k, "content": v} for k, v in data.items()]
+            return []
+        except httpx.HTTPStatusError as exc:
+            logger.warning("MASS policies fetch failed scan_id=%s status=%s", scan_id, exc.response.status_code)
+            return []
+        except Exception as exc:
+            logger.warning("MASS policies fetch error scan_id=%s: %s", scan_id, exc)
+            return []
 
 
 def mass_finding_to_pearl(f: dict, project_id: str) -> dict:
