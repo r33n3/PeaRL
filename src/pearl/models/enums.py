@@ -274,6 +274,8 @@ class GateRuleType(StrEnum):
     FRAMEWORK_CONTROL_REQUIRED = "framework_control_required"
     # Governance compliance
     CLAUDE_MD_GOVERNANCE_PRESENT = "claude_md_governance_present"
+    # Agent definition governance
+    AGENT_DEFINITION_ASSESSED = "agent_definition_assessed"
 
 
 class GateEvaluationStatus(StrEnum):

@@ -355,3 +355,55 @@ async def test_post_agent_definition_missing_required_fields(client):
         json={"git_ref": "abc123"},
     )
     assert resp.status_code == 422
+
+
+# ── Task 9: Gate rule agent_definition_assessed ───────────────────────────────
+
+from pearl.services.promotion.gate_evaluator import _EvalContext
+
+
+def test_eval_context_has_agent_definition_fields():
+    ctx = _EvalContext()
+    assert hasattr(ctx, "agent_definition_id")
+    assert hasattr(ctx, "agent_definition_status")
+    assert ctx.agent_definition_id is None
+    assert ctx.agent_definition_status is None
+
+
+def test_agent_definition_assessed_rule_approved():
+    from pearl.services.promotion.gate_evaluator import _eval_agent_definition_assessed
+    ctx = _EvalContext()
+    ctx.agent_definition_id = "def_abc"
+    ctx.agent_definition_status = "approved"
+    passed, reason, _ = _eval_agent_definition_assessed({}, ctx)
+    assert passed is True
+    assert "approved" in reason
+
+
+def test_agent_definition_assessed_rule_rejected():
+    from pearl.services.promotion.gate_evaluator import _eval_agent_definition_assessed
+    ctx = _EvalContext()
+    ctx.agent_definition_id = "def_abc"
+    ctx.agent_definition_status = "rejected"
+    passed, reason, _ = _eval_agent_definition_assessed({}, ctx)
+    assert passed is False
+    assert "rejected" in reason.lower()
+
+
+def test_agent_definition_assessed_rule_pending():
+    from pearl.services.promotion.gate_evaluator import _eval_agent_definition_assessed
+    ctx = _EvalContext()
+    ctx.agent_definition_id = "def_abc"
+    ctx.agent_definition_status = "pending_assessment"
+    passed, reason, _ = _eval_agent_definition_assessed({}, ctx)
+    assert passed is False
+    assert "pending" in reason.lower()
+
+
+def test_agent_definition_assessed_rule_no_definition():
+    from pearl.services.promotion.gate_evaluator import _eval_agent_definition_assessed
+    ctx = _EvalContext()
+    ctx.agent_definition_id = None
+    passed, reason, _ = _eval_agent_definition_assessed({}, ctx)
+    assert passed is True
+    assert "non-agent" in reason.lower() or "no agent" in reason.lower()

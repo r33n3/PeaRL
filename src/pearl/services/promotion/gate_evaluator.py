@@ -313,6 +313,9 @@ class _EvalContext:
         self.mass_scan_seen: bool = False
         self.mass_risk_score: float = 0.0
         self.mass_verdict_risk_level: str | None = None  # "low"|"medium"|"high"|"critical"
+        # Agent definition governance
+        self.agent_definition_id: str | None = None
+        self.agent_definition_status: str | None = None  # "pending_assessment" | "assessed" | "approved" | "rejected"
 
 
 async def _build_eval_context(
@@ -546,6 +549,19 @@ async def _build_eval_context(
         )
     except Exception:
         ctx.cedar_policy_active = False
+
+    # Agent definition governance — latest definition for this project + environment
+    try:
+        from pearl.repositories.agent_definition_repo import AgentDefinitionRepository
+        agent_def_repo = AgentDefinitionRepository(session)
+        agent_def = await agent_def_repo.get_latest_for_project(
+            project_id, environment=target_env or "dev"
+        )
+        if agent_def:
+            ctx.agent_definition_id = agent_def.agent_definition_id
+            ctx.agent_definition_status = agent_def.status
+    except Exception:
+        pass  # non-agent projects have no definition — ctx fields stay None
 
     # Snyk SCA context — count open findings by severity
     snyk_any_stmt = select(FindingRow).where(
@@ -1502,6 +1518,17 @@ def _eval_framework_control_required(rule, ctx):
     return passed, message, base_details
 
 
+def _eval_agent_definition_assessed(rule: dict, ctx: "_EvalContext") -> tuple[bool, str, dict]:
+    """Gate rule: blocks promotion if agent definition is not approved."""
+    if ctx.agent_definition_id is None:
+        return True, "No agent definition — non-agent project", {}
+    if ctx.agent_definition_status == "approved":
+        return True, f"Agent definition {ctx.agent_definition_id} approved", {}
+    if ctx.agent_definition_status == "rejected":
+        return False, f"Agent definition {ctx.agent_definition_id} rejected by MASS assessment", {}
+    return False, f"Agent definition {ctx.agent_definition_id} pending assessment", {}
+
+
 # ──────────────────────────────────────────────
 # Rule evaluator registry
 # ──────────────────────────────────────────────
@@ -1567,4 +1594,6 @@ RULE_EVALUATORS = {
     GateRuleType.FRAMEWORK_CONTROL_REQUIRED: _eval_framework_control_required,
     # Governance compliance
     GateRuleType.CLAUDE_MD_GOVERNANCE_PRESENT: _eval_claude_md_governance_present,
+    # Agent definition governance
+    GateRuleType.AGENT_DEFINITION_ASSESSED: _eval_agent_definition_assessed,
 }
