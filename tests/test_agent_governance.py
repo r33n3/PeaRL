@@ -235,3 +235,39 @@ async def test_agent_session_update_result(db_session):
     assert updated.status == "completed"
     assert updated.result["findings_count"] == 0
     assert updated.completed_at is not None
+
+
+# ── Task 6: get_agent_platform_adapter factory + config settings ──────────────
+
+from pearl.integrations.adapters import get_agent_platform_adapter
+
+
+def test_get_agent_platform_adapter_claude():
+    adapter = get_agent_platform_adapter("claude", api_key="test-key")
+    assert isinstance(adapter, ClaudeManagedAgentsAdapter)
+
+
+def test_get_agent_platform_adapter_openai():
+    adapter = get_agent_platform_adapter("openai", api_key="test-key")
+    assert isinstance(adapter, OpenAIAgentsAdapter)
+
+
+def test_get_agent_platform_adapter_unknown():
+    with pytest.raises(ValueError, match="Unknown platform"):
+        get_agent_platform_adapter("unknown", api_key="test-key")
+
+
+from pearl.config import Settings
+
+
+def test_settings_has_agent_platform_fields():
+    s = Settings(
+        anthropic_api_key="sk-ant-test",
+        openai_api_key="sk-openai-test",
+        mass_platform="openai",
+        mass_agent_id="wf_001",
+        mass_environment_id="env_abc",
+    )
+    assert s.mass_platform == "openai"
+    assert s.mass_agent_id == "wf_001"
+    assert s.anthropic_api_key == "sk-ant-test"

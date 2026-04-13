@@ -114,6 +114,17 @@ class Settings(BaseSettings):
     sonar_url: str = ""                            # PEARL_SONAR_URL
     sonar_token: str = ""                          # PEARL_SONAR_TOKEN
 
+    # Anthropic Claude Managed Agents
+    anthropic_api_key: str = ""          # PEARL_ANTHROPIC_API_KEY
+
+    # OpenAI Agents API
+    openai_api_key: str = ""             # PEARL_OPENAI_API_KEY
+
+    # MASS 2.0 platform settings
+    mass_platform: str = "claude"        # PEARL_MASS_PLATFORM — "claude" | "openai"
+    mass_agent_id: str = ""              # PEARL_MASS_AGENT_ID — agt_xxx (Claude) or wf_xxx (OpenAI)
+    mass_environment_id: str = ""        # PEARL_MASS_ENVIRONMENT_ID — Claude environment ID
+
     # Reporting
     report_url_ttl_days: int = 7                   # PEARL_REPORT_URL_TTL_DAYS
 

@@ -27,3 +27,17 @@ def import_adapter(dotted_path: str):
     module_path, class_name = dotted_path.rsplit(".", 1)
     module = importlib.import_module(module_path)
     return getattr(module, class_name)
+
+
+from pearl.integrations.adapters.base_agent import BaseAgentPlatformAdapter
+
+
+def get_agent_platform_adapter(platform: str, api_key: str) -> BaseAgentPlatformAdapter:
+    """Factory: returns the adapter for the given platform string."""
+    if platform == "claude":
+        from pearl.integrations.adapters.claude_managed_agents import ClaudeManagedAgentsAdapter
+        return ClaudeManagedAgentsAdapter(api_key=api_key)
+    if platform == "openai":
+        from pearl.integrations.adapters.openai_agents import OpenAIAgentsAdapter
+        return OpenAIAgentsAdapter(api_key=api_key)
+    raise ValueError(f"Unknown platform: {platform!r}")
