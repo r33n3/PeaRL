@@ -271,3 +271,58 @@ def test_settings_has_agent_platform_fields():
     assert s.mass_platform == "openai"
     assert s.mass_agent_id == "wf_001"
     assert s.anthropic_api_key == "sk-ant-test"
+
+
+# ── Task 7: AgentAssessmentService ───────────────────────────────────────────
+
+from pearl.services.agent_assessment import AgentAssessmentService
+from sqlalchemy import select
+
+
+@pytest.mark.asyncio
+async def test_assess_definition_creates_session_and_row(db_session):
+    mock_adapter = MagicMock(spec=BaseAgentPlatformAdapter)
+    mock_adapter.create_session = AsyncMock(return_value="sess_test_001")
+
+    service = AgentAssessmentService(adapter=mock_adapter, session=db_session)
+
+    platform_session_id = await service.assess_definition(
+        project_id="proj_test",
+        definition_id="def_abc",
+        platform="claude",
+        definition_yaml="name: test-agent\ntools: [bash]",
+    )
+
+    assert platform_session_id == "sess_test_001"
+    mock_adapter.create_session.assert_called_once()
+
+    result = await db_session.execute(
+        select(AgentSessionRow).where(AgentSessionRow.platform_session_id == "sess_test_001")
+    )
+    row = result.scalar_one_or_none()
+    assert row is not None
+    assert row.purpose == "assessment"
+    assert row.status == "running"
+
+
+@pytest.mark.asyncio
+async def test_assess_definition_uses_mass_agent_id(db_session):
+    mock_adapter = MagicMock(spec=BaseAgentPlatformAdapter)
+    mock_adapter.create_session = AsyncMock(return_value="sess_test_002")
+
+    service = AgentAssessmentService(
+        adapter=mock_adapter,
+        session=db_session,
+        mass_agent_id="agt_01testxxx",
+    )
+    await service.assess_definition(
+        project_id="proj_test",
+        definition_id="def_xyz",
+        platform="claude",
+        definition_yaml="name: second-agent",
+    )
+
+    call_args = mock_adapter.create_session.call_args
+    # agent_id should be the mass_agent_id — either positional or keyword
+    all_args = list(call_args.args) + list(call_args.kwargs.values())
+    assert "agt_01testxxx" in all_args
