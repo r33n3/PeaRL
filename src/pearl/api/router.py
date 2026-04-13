@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 from pearl.api.routes import (
     admin as admin_routes,
+    agent_definitions,
     agentcore,
     agent,
     allowance_profiles,
@@ -83,3 +84,4 @@ api_router.include_router(admin_routes.router)
 api_router.include_router(agentcore.router)
 api_router.include_router(allowance_profiles.router)
 api_router.include_router(workloads.router)
+api_router.include_router(agent_definitions.router)

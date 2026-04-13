@@ -326,3 +326,32 @@ async def test_assess_definition_uses_mass_agent_id(db_session):
     # agent_id should be the mass_agent_id — either positional or keyword
     all_args = list(call_args.args) + list(call_args.kwargs.values())
     assert "agt_01testxxx" in all_args
+
+
+# ── Task 8: POST /agent-definitions endpoint ──────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_post_agent_definition_creates_row(client):
+    payload = {
+        "git_ref": "abc123def",
+        "git_path": "agents/orchestrator/agent.yaml",
+        "platform": "claude",
+        "platform_agent_id": "agt_01xxx",
+        "definition": "name: test-orchestrator\ntools:\n  - bash\n",
+        "environment": "dev",
+    }
+    resp = await client.post("/api/v1/projects/proj_myapp001/agent-definitions", json=payload)
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["definition_id"].startswith("def_")
+    assert body["status"] == "pending_assessment"
+
+
+@pytest.mark.asyncio
+async def test_post_agent_definition_missing_required_fields(client):
+    resp = await client.post(
+        "/api/v1/projects/proj_myapp001/agent-definitions",
+        json={"git_ref": "abc123"},
+    )
+    assert resp.status_code == 422
