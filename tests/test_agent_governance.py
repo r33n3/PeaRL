@@ -1,8 +1,122 @@
+import inspect
 import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 from pearl.db.models.agent_definition import AgentDefinitionRow
 from pearl.db.models.agent_session import AgentSessionRow
 from pearl.repositories.agent_definition_repo import AgentDefinitionRepository
 from pearl.repositories.agent_session_repo import AgentSessionRepository
+
+
+# ── Task 3: BaseAgentPlatformAdapter ─────────────────────────────────────────
+
+from pearl.integrations.adapters.base_agent import (
+    AgentSessionResult,
+    AgentSessionEvent,
+    BaseAgentPlatformAdapter,
+)
+
+
+def test_agent_session_result_fields():
+    r = AgentSessionResult(status="completed", output="done", files=[], cost_usd=0.01, raw={})
+    assert r.status == "completed"
+    assert r.output == "done"
+
+
+def test_agent_session_event_fields():
+    e = AgentSessionEvent(type="tool_call", content=None, tool_name="pearl_ingest_finding", raw={"id": "evt_1"})
+    assert e.type == "tool_call"
+    assert e.tool_name == "pearl_ingest_finding"
+
+
+def test_base_adapter_is_abstract():
+    assert inspect.isabstract(BaseAgentPlatformAdapter)
+
+
+# ── Task 4: ClaudeManagedAgentsAdapter ───────────────────────────────────────
+
+from pearl.integrations.adapters.claude_managed_agents import ClaudeManagedAgentsAdapter
+
+
+@pytest.mark.asyncio
+async def test_claude_adapter_create_session():
+    adapter = ClaudeManagedAgentsAdapter(api_key="test-key")
+    mock_session = MagicMock()
+    mock_session.id = "sess_01abc"
+    with patch.object(adapter, "_client") as mock_client:
+        mock_client.beta.sessions.create = AsyncMock(return_value=mock_session)
+        session_id = await adapter.create_session(agent_id="agt_01xxx", task="Assess agent definition:\n\nname: test")
+    assert session_id == "sess_01abc"
+
+
+@pytest.mark.asyncio
+async def test_claude_adapter_get_result_completed():
+    adapter = ClaudeManagedAgentsAdapter(api_key="test-key")
+    mock_session = MagicMock()
+    mock_session.status = "completed"
+    mock_session.output = [MagicMock(type="text", text=MagicMock(value="Assessment done."))]
+    mock_session.usage = MagicMock(input_tokens=100, output_tokens=200)
+    with patch.object(adapter, "_client") as mock_client:
+        mock_client.beta.sessions.retrieve = AsyncMock(return_value=mock_session)
+        result = await adapter.get_result("sess_01abc")
+    assert result.status == "completed"
+    assert result.output == "Assessment done."
+    assert result.cost_usd is not None
+
+
+@pytest.mark.asyncio
+async def test_claude_adapter_interrupt():
+    adapter = ClaudeManagedAgentsAdapter(api_key="test-key")
+    with patch.object(adapter, "_client") as mock_client:
+        mock_client.beta.sessions.interrupt = AsyncMock()
+        await adapter.interrupt("sess_01abc")
+    mock_client.beta.sessions.interrupt.assert_called_once_with("sess_01abc")
+
+
+# ── Task 5: OpenAIAgentsAdapter ──────────────────────────────────────────────
+
+from pearl.integrations.adapters.openai_agents import OpenAIAgentsAdapter
+
+
+@pytest.mark.asyncio
+async def test_openai_adapter_create_session():
+    adapter = OpenAIAgentsAdapter(api_key="test-key")
+    mock_thread = MagicMock()
+    mock_thread.id = "thread_abc"
+    mock_run = MagicMock()
+    mock_run.id = "run_001"
+    with patch.object(adapter, "_client") as mock_client:
+        mock_client.beta.threads.create = AsyncMock(return_value=mock_thread)
+        mock_client.beta.threads.runs.create = AsyncMock(return_value=mock_run)
+        session_id = await adapter.create_session(agent_id="wf_123", task="Assess agent definition:\n\nname: test")
+    assert session_id == "thread_abc:run_001"
+
+
+@pytest.mark.asyncio
+async def test_openai_adapter_get_result_completed():
+    adapter = OpenAIAgentsAdapter(api_key="test-key")
+    mock_run = MagicMock()
+    mock_run.status = "completed"
+    mock_run.usage = MagicMock(prompt_tokens=100, completion_tokens=200)
+    mock_messages = MagicMock()
+    msg = MagicMock()
+    msg.role = "assistant"
+    msg.content = [MagicMock(type="text", text=MagicMock(value="Assessment complete."))]
+    mock_messages.data = [msg]
+    with patch.object(adapter, "_client") as mock_client:
+        mock_client.beta.threads.runs.retrieve = AsyncMock(return_value=mock_run)
+        mock_client.beta.threads.messages.list = AsyncMock(return_value=mock_messages)
+        result = await adapter.get_result("thread_abc:run_001")
+    assert result.status == "completed"
+    assert result.output == "Assessment complete."
+
+
+@pytest.mark.asyncio
+async def test_openai_adapter_interrupt():
+    adapter = OpenAIAgentsAdapter(api_key="test-key")
+    with patch.object(adapter, "_client") as mock_client:
+        mock_client.beta.threads.runs.cancel = AsyncMock(return_value=MagicMock())
+        await adapter.interrupt("thread_abc:run_001")
+    mock_client.beta.threads.runs.cancel.assert_called_once_with(thread_id="thread_abc", run_id="run_001")
 
 
 def test_agent_definition_row_has_expected_columns():
