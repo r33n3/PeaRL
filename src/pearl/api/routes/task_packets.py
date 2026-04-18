@@ -1,5 +1,6 @@
 """Task packet generation and execution bridge API routes."""
 
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -9,8 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from pearl.dependencies import get_db, get_trace_id
 from pearl.errors.exceptions import ConflictError, NotFoundError, ValidationError
+from pearl.repositories.promotion_repo import PromotionGateRepository
 from pearl.repositories.task_packet_repo import TaskPacketRepository
 from pearl.services.task_packet_generator import generate_task_packet
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["TaskPackets"])
 
@@ -291,29 +295,38 @@ async def complete_task_packet(
         )
         db.add(audit_row)
     except Exception:
-        pass  # Telemetry is best-effort
+        logger.warning("Audit event creation failed for packet %s", packet_id, exc_info=True)
 
     await db.commit()
 
-    # Re-evaluate gate after completion (best-effort)
+    # Re-evaluate gate after completion
     gate_status = None
     gate_evaluation_id = None
+
+    # Compute transition envs before the try block so gate lookup can use them
+    _transition = (packet.packet_data or {}).get("transition", "")
+    _source_env = packet.environment
+    _target_env: str | None = None
+    if "->" in _transition:
+        _parts = _transition.split("->")
+        _source_env = _parts[0].strip()
+        _target_env = _parts[1].strip()
+
+    # Look up gate mode: manual gates (auto_pass=False) must surface re-eval failures
+    _gate_repo = PromotionGateRepository(db)
+    _gate = await _gate_repo.get_for_transition(_source_env, _target_env or "", packet.project_id)
+    # If no gate is configured, default to auto-elevation (best-effort) mode.
+    # Only an explicitly configured gate with auto_pass=False is treated as manual.
+    _gate_is_manual = (_gate is not None) and (not _gate.auto_pass)
+
     try:
         from pearl.services.promotion.gate_evaluator import evaluate_promotion
         from pearl.api.routes.stream import publish_event
 
-        transition = (packet.packet_data or {}).get("transition", "")
-        source_env = packet.environment
-        target_env = None
-        if "->" in transition:
-            parts = transition.split("->")
-            source_env = parts[0].strip()
-            target_env = parts[1].strip()
-
         evaluation = await evaluate_promotion(
             project_id=packet.project_id,
-            source_environment=source_env,
-            target_environment=target_env,
+            source_environment=_source_env,
+            target_environment=_target_env,
             session=db,
         )
         await db.commit()
@@ -335,14 +348,20 @@ async def complete_task_packet(
         if evaluation.status.value == "passed" if hasattr(evaluation.status, "value") else evaluation.status == "passed":
             await _check_auto_elevation(
                 project_id=packet.project_id,
-                source_env=source_env,
-                target_env=target_env or "",
+                source_env=_source_env,
+                target_env=_target_env or "",
                 session=db,
                 request=request,
             )
             await db.commit()
     except Exception:
-        pass  # Gate re-evaluation is best-effort
+        if _gate_is_manual:
+            raise
+        logger.warning(
+            "Gate re-evaluation failed (auto-elevation mode, project=%s, %s->%s)",
+            packet.project_id, _source_env, _target_env,
+            exc_info=True,
+        )
 
     # AGP-05: detect missing context receipt (background — post-response)
     session_factory = getattr(getattr(request, "app", None), "state", None)
@@ -430,4 +449,8 @@ async def _check_auto_elevation(
             env_profile.environment = target_env
 
     except Exception:
-        pass  # Auto-elevation is best-effort
+        logger.warning(
+            "Auto-elevation failed (project=%s, %s->%s)",
+            project_id, source_env, target_env,
+            exc_info=True,
+        )

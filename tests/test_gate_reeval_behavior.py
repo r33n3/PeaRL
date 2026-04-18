@@ -5,8 +5,9 @@ CLAUDE.md governance constraint:
 - Auto-elevation gate (auto_pass=True): re-eval failure must log warning, not raise (200)
 """
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
+from pearl.db.models.promotion import PromotionGateRow
 from pearl.repositories.task_packet_repo import TaskPacketRepository
 from pearl.services.id_generator import generate_id
 
@@ -56,21 +57,34 @@ async def _create_and_claim_packet(db_session, project_id: str) -> str:
 
 
 @pytest.mark.asyncio
-async def test_gate_reeval_failure_raises_in_manual_mode(client, db_session):
+async def test_gate_reeval_failure_raises_in_manual_mode(app, db_session):
     """Manual gate (auto_pass=False): re-eval failure must return 500."""
-    pid = await _create_project(client, "proj_reeval_manual")
-    tp_id = await _create_and_claim_packet(db_session, pid)
+    from httpx import ASGITransport, AsyncClient
 
-    with patch(
-        "pearl.services.promotion.gate_evaluator.evaluate_promotion",
-        side_effect=RuntimeError("gate evaluator exploded"),
-    ):
-        r = await client.post(
-            f"/api/v1/task-packets/{tp_id}/complete",
-            json={"status": "completed", "fix_summary": "done"},
-        )
+    # Use raise_app_exceptions=False so 500s are captured as responses, not raised
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        pid = await _create_project(ac, "proj_reeval_manual")
+        tp_id = await _create_and_claim_packet(db_session, pid)
 
-    # Currently code swallows exception (line 344: except Exception: pass)
+        manual_gate = MagicMock(spec=PromotionGateRow)
+        manual_gate.auto_pass = False
+
+        with patch(
+            "pearl.services.promotion.gate_evaluator.evaluate_promotion",
+            side_effect=RuntimeError("gate evaluator exploded"),
+        ), patch(
+            "pearl.api.routes.task_packets.PromotionGateRepository",
+        ) as mock_gate_repo_cls:
+            mock_instance = MagicMock()
+            mock_instance.get_for_transition = AsyncMock(return_value=manual_gate)
+            mock_gate_repo_cls.return_value = mock_instance
+
+            r = await ac.post(
+                f"/api/v1/task-packets/{tp_id}/complete",
+                json={"status": "completed", "fix_summary": "done"},
+            )
+
     # After fix, must return 500 for manual gate failure
     assert r.status_code == 500, (
         f"Expected 500 for manual gate re-eval failure, got {r.status_code}: {r.text}"
@@ -89,27 +103,36 @@ async def test_gate_reeval_failure_logs_warning_in_auto_mode(client, db_session)
     pid = await _create_project(client, "proj_reeval_auto")
     tp_id = await _create_and_claim_packet(db_session, pid)
 
-    with patch(
-        "pearl.services.promotion.gate_evaluator.evaluate_promotion",
-        side_effect=RuntimeError("gate evaluator exploded"),
-    ):
-        # Import and patch logger in task_packets module (after fix)
-        import pearl.api.routes.task_packets as tp_module
-        original_logger = getattr(tp_module, "logger", None)
-        mock_logger = MagicMock()
-        tp_module.logger = mock_logger
+    auto_gate = MagicMock(spec=PromotionGateRow)
+    auto_gate.auto_pass = True
 
-        try:
+    # Import and patch logger in task_packets module
+    import pearl.api.routes.task_packets as tp_module
+    original_logger = getattr(tp_module, "logger", None)
+    mock_logger = MagicMock()
+    tp_module.logger = mock_logger
+
+    try:
+        with patch(
+            "pearl.services.promotion.gate_evaluator.evaluate_promotion",
+            side_effect=RuntimeError("gate evaluator exploded"),
+        ), patch(
+            "pearl.api.routes.task_packets.PromotionGateRepository",
+        ) as mock_gate_repo_cls:
+            mock_instance = MagicMock()
+            mock_instance.get_for_transition = AsyncMock(return_value=auto_gate)
+            mock_gate_repo_cls.return_value = mock_instance
+
             r = await client.post(
                 f"/api/v1/task-packets/{tp_id}/complete",
                 json={"status": "completed", "fix_summary": "done"},
             )
-        finally:
-            # Restore original logger state
-            if original_logger is not None:
-                tp_module.logger = original_logger
-            elif hasattr(tp_module, "logger"):
-                delattr(tp_module, "logger")
+    finally:
+        # Restore original logger state
+        if original_logger is not None:
+            tp_module.logger = original_logger
+        elif hasattr(tp_module, "logger"):
+            delattr(tp_module, "logger")
 
     # After fix: must return 200 for auto gate failure (with warning logged)
     assert r.status_code == 200, (
