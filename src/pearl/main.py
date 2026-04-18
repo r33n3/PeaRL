@@ -183,7 +183,7 @@ def create_app() -> FastAPI:
     # Mount MCP streamable HTTP transport
     from pearl.mcp.http_server import build_mcp_asgi_app
     mcp_asgi = build_mcp_asgi_app(
-        api_base_url=getattr(settings, "effective_public_api_url", "http://localhost:8081/api/v1"),
+        api_base_url=settings.effective_public_api_url,
         api_key=None,
     )
     app.mount("/mcp", app=mcp_asgi)
