@@ -30,11 +30,12 @@ def build_mcp_asgi_app(api_base_url: str, api_key: str | None = None):
         ]
 
     @server.call_tool()
-    async def call_tool(name: str, arguments: dict) -> list[mcp_types.TextContent]:
+    async def call_tool(name: str, arguments: dict | None) -> list[mcp_types.TextContent]:
         if name not in _TOOL_MAP:
+            logger.warning("MCP HTTP unknown tool requested: %s", name)
             return [mcp_types.TextContent(type="text", text=json.dumps({"error": f"Unknown tool: {name}"}))]
         try:
-            result = await pearl.call_tool(name, arguments)
+            result = await pearl.call_tool(name, arguments or {})
         except Exception as exc:
             logger.error("MCP HTTP tool %s failed: %s", name, exc)
             result = {"error": str(exc)}
