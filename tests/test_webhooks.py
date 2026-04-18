@@ -262,3 +262,18 @@ async def test_webhook_idempotency_stores_key_on_success(db_session):
     stored = await db_session.get(IdempotencyKeyRow, idem_key)
     assert stored is not None
     assert stored.endpoint == sub.url
+
+
+def test_webhook_registry_enforces_subscription_cap():
+    """Registering beyond max_subscriptions raises ConflictError."""
+    from pearl.errors.exceptions import ConflictError
+
+    registry = WebhookRegistry(max_subscriptions=3)
+    for i in range(3):
+        registry.register(WebhookSubscription(url=f"http://host{i}.example.com/hook", secret="s"))
+
+    with pytest.raises(ConflictError, match="limit"):
+        registry.register(WebhookSubscription(url="http://overflow.example.com/hook", secret="s"))
+
+    # Existing subscriptions must be unchanged
+    assert len(registry.list_all()) == 3
