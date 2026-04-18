@@ -1,7 +1,7 @@
 """Contract compliance client tests."""
 
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 
@@ -28,12 +28,14 @@ async def test_get_key_compliance_passed(client):
         {"model": "ollama-qwen3.5", "spend": 1.0},
     ]
 
-    mock_response_info = AsyncMock()
+    mock_response_info = MagicMock()
     mock_response_info.status_code = 200
+    mock_response_info.raise_for_status = lambda: None
     mock_response_info.json = lambda: key_info
 
-    mock_response_logs = AsyncMock()
+    mock_response_logs = MagicMock()
     mock_response_logs.status_code = 200
+    mock_response_logs.raise_for_status = lambda: None
     mock_response_logs.json = lambda: spend_logs
 
     with patch("pearl.integrations.litellm.httpx.AsyncClient") as mock_aclient:
@@ -65,11 +67,13 @@ async def test_get_key_compliance_budget_exceeded(client):
     }
     spend_logs = [{"model": "ollama-qwen3.5", "spend": 7.3}]
 
-    mock_info = AsyncMock()
+    mock_info = MagicMock()
     mock_info.status_code = 200
+    mock_info.raise_for_status = lambda: None
     mock_info.json = lambda: key_info
-    mock_logs = AsyncMock()
+    mock_logs = MagicMock()
     mock_logs.status_code = 200
+    mock_logs.raise_for_status = lambda: None
     mock_logs.json = lambda: spend_logs
 
     with patch("pearl.integrations.litellm.httpx.AsyncClient") as mock_aclient:
@@ -101,11 +105,13 @@ async def test_get_key_compliance_unauthorized_model(client):
         {"model": "gpt-4o", "spend": 0.5},
     ]
 
-    mock_info = AsyncMock()
+    mock_info = MagicMock()
     mock_info.status_code = 200
+    mock_info.raise_for_status = lambda: None
     mock_info.json = lambda: key_info
-    mock_logs = AsyncMock()
+    mock_logs = MagicMock()
     mock_logs.status_code = 200
+    mock_logs.raise_for_status = lambda: None
     mock_logs.json = lambda: spend_logs
 
     with patch("pearl.integrations.litellm.httpx.AsyncClient") as mock_aclient:
@@ -128,6 +134,32 @@ async def test_get_key_compliance_litellm_unreachable(client):
     with patch("pearl.integrations.litellm.httpx.AsyncClient") as mock_aclient:
         instance = mock_aclient.return_value.__aenter__.return_value
         instance.get = AsyncMock(side_effect=httpx.ConnectError("connection refused"))
+
+        result = await client.get_key_compliance(
+            key_alias="wtk-run-abc",
+            budget_cap_usd=10.0,
+            allowed_models=["ollama-qwen3.5"],
+        )
+
+    assert result.passed is True
+    assert len(result.violations) == 1
+    assert "unreachable" in result.violations[0].lower()
+
+
+@pytest.mark.asyncio
+async def test_get_key_compliance_litellm_non_200(client):
+    """Non-200 from LiteLLM degrades gracefully rather than silently passing with zero spend."""
+    mock_info = MagicMock()
+    mock_info.status_code = 401
+
+    def _raise():
+        raise httpx.HTTPStatusError("401", request=MagicMock(), response=mock_info)
+
+    mock_info.raise_for_status = _raise
+
+    with patch("pearl.integrations.litellm.httpx.AsyncClient") as mock_aclient:
+        instance = mock_aclient.return_value.__aenter__.return_value
+        instance.get = AsyncMock(return_value=mock_info)
 
         result = await client.get_key_compliance(
             key_alias="wtk-run-abc",

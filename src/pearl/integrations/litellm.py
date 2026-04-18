@@ -7,15 +7,15 @@ behaviour matched its approved allowance profile contract.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 import httpx
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class ContractCompliance:
+class ContractCompliance(BaseModel):
     passed: bool
     violations: list[str]
     key_alias: str
@@ -24,7 +24,7 @@ class ContractCompliance:
     budget_cap_usd: float | None
     actual_spend_usd: float
     request_count: int
-    checked_at: str = field(default="")
+    checked_at: str = ""
 
 
 class LiteLLMClient:
@@ -42,19 +42,19 @@ class LiteLLMClient:
     ) -> ContractCompliance:
         """Query LiteLLM for spend + model usage and compare against the approved contract.
 
-        Degrades gracefully: if LiteLLM is unreachable, returns passed=True with a
-        'unreachable' violation note so the gate is not hard-blocked by infrastructure failure.
+        Degrades gracefully: if LiteLLM is unreachable or returns a non-200 response,
+        returns passed=True with a 'unreachable' violation note so the gate is not
+        hard-blocked by infrastructure failure.
         """
-        from datetime import datetime, timezone
         checked_at = datetime.now(timezone.utc).isoformat()
 
         try:
             key_info, spend_logs = await self._fetch_compliance_data(key_alias)
-        except httpx.ConnectError as exc:
+        except (httpx.ConnectError, httpx.HTTPStatusError) as exc:
             logger.warning("LiteLLM unreachable during contract check for %s: %s", key_alias, exc)
             return ContractCompliance(
                 passed=True,
-                violations=[f"LiteLLM unreachable — contract check skipped ({exc})"],
+                violations=["LiteLLM unreachable — contract check skipped"],
                 key_alias=key_alias,
                 approved_models=allowed_models,
                 actual_models_used=[],
@@ -88,7 +88,9 @@ class LiteLLMClient:
             passed=len(violations) == 0,
             violations=violations,
             key_alias=key_alias,
-            approved_models=list(key_info.get("models") or allowed_models),
+            approved_models=list(
+                key_info["models"] if "models" in key_info else allowed_models
+            ),
             actual_models_used=actual_models,
             budget_cap_usd=budget_cap_usd,
             actual_spend_usd=actual_spend,
@@ -104,16 +106,16 @@ class LiteLLMClient:
                 params={"key_alias": key_alias},
                 headers=headers,
             )
-            key_info: dict = info_resp.json() if info_resp.status_code == 200 else {}
+            info_resp.raise_for_status()
+            key_info: dict = info_resp.json()
 
             logs_resp = await http.get(
                 f"{self._base_url}/spend/logs",
                 params={"key_alias": key_alias},
                 headers=headers,
             )
-            spend_logs: list[dict] = (
-                logs_resp.json() if logs_resp.status_code == 200 else []
-            )
+            logs_resp.raise_for_status()
+            spend_logs: list[dict] = logs_resp.json()
             if not isinstance(spend_logs, list):
                 spend_logs = []
 
