@@ -1,6 +1,6 @@
 """MCP tool definitions mapping to PeaRL API operations.
 
-50 tools total.
+51 tools total.
 """
 
 TOOL_DEFINITIONS = [
@@ -800,6 +800,26 @@ TOOL_DEFINITIONS = [
                 },
             },
             "required": ["project_id"],
+        },
+    },
+    # ─── LiteLLM Contract Compliance ──────────────────
+    {
+        "name": "pearl_check_agent_contract",
+        "description": (
+            "Check whether a deployed agent's LiteLLM runtime usage complies with its "
+            "approved allowance profile contract. Queries actual spend and model usage "
+            "from LiteLLM's virtual key system and compares against the contracted limits. "
+            "Returns passed=true/false with a list of violations."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "packet_id": {
+                    "type": "string",
+                    "description": "Task packet ID (tp_...) to check contract compliance for.",
+                },
+            },
+            "required": ["packet_id"],
         },
     },
 ]

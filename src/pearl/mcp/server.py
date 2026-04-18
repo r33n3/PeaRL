@@ -146,6 +146,8 @@ class MCPServer:
             "runSonarScan": self._run_sonar_scan,
             # Reports
             "exportReportPdf": self._export_report_pdf,
+            # LiteLLM contract compliance
+            "pearl_check_agent_contract": self._check_agent_contract,
         }
         return routes.get(tool_name)
 
@@ -530,3 +532,7 @@ class MCPServer:
         pid = args["project_id"]
         rid = args["report_id"]
         return await self._request("POST", f"/projects/{pid}/reports/{rid}/export")
+
+    async def _check_agent_contract(self, args: dict) -> dict:
+        packet_id = args.get("packet_id", "")
+        return await self._request("GET", f"/task-packets/{packet_id}/contract-compliance")
