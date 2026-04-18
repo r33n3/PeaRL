@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class ContractCompliance(BaseModel):
     passed: bool
     violations: list[str]
-    key_alias: str
+    key_alias: str | None
     approved_models: list[str]
     actual_models_used: list[str]
     budget_cap_usd: float | None

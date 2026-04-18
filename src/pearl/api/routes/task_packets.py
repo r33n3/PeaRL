@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pearl.config import settings
 from pearl.dependencies import get_db, get_current_user, get_trace_id
 from pearl.errors.exceptions import ConflictError, NotFoundError, ValidationError
-from pearl.integrations.litellm import LiteLLMClient
+from pearl.integrations.litellm import ContractCompliance, LiteLLMClient
 from pearl.repositories.allowance_profile_repo import AllowanceProfileRepository
 from pearl.repositories.promotion_repo import PromotionGateRepository
 from pearl.repositories.task_packet_repo import TaskPacketRepository
@@ -479,17 +479,17 @@ async def get_contract_compliance(
 
     run_id: str | None = (packet.packet_data or {}).get("run_id")
     if not run_id:
-        return {
-            "passed": True,
-            "violations": ["No run_id in packet_data — contract check skipped"],
-            "key_alias": None,
-            "approved_models": [],
-            "actual_models_used": [],
-            "budget_cap_usd": None,
-            "actual_spend_usd": 0.0,
-            "request_count": 0,
-            "checked_at": "",
-        }
+        return ContractCompliance(
+            passed=True,
+            violations=["No run_id in packet_data — contract check skipped"],
+            key_alias=None,
+            approved_models=[],
+            actual_models_used=[],
+            budget_cap_usd=None,
+            actual_spend_usd=0.0,
+            request_count=0,
+            checked_at=datetime.now(timezone.utc).isoformat(),
+        ).model_dump()
 
     budget_cap: float | None = None
     allowed_models: list[str] = []
