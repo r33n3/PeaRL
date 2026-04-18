@@ -16,16 +16,14 @@ depends_on = None
 
 
 def _column_exists(table: str, column: str) -> bool:
-    from sqlalchemy import inspect, text
-    conn = op.get_bind()
-    result = conn.execute(
-        text(
-            "SELECT 1 FROM information_schema.columns "
-            "WHERE table_name=:t AND column_name=:c"
-        ),
-        {"t": table, "c": column},
-    )
-    return result.fetchone() is not None
+    from sqlalchemy import inspect
+    bind = op.get_bind()
+    insp = inspect(bind)
+    try:
+        cols = [c["name"] for c in insp.get_columns(table)]
+        return column in cols
+    except Exception:
+        return False
 
 
 def upgrade() -> None:
