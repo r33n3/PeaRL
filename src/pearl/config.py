@@ -91,6 +91,12 @@ class Settings(BaseSettings):
     # Defaults to auto-detected path relative to this file (works for dev installs).
     pearl_src_path: str = ""
 
+    # LiteLLM — inference control plane
+    # PeaRL uses these to verify agent spend and enforce budget limits
+    # against active task packets during promotion gate evaluation.
+    litellm_api_url: str = ""     # PEARL_LITELLM_API_URL  e.g. http://localhost:4000
+    litellm_api_key: str = ""     # PEARL_LITELLM_API_KEY  (builder key or master key)
+
     # MASS 2.0 integration
     mass_url: str = ""             # MASS 2.0 API base URL
     mass_api_key: str = ""         # MASS API key for authentication
