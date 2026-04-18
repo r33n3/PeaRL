@@ -8,8 +8,11 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pearl.dependencies import get_db, get_trace_id
+from pearl.config import settings
+from pearl.dependencies import get_db, get_current_user, get_trace_id
 from pearl.errors.exceptions import ConflictError, NotFoundError, ValidationError
+from pearl.integrations.litellm import LiteLLMClient
+from pearl.repositories.allowance_profile_repo import AllowanceProfileRepository
 from pearl.repositories.promotion_repo import PromotionGateRepository
 from pearl.repositories.task_packet_repo import TaskPacketRepository
 from pearl.services.task_packet_generator import generate_task_packet
@@ -454,3 +457,57 @@ async def _check_auto_elevation(
             project_id, source_env, target_env,
             exc_info=True,
         )
+
+
+@router.get("/task-packets/{packet_id}/contract-compliance", status_code=200)
+async def get_contract_compliance(
+    packet_id: str,
+    db: AsyncSession = Depends(get_db),
+    _user: dict = Depends(get_current_user),
+) -> dict:
+    """Check whether an agent's LiteLLM runtime usage complies with its allowance profile contract."""
+    if not settings.litellm_api_url or not settings.litellm_api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="LiteLLM is not configured. Set PEARL_LITELLM_API_URL and PEARL_LITELLM_API_KEY.",
+        )
+
+    repo = TaskPacketRepository(db)
+    packet = await repo.get(packet_id)
+    if packet is None:
+        raise NotFoundError("task_packet", packet_id)
+
+    run_id: str | None = (packet.packet_data or {}).get("run_id")
+    if not run_id:
+        return {
+            "passed": True,
+            "violations": ["No run_id in packet_data — contract check skipped"],
+            "key_alias": None,
+            "approved_models": [],
+            "actual_models_used": [],
+            "budget_cap_usd": None,
+            "actual_spend_usd": 0.0,
+            "request_count": 0,
+            "checked_at": "",
+        }
+
+    budget_cap: float | None = None
+    allowed_models: list[str] = []
+    if packet.allowance_profile_id:
+        profile_repo = AllowanceProfileRepository(db)
+        profile = await profile_repo.get(packet.allowance_profile_id)
+        if profile:
+            budget_cap = profile.budget_cap_usd
+            allowed_models = list(profile.model_restrictions or [])
+
+    key_alias = f"wtk-run-{run_id}"
+    client = LiteLLMClient(
+        base_url=settings.litellm_api_url,
+        api_key=settings.litellm_api_key,
+    )
+    compliance = await client.get_key_compliance(
+        key_alias=key_alias,
+        budget_cap_usd=budget_cap,
+        allowed_models=allowed_models,
+    )
+    return compliance.model_dump()

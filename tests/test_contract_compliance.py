@@ -2,6 +2,7 @@
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+from httpx import ASGITransport, AsyncClient as HttpxClient
 
 import httpx
 
@@ -170,3 +171,62 @@ async def test_get_key_compliance_litellm_non_200(client):
     assert result.passed is True
     assert len(result.violations) == 1
     assert "unreachable" in result.violations[0].lower()
+
+
+# ─── Route integration tests ──────────────────────────────────────────────────
+
+async def _seed_task_packet(db_session, task_packet_id: str, packet_data: dict, allowance_profile_id: str | None = None):
+    """Directly seed a TaskPacketRow for testing."""
+    from pearl.db.models.task_packet import TaskPacketRow
+
+    row = TaskPacketRow(
+        task_packet_id=task_packet_id,
+        project_id="proj_compliance_test",
+        environment="dev",
+        trace_id="trace_test",
+        schema_version=1,
+        packet_data=packet_data,
+        allowance_profile_id=allowance_profile_id,
+    )
+    db_session.add(row)
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_contract_compliance_route_no_litellm_config(app, db_session):
+    """Returns 503 when PEARL_LITELLM_API_URL is not configured."""
+    await _seed_task_packet(
+        db_session,
+        task_packet_id="tp_compliance503",
+        packet_data={"run_id": "run_abc123", "goal": "test"},
+    )
+
+    async with HttpxClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        with patch("pearl.api.routes.task_packets.settings") as mock_settings:
+            mock_settings.litellm_api_url = ""
+            mock_settings.litellm_api_key = "sk-key"
+            r = await ac.get("/api/v1/task-packets/tp_compliance503/contract-compliance")
+
+    assert r.status_code == 503
+    assert "not configured" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_contract_compliance_route_no_run_id(app, db_session):
+    """Returns 200 with skip note when packet_data has no run_id."""
+    await _seed_task_packet(
+        db_session,
+        task_packet_id="tp_complianceskip",
+        packet_data={"goal": "test"},
+    )
+
+    async with HttpxClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        with patch("pearl.api.routes.task_packets.settings") as mock_settings:
+            mock_settings.litellm_api_url = "http://litellm:4000"
+            mock_settings.litellm_api_key = "sk-builder"
+            r = await ac.get("/api/v1/task-packets/tp_complianceskip/contract-compliance")
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["passed"] is True
+    assert any("run_id" in v.lower() for v in body["violations"])
