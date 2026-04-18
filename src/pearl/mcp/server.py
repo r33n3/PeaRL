@@ -534,5 +534,7 @@ class MCPServer:
         return await self._request("POST", f"/projects/{pid}/reports/{rid}/export")
 
     async def _check_agent_contract(self, args: dict) -> dict:
-        packet_id = args.get("packet_id", "")
+        packet_id = args.get("packet_id")
+        if not packet_id:
+            return {"error": "packet_id is required"}
         return await self._request("GET", f"/task-packets/{packet_id}/contract-compliance")
