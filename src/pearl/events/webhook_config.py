@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass, field
 
+from pearl.errors.exceptions import ConflictError
+
 
 @dataclass
 class WebhookSubscription:
@@ -19,10 +21,16 @@ class WebhookRegistry:
     In production this would be backed by a database table.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, max_subscriptions: int = 100) -> None:
         self._subscriptions: list[WebhookSubscription] = []
+        self._max_subscriptions = max_subscriptions
 
     def register(self, subscription: WebhookSubscription) -> None:
+        if len(self._subscriptions) >= self._max_subscriptions:
+            raise ConflictError(
+                f"Webhook subscription limit reached ({self._max_subscriptions}). "
+                "Remove an existing subscription before adding a new one."
+            )
         self._subscriptions.append(subscription)
 
     def unregister(self, url: str) -> None:
@@ -40,5 +48,6 @@ class WebhookRegistry:
         return list(self._subscriptions)
 
 
-# Module-level singleton
-webhook_registry = WebhookRegistry()
+# Module-level singleton — cap sourced from settings
+from pearl.config import settings  # noqa: E402
+webhook_registry = WebhookRegistry(max_subscriptions=settings.max_webhook_subscriptions)
