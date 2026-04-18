@@ -12,9 +12,12 @@ issuing real HTTP requests.
 import asyncio
 import contextlib
 import json
+import logging
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+
+logger = logging.getLogger(__name__)
 
 _MCP_HEADERS = {
     "Content-Type": "application/json",
@@ -29,15 +32,9 @@ _MCP_HEADERS = {
 @contextlib.asynccontextmanager
 async def _lifespan_context(asgi_app):
     """Drive the ASGI lifespan startup, yield, then drive shutdown."""
-    startup_event = asyncio.Event()
-    shutdown_trigger = asyncio.Event()
-    startup_complete = asyncio.Event()
-    shutdown_complete = asyncio.Event()
+    msg_queue: asyncio.Queue = asyncio.Queue()
+    send_queue: asyncio.Queue = asyncio.Queue()
 
-    msg_queue = asyncio.Queue()
-    send_queue = asyncio.Queue()
-
-    # Prime the receive queue with startup then (later) shutdown
     await msg_queue.put({"type": "lifespan.startup"})
 
     async def receive():
@@ -51,20 +48,18 @@ async def _lifespan_context(asgi_app):
 
     task = asyncio.create_task(run_lifespan())
 
-    # Wait for startup.complete message
     msg = await asyncio.wait_for(send_queue.get(), timeout=5.0)
     assert msg["type"] == "lifespan.startup.complete", f"Unexpected lifespan msg: {msg}"
 
     try:
         yield
     finally:
-        # Signal shutdown
         await msg_queue.put({"type": "lifespan.shutdown"})
-        # Wait for shutdown.complete
         try:
-            msg = await asyncio.wait_for(send_queue.get(), timeout=5.0)
+            shutdown_msg = await asyncio.wait_for(send_queue.get(), timeout=5.0)
+            assert shutdown_msg["type"] == "lifespan.shutdown.complete", f"Unexpected shutdown msg: {shutdown_msg}"
         except asyncio.TimeoutError:
-            pass
+            logger.warning("MCP ASGI lifespan shutdown timed out — session manager may not have cleaned up")
         task.cancel()
         try:
             await task
@@ -167,6 +162,7 @@ async def test_mcp_call_unknown_tool():
     assert "result" in data, f"No result in response: {data}"
     content = data["result"]["content"]
     assert len(content) > 0
+    assert content[0]["type"] == "text"
     payload = json.loads(content[0]["text"])
     assert "error" in payload
 

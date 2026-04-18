@@ -74,5 +74,8 @@ def build_mcp_asgi_app(api_base_url: str, api_key: str | None = None):
                 except Exception as exc:
                     await send({"type": "lifespan.startup.failed", "message": str(exc)})
                     raise
+            else:
+                await send({"type": "lifespan.startup.failed", "message": f"Unexpected lifespan message: {msg['type']}"})
+                raise RuntimeError(f"MCP ASGI lifespan received unexpected message type: {msg['type']}")
 
     return _MCPApp()
