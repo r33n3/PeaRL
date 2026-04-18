@@ -1,4 +1,3 @@
-import contextlib
 import json
 import logging
 
@@ -52,11 +51,6 @@ def build_mcp_asgi_app(api_base_url: str, api_key: str | None = None):
         stateless=True,
         json_response=True,
     )
-
-    @contextlib.asynccontextmanager
-    async def _lifespan(app):  # noqa: ARG001
-        async with session_manager.run():
-            yield
 
     class _MCPApp:
         """Minimal ASGI wrapper that owns the session manager lifecycle."""
