@@ -17,28 +17,40 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-def upgrade() -> None:
-    # Add execution_phase column with default 'planning'
-    op.add_column(
-        "task_packets",
-        sa.Column(
-            "execution_phase",
-            sa.String(50),
-            nullable=False,
-            server_default="planning",
+def _column_exists(table: str, column: str) -> bool:
+    from sqlalchemy import text
+    conn = op.get_bind()
+    result = conn.execute(
+        text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name=:t AND column_name=:c"
         ),
+        {"t": table, "c": column},
     )
+    return result.fetchone() is not None
 
-    # Add phase_history column as JSON (TEXT in SQLite) with default empty array
-    op.add_column(
-        "task_packets",
-        sa.Column(
-            "phase_history",
-            sa.Text(),
-            nullable=False,
-            server_default="[]",
-        ),
-    )
+
+def upgrade() -> None:
+    if not _column_exists("task_packets", "execution_phase"):
+        op.add_column(
+            "task_packets",
+            sa.Column(
+                "execution_phase",
+                sa.String(50),
+                nullable=False,
+                server_default="planning",
+            ),
+        )
+    if not _column_exists("task_packets", "phase_history"):
+        op.add_column(
+            "task_packets",
+            sa.Column(
+                "phase_history",
+                sa.Text(),
+                nullable=False,
+                server_default="[]",
+            ),
+        )
 
 
 def downgrade() -> None:

@@ -9,25 +9,41 @@ Create Date: 2026-04-02
 from alembic import op
 import sqlalchemy as sa
 
-revision = "004_add_allowance_profile_versioning"
-down_revision = "003"
+revision = "004"
+down_revision = "003_add_trust_accumulation"
 branch_labels = None
 depends_on = None
 
 
+def _column_exists(table: str, column: str) -> bool:
+    from sqlalchemy import inspect, text
+    conn = op.get_bind()
+    result = conn.execute(
+        text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name=:t AND column_name=:c"
+        ),
+        {"t": table, "c": column},
+    )
+    return result.fetchone() is not None
+
+
 def upgrade() -> None:
-    op.add_column(
-        "allowance_profiles",
-        sa.Column("profile_version", sa.Integer(), nullable=False, server_default="1"),
-    )
-    op.add_column(
-        "task_packets",
-        sa.Column("allowance_profile_id", sa.String(128), nullable=True),
-    )
-    op.add_column(
-        "task_packets",
-        sa.Column("allowance_profile_version", sa.Integer(), nullable=True),
-    )
+    if not _column_exists("allowance_profiles", "profile_version"):
+        op.add_column(
+            "allowance_profiles",
+            sa.Column("profile_version", sa.Integer(), nullable=False, server_default="1"),
+        )
+    if not _column_exists("task_packets", "allowance_profile_id"):
+        op.add_column(
+            "task_packets",
+            sa.Column("allowance_profile_id", sa.String(128), nullable=True),
+        )
+    if not _column_exists("task_packets", "allowance_profile_version"):
+        op.add_column(
+            "task_packets",
+            sa.Column("allowance_profile_version", sa.Integer(), nullable=True),
+        )
 
 
 def downgrade() -> None:

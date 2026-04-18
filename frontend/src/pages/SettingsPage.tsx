@@ -91,11 +91,13 @@ const INTEGRATION_CATALOGUE: CatalogueEntry[] = [
   { adapter_type: "webhook",     category: "notification",  label: "Webhook",     description: "Custom HTTP endpoint" },
   { adapter_type: "email",       category: "notification",  label: "Email",       description: "SMTP / email alerts" },
   { adapter_type: "pagerduty",   category: "notification",  label: "PagerDuty",   description: "Incident alerting" },
+  { adapter_type: "mass",        category: "dast",          label: "MASS 2.0",    description: "AI deployment security scanner" },
 ];
 
-const CATEGORY_ORDER = ["sast", "sca", "container_scan", "git_platform", "ci_cd", "ticketing", "notification"] as const;
+const CATEGORY_ORDER = ["dast", "sast", "sca", "container_scan", "git_platform", "ci_cd", "ticketing", "notification"] as const;
 
 const CATEGORY_LABELS: Record<string, string> = {
+  dast:           "AI / Dynamic Scanners",
   sast:           "SAST / Code Quality",
   sca:            "SCA / Dependencies",
   container_scan: "Container & IaC Scanning",
@@ -118,14 +120,19 @@ const TOKEN_ENV_PLACEHOLDERS: Record<string, string> = {
   linear:      "LINEAR_API_KEY",
   servicenow:  "SERVICENOW_TOKEN",
   azure_devops:"AZURE_DEVOPS_TOKEN",
+  mass:        "PEARL_MASS_API_KEY",
 };
 
 function getAdapterFields(adapter_type: string): { key: string; label: string; placeholder: string; hint?: string; type?: string; span?: "full" }[] {
   const webhookAdapters = ["slack", "teams", "webhook", "pagerduty"];
-  const tokenAdapters = ["github", "gitlab", "snyk", "semgrep", "trivy", "sonarqube"];
+  const tokenAdapters = ["github", "gitlab", "snyk", "semgrep", "trivy", "sonarqube", "mass"];
   const ticketAdapters = ["jira", "linear", "servicenow", "azure_devops"];
   const envPlaceholder = TOKEN_ENV_PLACEHOLDERS[adapter_type] ?? "MY_TOKEN";
-  const baseUrlPlaceholder = adapter_type === "sonarqube" ? "http://localhost:9000" : "https://api.example.com";
+  const baseUrlPlaceholder = adapter_type === "sonarqube"
+    ? "http://localhost:9000"
+    : adapter_type === "mass"
+    ? "http://host.docker.internal:80"
+    : "https://api.example.com";
   if (webhookAdapters.includes(adapter_type)) {
     return [{ key: "webhook_url", label: "Webhook URL", placeholder: "https://...", span: "full" }];
   }

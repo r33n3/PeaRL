@@ -20,6 +20,8 @@ services:
       PEARL_SONAR_URL: "http://localhost:9090"
       PEARL_LOG_LEVEL: info
       PEARL_LOCAL_REVIEWER_MODE: "1"
+      PEARL_MASS_URL: "http://host.docker.internal:80"
+      PEARL_MASS_API_KEY: ""
     depends_on:
       postgres:
         condition: service_healthy
