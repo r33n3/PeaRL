@@ -580,4 +580,15 @@ async def get_contract_compliance(
         budget_cap_usd=budget_cap,
         allowed_models=allowed_models,
     )
-    return compliance.model_dump()
+    result = compliance.model_dump()
+
+    contract_snapshot = (packet.packet_data or {}).get("contract_snapshot")
+    if contract_snapshot:
+        drift_report = await client.check_drift(contract_snapshot)
+        result["drift_check"] = drift_report.model_dump()
+        if drift_report.drifted:
+            result["passed"] = False
+    else:
+        result["drift_check"] = None
+
+    return result

@@ -115,6 +115,9 @@ async def test_contract_compliance_with_snapshot_returns_drift_key(app, admin_to
             headers={"Authorization": f"Bearer {admin_token}"},
         )
     assert r.status_code in (200, 503), r.text
+    if r.status_code == 200:
+        data = r.json()
+        assert "drift_check" in data
 
 
 @pytest.mark.asyncio
