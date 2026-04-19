@@ -4,6 +4,7 @@ import { useProjectOverview, useProjectGovernance } from "@/api/dashboard";
 import { useAgentBrief, usePackageIntegrity } from "@/api/agent";
 import { useProjectTimeline } from "@/api/timeline";
 import { useProjectExceptions, useDecideException, useRevokeException } from "@/api/approvals";
+import { useGovernanceState } from "@/api/projects";
 import { VaultCard } from "@/components/shared/VaultCard";
 import { EnvBadge } from "@/components/shared/EnvBadge";
 import { StatusBadge } from "@/components/shared/StatusBadge";
@@ -27,12 +28,13 @@ function fmtDays(d: number | null | undefined): string {
 export function ProjectPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"overview" | "guardrails" | "setup">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "team" | "guardrails" | "setup">("overview");
   const { data, isLoading } = useProjectOverview(projectId!);
   const { data: agentBrief } = useAgentBrief(projectId);
   const { data: pkgIntegrity } = usePackageIntegrity(projectId);
   const { data: timeline = [], isLoading: timelineLoading } = useProjectTimeline(projectId);
   const { data: gov } = useProjectGovernance(projectId!);
+  const { data: govState } = useGovernanceState(projectId);
   const { data: exceptions = [] } = useProjectExceptions(projectId);
   const decideExceptionMut = useDecideException();
   const revokeExceptionMut = useRevokeException();
@@ -205,7 +207,7 @@ export function ProjectPage() {
 
       {/* Tab bar */}
       <div className="flex gap-0 border-b border-white/10 mb-8">
-        {(["overview", "guardrails", "setup"] as const).map((tab) => (
+        {(["overview", "team", "guardrails", "setup"] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -228,6 +230,135 @@ export function ProjectPage() {
       {/* Setup tab */}
       {activeTab === "setup" && (
         <SetupTab projectId={projectId} />
+      )}
+
+      {/* Team tab */}
+      {activeTab === "team" && (
+        <div className="p-6 max-w-3xl space-y-6">
+          <VaultCard>
+            <h3 className="font-heading text-sm font-semibold text-bone mb-3 uppercase tracking-wider">
+              Intent
+            </h3>
+            <div className="grid grid-cols-2 gap-4 text-xs font-mono">
+              <div>
+                <p className="text-bone-dim mb-1">Intake Card</p>
+                <MonoText>{govState?.intake_card_id ?? "—"}</MonoText>
+              </div>
+              <div>
+                <p className="text-bone-dim mb-1">WTK Goal</p>
+                <MonoText>{govState?.goal_id ?? "—"}</MonoText>
+              </div>
+              <div>
+                <p className="text-bone-dim mb-1">Target Type</p>
+                <MonoText>{govState?.target_type ?? "—"}</MonoText>
+              </div>
+              <div>
+                <p className="text-bone-dim mb-1">Target ID</p>
+                <MonoText>{govState?.target_id ?? "—"}</MonoText>
+              </div>
+              <div>
+                <p className="text-bone-dim mb-1">Risk Classification</p>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-mono ${
+                  govState?.risk_classification === "high" ? "bg-red-900/40 text-red-400" :
+                  govState?.risk_classification === "medium" ? "bg-yellow-900/40 text-yellow-400" :
+                  govState?.risk_classification === "low" ? "bg-green-900/40 text-green-400" :
+                  "bg-slate-border/40 text-bone-dim"
+                }`}>
+                  {govState?.risk_classification ?? "unclassified"}
+                </span>
+              </div>
+              <div>
+                <p className="text-bone-dim mb-1">Qualification Packet</p>
+                <MonoText>{govState?.qualification_packet_id ?? "—"}</MonoText>
+              </div>
+            </div>
+          </VaultCard>
+
+          <VaultCard>
+            <h3 className="font-heading text-sm font-semibold text-bone mb-3 uppercase tracking-wider">
+              Agent Team
+            </h3>
+            {!govState?.agent_members ? (
+              <p className="text-xs text-bone-dim font-mono">No agent team registered. WTK registers agents via POST /projects/{projectId}/agents.</p>
+            ) : (
+              <div className="space-y-4 text-xs font-mono">
+                {govState.agent_members.coordinator && (
+                  <div>
+                    <p className="text-bone-dim mb-1 uppercase tracking-wider text-[10px]">Coordinator</p>
+                    <div className="flex items-center gap-2 px-3 py-2 rounded border border-cold-teal/30 bg-cold-teal/5">
+                      <span className="w-2 h-2 rounded-full bg-cold-teal" />
+                      <MonoText className="text-cold-teal">{govState.agent_members.coordinator}</MonoText>
+                    </div>
+                  </div>
+                )}
+                {govState.agent_members.workers.length > 0 && (
+                  <div>
+                    <p className="text-bone-dim mb-1 uppercase tracking-wider text-[10px]">Workers</p>
+                    <div className="space-y-1">
+                      {govState.agent_members.workers.map((w) => (
+                        <div key={w} className="flex items-center gap-2 px-3 py-1.5 rounded border border-slate-border bg-slate-border/10">
+                          <span className="w-1.5 h-1.5 rounded-full bg-bone-dim" />
+                          <MonoText>{w}</MonoText>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {govState.agent_members.evaluators.length > 0 && (
+                  <div>
+                    <p className="text-bone-dim mb-1 uppercase tracking-wider text-[10px]">Evaluators</p>
+                    <div className="space-y-1">
+                      {govState.agent_members.evaluators.map((e) => (
+                        <div key={e} className="flex items-center gap-2 px-3 py-1.5 rounded border border-clinical-cyan/30 bg-clinical-cyan/5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-clinical-cyan" />
+                          <MonoText className="text-clinical-cyan">{e}</MonoText>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </VaultCard>
+
+          {(govState?.litellm_key_refs?.length ?? 0) > 0 && (
+            <VaultCard>
+              <h3 className="font-heading text-sm font-semibold text-bone mb-3 uppercase tracking-wider">
+                Runtime Keys
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {govState!.litellm_key_refs!.map((k) => (
+                  <span key={k} className="px-2 py-1 rounded border border-slate-border text-[10px] font-mono text-bone-muted">
+                    {k}
+                  </span>
+                ))}
+              </div>
+            </VaultCard>
+          )}
+
+          {(govState?.pending_approvals_count ?? 0) > 0 && (
+            <VaultCard>
+              <h3 className="font-heading text-sm font-semibold text-bone mb-3 uppercase tracking-wider">
+                Pending Approvals
+              </h3>
+              <div className="space-y-2">
+                {govState!.pending_approvals.map((a) => (
+                  <a
+                    key={a.approval_request_id}
+                    href={`/approvals/${a.approval_request_id}`}
+                    className="flex items-center justify-between px-3 py-2 rounded border border-clinical-cyan/30 bg-clinical-cyan/5 hover:border-clinical-cyan transition-colors"
+                  >
+                    <div>
+                      <span className="text-xs font-mono text-bone">{a.request_type}</span>
+                      <span className="text-[10px] font-mono text-bone-dim ml-2">#{a.approval_request_id}</span>
+                    </div>
+                    <span className="badge-pending text-[10px]">{a.status}</span>
+                  </a>
+                ))}
+              </div>
+            </VaultCard>
+          )}
+        </div>
       )}
 
       {/* Overview tab content */}
