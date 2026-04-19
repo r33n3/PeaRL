@@ -549,7 +549,7 @@ async def get_contract_compliance(
 
     run_id: str | None = (packet.packet_data or {}).get("run_id")
     if not run_id:
-        return ContractCompliance(
+        result = ContractCompliance(
             passed=True,
             violations=["No run_id in packet_data — contract check skipped"],
             key_alias=None,
@@ -560,6 +560,8 @@ async def get_contract_compliance(
             request_count=0,
             checked_at=datetime.now(timezone.utc).isoformat(),
         ).model_dump()
+        result["drift_check"] = None
+        return result
 
     budget_cap: float | None = None
     allowed_models: list[str] = []
