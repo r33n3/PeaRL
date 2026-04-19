@@ -85,68 +85,75 @@ class MCPServer:
 
     def _route(self, tool_name: str):
         routes = {
+            # Project management
             "pearl_register_project": self._register_project,
-            "createProject": self._create_project,
-            "getProject": self._get_project,
-            "updateProject": self._update_project,
-            "upsertOrgBaseline": self._upsert_org_baseline,
-            "upsertApplicationSpec": self._upsert_app_spec,
-            "upsertEnvironmentProfile": self._upsert_env_profile,
-            "compileContext": self._compile_context,
-            "getCompiledPackage": self._get_compiled_package,
-            "generateTaskPacket": self._generate_task_packet,
-            "ingestFindings": self._ingest_findings,
-            "generateRemediationSpec": self._generate_remediation_spec,
-            "createApprovalRequest": self._create_approval_request,
-            "decideApproval": self._decide_approval,
-            "createException": self._create_exception,
-            "generateReport": self._generate_report,
-            "getJobStatus": self._get_job_status,
-            # New: Promotion gates
-            "evaluatePromotionReadiness": self._evaluate_promotion,
-            "getPromotionReadiness": self._get_promotion_readiness,
-            "requestPromotion": self._request_promotion,
-            "getPromotionHistory": self._get_promotion_history,
-            # New: Project summary
-            "getProjectSummary": self._get_project_summary,
-            # New: Fairness governance
-            "createFairnessCase": self._create_fairness_case,
-            "submitEvidence": self._submit_evidence,
-            "ingestMonitoringSignal": self._ingest_monitoring_signal,
-            "submitContextReceipt": self._submit_context_receipt,
-            # New: Scan targets
-            "registerScanTarget": self._register_scan_target,
-            "listScanTargets": self._list_scan_targets,
-            "updateScanTarget": self._update_scan_target,
-            # New: AI security scanning
-            "runScan": self._run_scan,
-            "getScanResults": self._get_scan_results,
-            "assessCompliance": self._assess_compliance,
-            "listGuardrails": self._list_guardrails,
-            "getGuardrail": self._get_guardrail,
-            "getRecommendedGuardrails": self._get_recommended_guardrails,
-            "getRecommendedBaseline": self._get_recommended_baseline,
-            "applyRecommendedBaseline": self._apply_recommended_baseline,
-            "listPolicyTemplates": self._list_policy_templates,
-            "getPolicyTemplate": self._get_policy_template,
-            "ingestSecurityReview": self._ingest_security_review,
-            "claimTaskPacket": self._claim_task_packet,
-            "completeTaskPacket": self._complete_task_packet,
+            "pearl_create_project": self._create_project,
+            "pearl_get_project": self._get_project,
+            "pearl_update_project": self._update_project,
+            # Project configuration
+            "pearl_set_org_baseline": self._upsert_org_baseline,
+            "pearl_set_app_spec": self._upsert_app_spec,
+            "pearl_set_env_profile": self._upsert_env_profile,
+            # Context compilation
+            "pearl_compile_context": self._compile_context,
+            "pearl_get_compiled_package": self._get_compiled_package,
+            "pearl_generate_task_packet": self._generate_task_packet,
+            # Findings
+            "pearl_ingest_findings": self._ingest_findings,
+            "pearl_generate_remediation_spec": self._generate_remediation_spec,
+            # Approvals & exceptions
+            "pearl_request_approval": self._create_approval_request,
+            "pearl_decide_approval": self._decide_approval,
+            "pearl_create_exception": self._create_exception,
+            # Reports
+            "pearl_generate_report": self._generate_report,
+            "pearl_export_report_pdf": self._export_report_pdf,
+            # Jobs
+            "pearl_get_job_status": self._get_job_status,
+            # Promotion gates
+            "pearl_evaluate_promotion": self._evaluate_promotion,
+            "pearl_get_promotion_readiness": self._get_promotion_readiness,
+            "pearl_request_promotion": self._request_promotion,
+            "pearl_get_promotion_history": self._get_promotion_history,
+            # Project summary
+            "pearl_get_project_summary": self._get_project_summary,
+            # Fairness governance
+            "pearl_create_fairness_case": self._create_fairness_case,
+            "pearl_submit_evidence": self._submit_evidence,
+            "pearl_ingest_monitoring_signal": self._ingest_monitoring_signal,
+            "pearl_submit_context_receipt": self._submit_context_receipt,
+            "pearl_sign_fairness_attestation": self._sign_fairness_attestation,
+            # Scan targets
+            "pearl_register_scan_target": self._register_scan_target,
+            "pearl_list_scan_targets": self._list_scan_targets,
+            "pearl_update_scan_target": self._update_scan_target,
+            # AI security scanning
+            "pearl_run_scan": self._run_scan,
+            "pearl_get_scan_results": self._get_scan_results,
+            "pearl_assess_compliance": self._assess_compliance,
+            "pearl_list_guardrails": self._list_guardrails,
+            "pearl_get_guardrail": self._get_guardrail,
+            "pearl_get_recommended_guardrails": self._get_recommended_guardrails,
+            "pearl_get_recommended_baseline": self._get_recommended_baseline,
+            "pearl_apply_recommended_baseline": self._apply_recommended_baseline,
+            "pearl_list_policy_templates": self._list_policy_templates,
+            "pearl_get_policy_template": self._get_policy_template,
+            "pearl_ingest_security_review": self._ingest_security_review,
+            # SonarQube
+            "pearl_trigger_sonar_pull": self._trigger_sonar_pull,
+            "pearl_get_sonar_status": self._get_sonar_status,
+            "pearl_run_sonar_scan": self._run_sonar_scan,
+            # Remediation bridge
+            "pearl_claim_task_packet": self._claim_task_packet,
+            "pearl_complete_task_packet": self._complete_task_packet,
             # Agent allowance profiles
             "pearl_allowance_check": self._allowance_check,
-            # MASS 2.0 AI security scan
+            # MASS 2.0
             "pearl_trigger_mass_scan": self._trigger_mass_scan,
             # Governance verification
-            "confirmClaudeMd": self._confirm_claude_md,
-            # Fairness attestation
-            "signFairnessAttestation": self._sign_fairness_attestation,
-            # SonarQube
-            "triggerSonarPull": self._trigger_sonar_pull,
-            "getSonarStatus": self._get_sonar_status,
-            "runSonarScan": self._run_sonar_scan,
-            # Reports
-            "exportReportPdf": self._export_report_pdf,
+            "pearl_confirm_claude_md": self._confirm_claude_md,
             # LiteLLM contract compliance
+            "pearl_submit_contract_snapshot": self._submit_contract_snapshot,
             "pearl_check_agent_contract": self._check_agent_contract,
         }
         return routes.get(tool_name)
@@ -532,6 +539,20 @@ class MCPServer:
         pid = args["project_id"]
         rid = args["report_id"]
         return await self._request("POST", f"/projects/{pid}/reports/{rid}/export")
+
+    async def _submit_contract_snapshot(self, args: dict) -> dict:
+        pid = args["project_id"]
+        body = {
+            "package_id": args["package_id"],
+            "environment": args["environment"],
+            "agent_roles": args.get("agent_roles", []),
+            "litellm_agent_ids": args.get("litellm_agent_ids", []),
+            "key_aliases": args.get("key_aliases", []),
+            "skill_content_hash": args.get("skill_content_hash"),
+            "mcp_allowlist": args.get("mcp_allowlist", []),
+            "budget_usd": args.get("budget_usd"),
+        }
+        return await self._request("POST", f"/projects/{pid}/contract-snapshots", body)
 
     async def _check_agent_contract(self, args: dict) -> dict:
         packet_id = args.get("packet_id")

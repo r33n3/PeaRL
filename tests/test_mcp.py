@@ -7,8 +7,8 @@ from pearl.mcp.tools import TOOL_DEFINITIONS
 
 
 def test_tool_definitions_count():
-    """All 51 API operations have tool definitions."""
-    assert len(TOOL_DEFINITIONS) == 51
+    """All 52 API operations have tool definitions."""
+    assert len(TOOL_DEFINITIONS) == 52
 
 
 def test_tool_definitions_structure():
@@ -30,7 +30,7 @@ def test_mcp_server_list_tools():
     """MCPServer.list_tools returns all definitions."""
     server = MCPServer()
     tools = server.list_tools()
-    assert len(tools) == 51
+    assert len(tools) == 52
 
 
 def test_mcp_server_routes_all_tools():
@@ -65,10 +65,10 @@ async def test_mcp_audit_called_without_project_id(client):
 
     with patch.object(server, "_write_mcp_audit", side_effect=capture_audit):
         with patch.object(server, "_list_guardrails", return_value={"guardrails": []}):
-            await server.call_tool("listGuardrails", {})
+            await server.call_tool("pearl_list_guardrails", {})
 
     assert len(audit_calls) == 1
-    assert audit_calls[0]["tool_name"] == "listGuardrails"
+    assert audit_calls[0]["tool_name"] == "pearl_list_guardrails"
     # project_id should be the _global sentinel (not None, not skipped)
     assert audit_calls[0]["project_id"] == "_global"
 
@@ -88,7 +88,7 @@ async def test_mcp_audit_uses_project_id_when_present(client):
 
     with patch.object(server, "_write_mcp_audit", side_effect=capture_audit):
         with patch.object(server, "_get_project", return_value={"project_id": "proj_test"}):
-            await server.call_tool("getProject", {"project_id": "proj_test"})
+            await server.call_tool("pearl_get_project", {"project_id": "proj_test"})
 
     assert len(audit_calls) == 1
     assert audit_calls[0]["project_id"] == "proj_test"
@@ -97,69 +97,75 @@ async def test_mcp_audit_uses_project_id_when_present(client):
 def test_required_tool_names():
     """Check all expected tool names are present."""
     expected = {
+        # Project management
         "pearl_register_project",
-        "createProject",
-        "getProject",
-        "updateProject",
-        "upsertOrgBaseline",
-        "upsertApplicationSpec",
-        "upsertEnvironmentProfile",
-        "compileContext",
-        "getCompiledPackage",
-        "generateTaskPacket",
-        "ingestFindings",
-        "generateRemediationSpec",
-        "createApprovalRequest",
-        "decideApproval",
-        "createException",
-        "generateReport",
-        "getJobStatus",
+        "pearl_create_project",
+        "pearl_get_project",
+        "pearl_update_project",
+        # Project configuration
+        "pearl_set_org_baseline",
+        "pearl_set_app_spec",
+        "pearl_set_env_profile",
+        # Context compilation
+        "pearl_compile_context",
+        "pearl_get_compiled_package",
+        "pearl_generate_task_packet",
+        # Findings
+        "pearl_ingest_findings",
+        "pearl_generate_remediation_spec",
+        # Approvals & exceptions
+        "pearl_request_approval",
+        "pearl_decide_approval",
+        "pearl_create_exception",
+        # Reports
+        "pearl_generate_report",
+        "pearl_export_report_pdf",
+        # Jobs
+        "pearl_get_job_status",
         # Promotion gates
-        "evaluatePromotionReadiness",
-        "getPromotionReadiness",
-        "requestPromotion",
-        "getPromotionHistory",
+        "pearl_evaluate_promotion",
+        "pearl_get_promotion_readiness",
+        "pearl_request_promotion",
+        "pearl_get_promotion_history",
         # Project summary
-        "getProjectSummary",
+        "pearl_get_project_summary",
         # Fairness governance
-        "createFairnessCase",
-        "submitEvidence",
-        "ingestMonitoringSignal",
-        "submitContextReceipt",
+        "pearl_create_fairness_case",
+        "pearl_submit_evidence",
+        "pearl_ingest_monitoring_signal",
+        "pearl_submit_context_receipt",
+        "pearl_sign_fairness_attestation",
         # Scan targets
-        "registerScanTarget",
-        "listScanTargets",
-        "updateScanTarget",
+        "pearl_register_scan_target",
+        "pearl_list_scan_targets",
+        "pearl_update_scan_target",
         # AI security scanning
-        "runScan",
-        "getScanResults",
-        "assessCompliance",
-        "listGuardrails",
-        "getGuardrail",
-        "getRecommendedGuardrails",
-        "getRecommendedBaseline",
-        "applyRecommendedBaseline",
-        "listPolicyTemplates",
-        "getPolicyTemplate",
-        "ingestSecurityReview",
-        # Remediation execution bridge
-        "claimTaskPacket",
-        "completeTaskPacket",
-        # Governance verification
-        "confirmClaudeMd",
-        # Fairness attestation signing
-        "signFairnessAttestation",
-        # SonarQube integration
-        "triggerSonarPull",
-        "getSonarStatus",
-        "runSonarScan",
-        # Report PDF export
-        "exportReportPdf",
+        "pearl_run_scan",
+        "pearl_get_scan_results",
+        "pearl_assess_compliance",
+        "pearl_list_guardrails",
+        "pearl_get_guardrail",
+        "pearl_get_recommended_guardrails",
+        "pearl_get_recommended_baseline",
+        "pearl_apply_recommended_baseline",
+        "pearl_list_policy_templates",
+        "pearl_get_policy_template",
+        "pearl_ingest_security_review",
+        # SonarQube
+        "pearl_trigger_sonar_pull",
+        "pearl_get_sonar_status",
+        "pearl_run_sonar_scan",
+        # Remediation bridge
+        "pearl_claim_task_packet",
+        "pearl_complete_task_packet",
         # Agent allowance profiles
         "pearl_allowance_check",
-        # MASS 2.0 AI security scan
+        # MASS 2.0
         "pearl_trigger_mass_scan",
+        # Governance verification
+        "pearl_confirm_claude_md",
         # LiteLLM contract compliance
+        "pearl_submit_contract_snapshot",
         "pearl_check_agent_contract",
     }
     actual = {t["name"] for t in TOOL_DEFINITIONS}

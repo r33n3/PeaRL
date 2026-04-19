@@ -115,3 +115,12 @@ async def test_contract_compliance_with_snapshot_returns_drift_key(app, admin_to
             headers={"Authorization": f"Bearer {admin_token}"},
         )
     assert r.status_code in (200, 503), r.text
+
+
+@pytest.mark.asyncio
+async def test_mcp_tools_list_includes_submit_contract_snapshot(app):
+    """MCP tools/list includes pearl_submit_contract_snapshot."""
+    from pearl.mcp.tools import TOOL_DEFINITIONS
+    names = {t["name"] for t in TOOL_DEFINITIONS}
+    assert "pearl_submit_contract_snapshot" in names, \
+        f"Missing tool. Found: {sorted(names)}"

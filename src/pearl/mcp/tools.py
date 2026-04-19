@@ -1,6 +1,7 @@
 """MCP tool definitions mapping to PeaRL API operations.
 
-51 tools total.
+52 tools total. All tool names use the pearl_ prefix so agents can
+unambiguously distinguish PeaRL tools when multiple MCP servers are loaded.
 """
 
 TOOL_DEFINITIONS = [
@@ -45,8 +46,8 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "createProject",
-        "description": "Create or register a new project for policy enforcement. Requires schema_version, project_id, name, owner_team, business_criticality, external_exposure, and ai_enabled.",
+        "name": "pearl_create_project",
+        "description": "Create or register a new project for policy enforcement.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -63,7 +64,7 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "getProject",
+        "name": "pearl_get_project",
         "description": "Get project details by ID.",
         "inputSchema": {
             "type": "object",
@@ -72,7 +73,7 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "updateProject",
+        "name": "pearl_update_project",
         "description": "Update project configuration. Only include fields you want to change.",
         "inputSchema": {
             "type": "object",
@@ -91,7 +92,7 @@ TOOL_DEFINITIONS = [
 
     # ─── Project Configuration ───────────────────────
     {
-        "name": "upsertOrgBaseline",
+        "name": "pearl_set_org_baseline",
         "description": "Attach or update the organization security baseline for a project. The baseline defines org-wide security defaults (coding standards, IAM policies, network rules, logging, RAI requirements) and per-environment escalation ladders.",
         "inputSchema": {
             "type": "object",
@@ -113,7 +114,7 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "upsertApplicationSpec",
+        "name": "pearl_set_app_spec",
         "description": "Attach or update the application specification for a project. The app spec defines components, trust boundaries, data classifications, responsible AI settings, and autonomous coding policies.",
         "inputSchema": {
             "type": "object",
@@ -136,7 +137,7 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "upsertEnvironmentProfile",
+        "name": "pearl_set_env_profile",
         "description": "Attach or update the environment profile for a project. Defines the environment, delivery stage, risk level, autonomy mode, allowed/blocked capabilities, and approval level.",
         "inputSchema": {
             "type": "object",
@@ -164,7 +165,7 @@ TOOL_DEFINITIONS = [
 
     # ─── Context Compilation ─────────────────────────
     {
-        "name": "compileContext",
+        "name": "pearl_compile_context",
         "description": "Compile layered context (org baseline + app spec + env profile) into a canonical context package. Returns the compiled package.",
         "inputSchema": {
             "type": "object",
@@ -176,7 +177,7 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "getCompiledPackage",
+        "name": "pearl_get_compiled_package",
         "description": "Get the latest compiled context package for a project.",
         "inputSchema": {
             "type": "object",
@@ -185,7 +186,7 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "generateTaskPacket",
+        "name": "pearl_generate_task_packet",
         "description": (
             "Generate a task-scoped context packet from the compiled package. "
             "Includes relevant controls, tests, and policy rules for the specific task type. "
@@ -207,7 +208,7 @@ TOOL_DEFINITIONS = [
 
     # ─── Findings ────────────────────────────────────
     {
-        "name": "ingestFindings",
+        "name": "pearl_ingest_findings",
         "description": "Ingest findings from security/compliance tools (PeaRL AI scan, SAST, DAST, SCA, external adapters, etc.). Supports CVSS scores, CWE IDs, compliance references, and scan verdicts.",
         "inputSchema": {
             "type": "object",
@@ -228,7 +229,7 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "generateRemediationSpec",
+        "name": "pearl_generate_remediation_spec",
         "description": "Generate a remediation specification from normalized findings.",
         "inputSchema": {
             "type": "object",
@@ -243,8 +244,17 @@ TOOL_DEFINITIONS = [
 
     # ─── Approvals & Exceptions ──────────────────────
     {
-        "name": "createApprovalRequest",
-        "description": "Create an approval request for a policy-relevant action. Returns an approval_request_id to track the request.",
+        "name": "pearl_request_approval",
+        "description": (
+            "Request human approval for a policy-gated action. "
+            "Call this whenever a gate blocks an action or before taking any irreversible step. "
+            "Correct governance sequence: "
+            "1) Call pearl_request_approval with the blocked action and reason. "
+            "2) Inform the user what was blocked and why — include the approval_request_id. "
+            "3) Stop. Do NOT proceed until a human approves via the PeaRL dashboard. "
+            "Do NOT attempt to approve the request yourself — that will be rejected with 403. "
+            "Returns an approval_request_id and a dashboard URL for the reviewer."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -252,14 +262,18 @@ TOOL_DEFINITIONS = [
                 "project_id": {"type": "string"},
                 "request_type": {"type": "string", "enum": ["deployment_gate", "auth_flow_change", "network_policy_change", "exception", "remediation_execution", "promotion_gate"]},
                 "environment": {"type": "string", "enum": ["sandbox", "dev", "pilot", "preprod", "prod"]},
-                "request_data": {"type": "object", "description": "Context/details for the approval request"},
+                "request_data": {"type": "object", "description": "Context/details for the approval request — include what action was blocked and why"},
             },
             "required": ["approval_request_id", "project_id", "request_type", "environment"],
         },
     },
     {
-        "name": "decideApproval",
-        "description": "Record an approval decision (approve/reject).",
+        "name": "pearl_decide_approval",
+        "description": (
+            "Record an approval decision (approve/reject). "
+            "REQUIRES reviewer role — agents will receive 403 if they attempt this. "
+            "This tool is for human reviewers and admin automation only, not for agent builder keys."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -272,8 +286,12 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "createException",
-        "description": "Create or request a policy exception with rationale and scope.",
+        "name": "pearl_create_exception",
+        "description": (
+            "Request a policy exception with rationale and scope. "
+            "Use this when a gate cannot be cleared by normal remediation and a deliberate risk acceptance is needed. "
+            "Like pearl_request_approval, this requires human review — stop and await the decision after calling it."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -289,7 +307,7 @@ TOOL_DEFINITIONS = [
 
     # ─── Reports ─────────────────────────────────────
     {
-        "name": "generateReport",
+        "name": "pearl_generate_report",
         "description": "Generate a project report (release_readiness, residual_risk, control_coverage, findings_trend, rai_posture, environment_posture, gate_fulfillment, elevation_audit, findings_remediation).",
         "inputSchema": {
             "type": "object",
@@ -303,17 +321,17 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "exportReportPdf",
+        "name": "pearl_export_report_pdf",
         "description": (
             "Generate and upload a PDF version of a report to MinIO. "
             "Returns a presigned download URL. "
-            "Use generateReport first to create the report, then call this to get a PDF."
+            "Use pearl_generate_report first to create the report, then call this to get a PDF."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "project_id": {"type": "string"},
-                "report_id": {"type": "string", "description": "Report ID from generateReport"},
+                "report_id": {"type": "string", "description": "Report ID from pearl_generate_report"},
             },
             "required": ["project_id", "report_id"],
         },
@@ -321,8 +339,13 @@ TOOL_DEFINITIONS = [
 
     # ─── Jobs ────────────────────────────────────────
     {
-        "name": "getJobStatus",
-        "description": "Get the status of an async job.",
+        "name": "pearl_get_job_status",
+        "description": (
+            "Get the status of an async job. "
+            "Poll this after any tool that returns a job_id (pearl_compile_context, pearl_run_scan, pearl_run_sonar_scan, etc.). "
+            "Status values: pending, running, completed, failed. "
+            "Poll every few seconds until status is completed or failed."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {"job_id": {"type": "string"}},
@@ -330,9 +353,9 @@ TOOL_DEFINITIONS = [
         },
     },
 
-    # ─── Promotion Gates (NEW) ───────────────────────
+    # ─── Promotion Gates ─────────────────────────────
     {
-        "name": "evaluatePromotionReadiness",
+        "name": "pearl_evaluate_promotion",
         "description": "Evaluate if a project is ready for promotion to the next environment. Checks all gate rules (security, AI security scan, fairness) and returns pass/fail for each rule with blockers.",
         "inputSchema": {
             "type": "object",
@@ -344,7 +367,7 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "getPromotionReadiness",
+        "name": "pearl_get_promotion_readiness",
         "description": "Get the latest promotion evaluation for a project. Shows current gate progress, passing/blocking rules, and what needs to be fixed.",
         "inputSchema": {
             "type": "object",
@@ -353,8 +376,13 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "requestPromotion",
-        "description": "Request promotion of a project to the next environment. Evaluates all gates and creates an approval request if evaluation passes.",
+        "name": "pearl_request_promotion",
+        "description": (
+            "Request promotion of a project to the next environment. "
+            "Evaluates all gates and creates an approval request if evaluation passes. "
+            "If gates are still blocking, fix the blockers first using pearl_evaluate_promotion to identify them. "
+            "Promotion approval requires human sign-off — stop and await the decision after calling this."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {"project_id": {"type": "string"}},
@@ -362,7 +390,7 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "getPromotionHistory",
+        "name": "pearl_get_promotion_history",
         "description": "Get the promotion history for a project — all past environment transitions with who promoted and when.",
         "inputSchema": {
             "type": "object",
@@ -371,9 +399,9 @@ TOOL_DEFINITIONS = [
         },
     },
 
-    # ─── Project Summary (NEW) ───────────────────────
+    # ─── Project Summary ─────────────────────────────
     {
-        "name": "getProjectSummary",
+        "name": "pearl_get_project_summary",
         "description": "Get a comprehensive project governance summary including policy posture, findings counts, promotion readiness, and fairness status. Returns markdown for readability.",
         "inputSchema": {
             "type": "object",
@@ -385,9 +413,9 @@ TOOL_DEFINITIONS = [
         },
     },
 
-    # ─── Fairness Governance (NEW) ───────────────────
+    # ─── Fairness Governance ─────────────────────────
     {
-        "name": "createFairnessCase",
+        "name": "pearl_create_fairness_case",
         "description": "Define a fairness case for an AI-enabled project. Includes risk tier, fairness criticality, stakeholders, principles, and recourse model.",
         "inputSchema": {
             "type": "object",
@@ -404,7 +432,7 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "submitEvidence",
+        "name": "pearl_submit_evidence",
         "description": (
             "Submit an evidence package for a project gate control. "
             "Use this after inspecting the project to validate a framework control requirement. "
@@ -434,7 +462,7 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "ingestMonitoringSignal",
+        "name": "pearl_ingest_monitoring_signal",
         "description": "Ingest a runtime fairness monitoring signal (drift, policy violations, stereotype leakage).",
         "inputSchema": {
             "type": "object",
@@ -450,7 +478,7 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "submitContextReceipt",
+        "name": "pearl_submit_context_receipt",
         "description": "Submit proof that an agent consumed fairness context before operating. Links a commit hash to the context artifacts consumed.",
         "inputSchema": {
             "type": "object",
@@ -465,10 +493,10 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "signFairnessAttestation",
+        "name": "pearl_sign_fairness_attestation",
         "description": (
             "Sign a fairness evidence package to satisfy the FAIRNESS_ATTESTATION_SIGNED gate rule. "
-            "Call this after submitEvidence to mark the evidence as officially attested. "
+            "Call this after pearl_submit_evidence to mark the evidence as officially attested. "
             "signed_by should be the agent ID or reviewer ID performing the attestation."
         ),
         "inputSchema": {
@@ -482,9 +510,9 @@ TOOL_DEFINITIONS = [
         },
     },
 
-    # ─── Scan Targets (NEW) ──────────────────────────
+    # ─── Scan Targets ────────────────────────────────
     {
-        "name": "registerScanTarget",
+        "name": "pearl_register_scan_target",
         "description": "Register a repo as a scan target. Use tool_type 'pearl_ai' for PeaRL's built-in AI security scan (default). Other types activate configured external adapters (MASS, SonarQube, SAST, etc.).",
         "inputSchema": {
             "type": "object",
@@ -501,18 +529,16 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "listScanTargets",
+        "name": "pearl_list_scan_targets",
         "description": "List scan targets registered for a project. Shows repo URLs, tool types, scan frequencies, and last scan status.",
         "inputSchema": {
             "type": "object",
-            "properties": {
-                "project_id": {"type": "string"},
-            },
+            "properties": {"project_id": {"type": "string"}},
             "required": ["project_id"],
         },
     },
     {
-        "name": "updateScanTarget",
+        "name": "pearl_update_scan_target",
         "description": "Update scan target configuration (branch, frequency, status, environment scope).",
         "inputSchema": {
             "type": "object",
@@ -531,7 +557,7 @@ TOOL_DEFINITIONS = [
 
     # ─── AI Security Scanning ────────────────────────
     {
-        "name": "runScan",
+        "name": "pearl_run_scan",
         "description": "Run AI security scan on a target path. Runs context, MCP, workflow, attack surface, RAG, and model file analyzers. Findings are ingested with compliance refs (OWASP LLM, MITRE ATLAS, NIST AI RMF, EU AI Act).",
         "inputSchema": {
             "type": "object",
@@ -545,7 +571,7 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "getScanResults",
+        "name": "pearl_get_scan_results",
         "description": "Get the latest scan results for a project. Shows findings by severity, compliance scores, and guardrail recommendations.",
         "inputSchema": {
             "type": "object",
@@ -554,7 +580,7 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "assessCompliance",
+        "name": "pearl_assess_compliance",
         "description": "Run compliance scoring against a project's findings. Scores against OWASP LLM Top 10, MITRE ATLAS, NIST AI RMF, and EU AI Act.",
         "inputSchema": {
             "type": "object",
@@ -563,7 +589,7 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "listGuardrails",
+        "name": "pearl_list_guardrails",
         "description": "List available AI security guardrails with implementation guidance. Filter by category (input_validation, output_filtering, rate_limiting, etc.) or severity.",
         "inputSchema": {
             "type": "object",
@@ -574,7 +600,7 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "getGuardrail",
+        "name": "pearl_get_guardrail",
         "description": "Get guardrail detail with implementation steps and code examples.",
         "inputSchema": {
             "type": "object",
@@ -583,7 +609,7 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "getRecommendedGuardrails",
+        "name": "pearl_get_recommended_guardrails",
         "description": "Get guardrails recommended for a project based on its open findings.",
         "inputSchema": {
             "type": "object",
@@ -592,7 +618,7 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "getRecommendedBaseline",
+        "name": "pearl_get_recommended_baseline",
         "description": "Get the recommended governance baseline tier and all 3 tiered baselines (Essential, AI-Standard, AI-Comprehensive). Selection is based on ai_enabled and business_criticality.",
         "inputSchema": {
             "type": "object",
@@ -603,7 +629,7 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "applyRecommendedBaseline",
+        "name": "pearl_apply_recommended_baseline",
         "description": "Apply the appropriate tiered governance baseline to a project. Selects tier automatically based on project's ai_enabled and business_criticality.",
         "inputSchema": {
             "type": "object",
@@ -612,7 +638,7 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "listPolicyTemplates",
+        "name": "pearl_list_policy_templates",
         "description": "List AI security policy templates with rules for prompt security, data protection, access control, model security, and more.",
         "inputSchema": {
             "type": "object",
@@ -622,7 +648,7 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "getPolicyTemplate",
+        "name": "pearl_get_policy_template",
         "description": "Get policy template detail with all rules and implementation guidance.",
         "inputSchema": {
             "type": "object",
@@ -631,21 +657,22 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "ingestSecurityReview",
+        "name": "pearl_ingest_security_review",
         "description": "Parse /security-review markdown output and ingest as PeaRL findings. Extracts finding titles, severity, affected files, and categories from the review prose.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "project_id": {"type": "string"},
-                "markdown": {"type": "string", "maxLength": 512, "description": "Raw markdown output from /security-review"},
+                "markdown": {"type": "string", "maxLength": 50000, "description": "Raw markdown output from /security-review"},
                 "environment": {"type": "string", "enum": ["sandbox", "dev", "pilot", "preprod", "prod"], "default": "dev"},
             },
             "required": ["project_id", "markdown"],
         },
     },
-    # ─── SonarQube integration ───────────────────────
+
+    # ─── SonarQube Integration ───────────────────────
     {
-        "name": "triggerSonarPull",
+        "name": "pearl_trigger_sonar_pull",
         "description": (
             "Pull the latest findings from SonarQube into PeaRL for this project. "
             "Deduplicates findings and returns quality gate status. "
@@ -658,7 +685,7 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "getSonarStatus",
+        "name": "pearl_get_sonar_status",
         "description": "Get the current SonarQube quality gate status and finding counts for this project.",
         "inputSchema": {
             "type": "object",
@@ -667,10 +694,10 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "runSonarScan",
+        "name": "pearl_run_sonar_scan",
         "description": (
             "Trigger a SonarQube scan against a registered scan target path. "
-            "Returns a job_id — poll getJobStatus for completion. "
+            "Returns a job_id — poll pearl_get_job_status for completion. "
             "On completion, findings are automatically pulled into PeaRL."
         ),
         "inputSchema": {
@@ -682,9 +709,10 @@ TOOL_DEFINITIONS = [
             "required": ["project_id", "target_path"],
         },
     },
+
     # ─── Remediation Execution Bridge ────────────────
     {
-        "name": "claimTaskPacket",
+        "name": "pearl_claim_task_packet",
         "description": "Claim a task packet for execution as an agent. Sets the packet status to in_progress and records the agent ID.",
         "inputSchema": {
             "type": "object",
@@ -696,7 +724,7 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "completeTaskPacket",
+        "name": "pearl_complete_task_packet",
         "description": "Report the outcome of a task packet execution. Updates finding statuses for resolved findings.",
         "inputSchema": {
             "type": "object",
@@ -714,6 +742,7 @@ TOOL_DEFINITIONS = [
             "required": ["packet_id", "status"],
         },
     },
+
     # ─── Agent Allowance Profiles ─────────────────────
     {
         "name": "pearl_allowance_check",
@@ -733,6 +762,7 @@ TOOL_DEFINITIONS = [
             "required": ["profile_id", "action", "agent_id"],
         },
     },
+
     # ─── MASS 2.0 AI Security Scan ───────────────────
     {
         "name": "pearl_trigger_mass_scan",
@@ -751,40 +781,20 @@ TOOL_DEFINITIONS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "project_id": {
-                    "type": "string",
-                    "description": "PeaRL project ID to push findings to (e.g. proj_benderbox)",
-                },
-                "target_path": {
-                    "type": "string",
-                    "description": "Absolute path to the AI application/agent codebase to scan",
-                },
-                "pearl_api_url": {
-                    "type": "string",
-                    "description": "PeaRL API base URL (default: http://pearl-api:8080/api/v1)",
-                    "default": "http://pearl-api:8080/api/v1",
-                },
-                "pearl_api_token": {
-                    "type": "string",
-                    "description": "PeaRL bearer token (leave empty for local dev)",
-                    "default": "",
-                },
-                "commit_sha": {
-                    "type": "string",
-                    "description": "Git commit SHA to anchor this scan (optional)",
-                },
-                "branch": {
-                    "type": "string",
-                    "maxLength": 512,
-                    "description": "Git branch name (optional, e.g. dev, main)",
-                },
+                "project_id": {"type": "string", "description": "PeaRL project ID to push findings to (e.g. proj_benderbox)"},
+                "target_path": {"type": "string", "description": "Absolute path to the AI application/agent codebase to scan"},
+                "pearl_api_url": {"type": "string", "description": "PeaRL API base URL (default: http://pearl-api:8080/api/v1)", "default": "http://pearl-api:8080/api/v1"},
+                "pearl_api_token": {"type": "string", "description": "PeaRL bearer token (leave empty for local dev)", "default": ""},
+                "commit_sha": {"type": "string", "description": "Git commit SHA to anchor this scan (optional)"},
+                "branch": {"type": "string", "maxLength": 512, "description": "Git branch name (optional, e.g. dev, main)"},
             },
             "required": ["project_id", "target_path"],
         },
     },
+
     # ─── Governance Verification ─────────────────────
     {
-        "name": "confirmClaudeMd",
+        "name": "pearl_confirm_claude_md",
         "description": (
             "Confirms the PeaRL governance block is present in the project's CLAUDE.md "
             "and marks the project as governance-verified in PeaRL. "
@@ -794,30 +804,81 @@ TOOL_DEFINITIONS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "project_id": {
-                    "type": "string",
-                    "description": "The project ID to mark as governance-verified",
-                },
+                "project_id": {"type": "string", "description": "The project ID to mark as governance-verified"},
             },
             "required": ["project_id"],
         },
     },
+
     # ─── LiteLLM Contract Compliance ──────────────────
     {
-        "name": "pearl_check_agent_contract",
+        "name": "pearl_submit_contract_snapshot",
         "description": (
-            "Check whether a deployed agent's LiteLLM runtime usage complies with its "
-            "approved allowance profile contract. Queries actual spend and model usage "
-            "from LiteLLM's virtual key system and compares against the contracted limits. "
-            "Returns passed=true/false with a list of violations."
+            "Submit an agent contract snapshot to PeaRL at provision time. "
+            "Call this after provisioning an agent team in LiteLLM to record the approved contract: "
+            "which agents were deployed, what LiteLLM agent IDs they received, which virtual key aliases "
+            "they use, the skill content hash (for tamper detection), the MCP server allowlist, and "
+            "the approved budget. Returns a task_packet_id. Store this ID and pass it to "
+            "pearl_check_agent_contract later to detect drift between the snapshot and live state."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "packet_id": {
+                "project_id": {"type": "string", "description": "PeaRL project ID (proj_...)"},
+                "package_id": {"type": "string", "description": "WTK package ID that was provisioned"},
+                "environment": {
                     "type": "string",
-                    "description": "Task packet ID (tp_...) to check contract compliance for.",
+                    "enum": ["sandbox", "dev", "pilot", "preprod", "prod"],
+                    "description": "Environment this team is provisioned into",
                 },
+                "agent_roles": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Agent role names in this team (e.g. coordinator, worker, evaluator)",
+                },
+                "litellm_agent_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "LiteLLM agent IDs assigned during provisioning",
+                },
+                "key_aliases": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "LiteLLM virtual key aliases this team uses (e.g. vk-worker-agent)",
+                },
+                "skill_content_hash": {
+                    "type": "string",
+                    "description": "SHA-256 hash of the compiled skill content (for tamper detection)",
+                },
+                "mcp_allowlist": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "MCP server names this team is permitted to call",
+                },
+                "budget_usd": {
+                    "type": "number",
+                    "description": "Approved per-run budget cap in USD",
+                },
+            },
+            "required": ["project_id", "package_id", "environment"],
+        },
+    },
+    {
+        "name": "pearl_check_agent_contract",
+        "description": (
+            "Check whether a deployed agent's runtime state complies with its approved contract. "
+            "Performs two checks: (1) Spend compliance — queries LiteLLM virtual key spend and model usage "
+            "against the allowance profile budget and model restrictions. "
+            "(2) Drift detection — if a contract snapshot was submitted via pearl_submit_contract_snapshot, "
+            "compares the snapshot (agent IDs, skill hash, MCP allowlist, key aliases) against the current "
+            "live LiteLLM agent state to detect unauthorized edits since provisioning. "
+            "Returns passed=true/false with violations list, plus a drift_check sub-object when a snapshot exists. "
+            "Call this before approving promotion to verify the agent stayed within its approved contract."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "packet_id": {"type": "string", "description": "Task packet ID (tp_...) to check contract compliance for."},
             },
             "required": ["packet_id"],
         },
