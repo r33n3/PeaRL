@@ -164,12 +164,12 @@ export function ApprovalDetailPage() {
         <VaultCard className="mb-4 border-cold-teal/20">
           <div className="flex items-start justify-between mb-3">
             <div>
-              <a
-                href={`/projects/${govState.project_id}`}
+              <Link
+                to={`/projects/${govState.project_id}`}
                 className="font-heading font-semibold text-bone hover:text-cold-teal transition-colors"
               >
                 {govState.name}
-              </a>
+              </Link>
               <MonoText className="text-xs mt-0.5">{govState.project_id}</MonoText>
             </div>
             <div className="flex items-center gap-2">
