@@ -60,14 +60,16 @@ export function useGovernanceState(projectId: string | undefined) {
   });
 }
 
-export function useRegisterAgents(projectId: string) {
+export function useRegisterAgents(projectId: string | undefined) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload: RegisterAgentsPayload) =>
-      apiFetch<GovernanceState>(`/projects/${projectId}/agents`, {
+    mutationFn: (payload: RegisterAgentsPayload) => {
+      if (!projectId) throw new Error("projectId is required");
+      return apiFetch<GovernanceState>(`/projects/${projectId}/agents`, {
         method: "POST",
         body: JSON.stringify(payload),
-      }),
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["governance-state", projectId] });
     },
