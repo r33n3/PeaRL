@@ -14,6 +14,7 @@ from pearl.errors.exceptions import ConflictError, NotFoundError, ValidationErro
 from pearl.integrations.litellm import ContractCompliance, LiteLLMClient
 from pearl.repositories.allowance_profile_repo import AllowanceProfileRepository
 from pearl.repositories.promotion_repo import PromotionGateRepository
+from pearl.repositories.project_repo import ProjectRepository
 from pearl.repositories.task_packet_repo import TaskPacketRepository
 from pearl.services.task_packet_generator import generate_task_packet
 
@@ -55,6 +56,17 @@ class PhaseTransitionRequest(BaseModel):
     agent_id: Optional[str] = None
 
 
+class ContractSnapshotRequest(BaseModel):
+    package_id: str
+    agent_roles: list[str] = []
+    litellm_agent_ids: list[str] = []
+    key_aliases: list[str] = []
+    skill_content_hash: str | None = None
+    mcp_allowlist: list[str] = []
+    budget_usd: float | None = None
+    environment: str = "dev"
+
+
 @router.post("/projects/{project_id}/task-packets", status_code=201)
 async def generate_task_packet_endpoint(
     project_id: str,
@@ -89,6 +101,65 @@ async def generate_task_packet_endpoint(
     await db.commit()
 
     return packet_data
+
+
+@router.post("/projects/{project_id}/contract-snapshots", status_code=201)
+async def create_contract_snapshot(
+    project_id: str,
+    body: ContractSnapshotRequest,
+    db: AsyncSession = Depends(get_db),
+    _user: dict = Depends(get_current_user),
+) -> dict:
+    """Record an agent contract snapshot at provision time.
+
+    Creates a task packet whose packet_data.contract_snapshot holds the WTK
+    package manifest: agent IDs, key aliases, skill content hash, MCP allowlist,
+    and budget. Returns the task_packet_id so the provisioner can later call
+    pearl_check_agent_contract(packet_id=...) to detect drift.
+    """
+    from pearl.services.id_generator import generate_id
+
+    proj_repo = ProjectRepository(db)
+    project = await proj_repo.get(project_id)
+    if project is None:
+        raise NotFoundError("Project", project_id)
+
+    packet_id = generate_id("tp_")
+    snapshot = {
+        "package_id": body.package_id,
+        "agent_roles": body.agent_roles,
+        "litellm_agent_ids": body.litellm_agent_ids,
+        "key_aliases": body.key_aliases,
+        "skill_content_hash": body.skill_content_hash,
+        "mcp_allowlist": body.mcp_allowlist,
+        "budget_usd": body.budget_usd,
+    }
+    packet_data = {
+        "task_packet_id": packet_id,
+        "task_type": "agent_provision",
+        "task_summary": f"Agent contract snapshot for package {body.package_id}",
+        "environment": body.environment,
+        "contract_snapshot": snapshot,
+        "schema_version": "1.1",
+    }
+
+    repo = TaskPacketRepository(db)
+    await repo.create(
+        task_packet_id=packet_id,
+        project_id=project_id,
+        environment=body.environment,
+        packet_data=packet_data,
+        trace_id=f"provision_{body.package_id}",
+    )
+    await db.commit()
+
+    return {
+        "task_packet_id": packet_id,
+        "project_id": project_id,
+        "environment": body.environment,
+        "contract_snapshot": snapshot,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 @router.get("/task-packets/{packet_id}", status_code=200)
