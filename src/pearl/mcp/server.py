@@ -155,6 +155,7 @@ class MCPServer:
             # LiteLLM contract compliance
             "pearl_submit_contract_snapshot": self._submit_contract_snapshot,
             "pearl_check_agent_contract": self._check_agent_contract,
+            "pearl_check_litellm_compliance": self._check_litellm_compliance,
         }
         return routes.get(tool_name)
 
@@ -560,3 +561,12 @@ class MCPServer:
         if not packet_id:
             return {"error": "packet_id is required"}
         return await self._request("GET", f"/task-packets/{packet_id}/contract-compliance")
+
+    async def _check_litellm_compliance(self, args: dict) -> dict:
+        pid = args["project_id"]
+        body: dict = {}
+        if "key_aliases" in args:
+            body["key_aliases"] = args["key_aliases"]
+        if body:
+            return await self._request("POST", f"/projects/{pid}/litellm-compliance", body)
+        return await self._request("GET", f"/projects/{pid}/litellm-compliance")

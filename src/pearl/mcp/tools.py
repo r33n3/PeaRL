@@ -887,4 +887,30 @@ TOOL_DEFINITIONS = [
             "required": ["packet_id"],
         },
     },
+    {
+        "name": "pearl_check_litellm_compliance",
+        "description": (
+            "Check LiteLLM virtual key compliance for a project. "
+            "Queries LiteLLM for spend and model violations on one or more virtual key aliases "
+            "and returns a list of open compliance findings. "
+            "Use this to verify that AI agents operating under a project's virtual keys "
+            "have not exceeded budget caps or used unauthorized models. "
+            "Returns violations=[] when all keys are within policy."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "string",
+                    "description": "Project ID (proj_...) to check LiteLLM compliance for.",
+                },
+                "key_aliases": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional list of specific virtual key aliases to check. If omitted, checks all aliases configured on the project's LiteLLM integration endpoint.",
+                },
+            },
+            "required": ["project_id"],
+        },
+    },
 ]
