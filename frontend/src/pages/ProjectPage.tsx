@@ -407,12 +407,16 @@ export function ProjectPage() {
               {govState.risk_classification} risk
             </span>
           )}
-          {(govState.agent_members?.coordinator || (govState.agent_members?.workers?.length ?? 0) > 0) && (
+          {(govState.agent_members?.coordinator
+            || (govState.agent_members?.workers?.length ?? 0) > 0
+            || (govState.agent_members?.evaluators?.length ?? 0) > 0) && (
             <span
               className="text-cold-teal cursor-pointer hover:underline text-[10px]"
               onClick={() => setActiveTab("team")}
             >
-              {1 + (govState.agent_members?.workers?.length ?? 0) + (govState.agent_members?.evaluators?.length ?? 0)} agents →
+              {(govState.agent_members?.coordinator ? 1 : 0)
+                + (govState.agent_members?.workers?.length ?? 0)
+                + (govState.agent_members?.evaluators?.length ?? 0)} agents →
             </span>
           )}
         </div>
