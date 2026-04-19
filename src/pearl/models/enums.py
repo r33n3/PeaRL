@@ -390,6 +390,7 @@ class IntegrationCategory(StrEnum):
     GIT_PLATFORM = "git_platform"
     VULNERABILITY_FEED = "vulnerability_feed"
     POLICY_ENGINE = "policy_engine"
+    AI_GOVERNANCE = "ai_governance"
 
 
 class AdapterStatus(StrEnum):

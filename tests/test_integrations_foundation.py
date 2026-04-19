@@ -136,6 +136,7 @@ class TestIntegrationEnums:
             "sast", "dast", "sca", "container_scan", "cloud_posture",
             "secrets_scan", "siem", "ticketing", "notification", "ci_cd",
             "git_platform", "vulnerability_feed", "policy_engine",
+            "ai_governance",
         }
         actual = {e.value for e in IntegrationCategory}
         assert expected == actual
@@ -674,7 +675,7 @@ class TestAdapterRegistry:
     """Tests for AVAILABLE_ADAPTERS and import_adapter."""
 
     def test_available_adapters_contains_expected_keys(self):
-        expected = {"snyk", "semgrep", "trivy", "jira", "slack", "github_issues", "sonarqube", "teams", "telegram", "webhook", "azure_devops", "mass", "github"}
+        expected = {"snyk", "semgrep", "trivy", "jira", "slack", "github_issues", "sonarqube", "teams", "telegram", "webhook", "azure_devops", "mass", "github", "litellm"}
         assert expected == set(AVAILABLE_ADAPTERS.keys())
 
     def test_available_adapters_values_are_dotted_paths(self):

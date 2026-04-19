@@ -88,21 +88,21 @@ def test_all_tools_have_name_and_description():
     assert not missing, f"Tools missing name or description: {missing}"
 
 
-def test_decide_approval_description_does_not_describe_role_requirement():
-    """decideApproval description must not leak which roles can call it."""
-    tool = next((t for t in TOOL_DEFINITIONS if t["name"] == "decideApproval"), None)
-    assert tool is not None, "decideApproval tool definition not found"
+def test_decide_approval_description_warns_agents():
+    """pearl_decide_approval description must explicitly warn agents they cannot call it.
+
+    Design intent: by telling agents upfront that this tool requires reviewer role
+    and will return 403, we prevent wasted attempts and make the governance boundary
+    legible in the tool list itself.
+    """
+    tool = next((t for t in TOOL_DEFINITIONS if t["name"] == "pearl_decide_approval"), None)
+    assert tool is not None, "pearl_decide_approval tool definition not found"
     desc = tool.get("description", "")
-    role_leaking_phrases = [
-        "reviewer",
-        "requires role",
-        "admin role",
-        "operator role",
-    ]
-    found = [p for p in role_leaking_phrases if p.lower() in desc.lower()]
-    assert not found, (
-        f"decideApproval description exposes role names: {found}. "
-        f"Description should say what the tool does, not who is allowed to call it."
+    assert "reviewer" in desc.lower(), (
+        "pearl_decide_approval description must warn agents it requires reviewer role"
+    )
+    assert "403" in desc, (
+        "pearl_decide_approval description must mention the 403 response agents will get"
     )
 
 
@@ -110,8 +110,8 @@ def test_tool_count():
     """Tool count matches expected value — update if tools are added or removed."""
     # Update this value when tools are added or removed.
     # This is a regression guard, not a strict limit.
-    assert len(TOOL_DEFINITIONS) == 51, (
-        f"Expected 51 tool definitions, got {len(TOOL_DEFINITIONS)}. "
+    assert len(TOOL_DEFINITIONS) == 52, (
+        f"Expected 52 tool definitions, got {len(TOOL_DEFINITIONS)}. "
         f"If you added or removed tools, update this test AND verify no new descriptions "
         f"contain flagged strings (run test_no_tool_description_contains_flagged_string)."
     )

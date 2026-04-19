@@ -239,4 +239,13 @@ INTEGRATION_CATALOGUE: list[dict] = [
         "auth_types": ["bearer", "none"],
         "labels_schema": {},
     },
+    {
+        "adapter_type": "litellm",
+        "integration_type": "source",
+        "category": "ai_governance",
+        "name": "LiteLLM",
+        "description": "LiteLLM AI gateway — pull agent spend and model compliance data",
+        "auth_types": ["bearer"],
+        "labels_schema": {"key_aliases": "Comma-separated LiteLLM virtual key aliases to monitor"},
+    },
 ]

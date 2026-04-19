@@ -7,6 +7,7 @@ AVAILABLE_ADAPTERS: dict[str, str] = {
     "trivy": "pearl.integrations.adapters.trivy.TrivyAdapter",
     "sonarqube": "pearl.integrations.adapters.sonarqube.SonarQubeAdapter",
     "mass": "pearl.integrations.adapters.mass.MassAdapter",
+    "litellm": "pearl.integrations.adapters.litellm.LiteLLMAdapter",
     # CI/CD
     "azure_devops": None,  # CI/CD integration — no pull/push adapter; used for snippet generation
     # Sinks
