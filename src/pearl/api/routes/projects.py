@@ -14,10 +14,12 @@ import re
 from pydantic import BaseModel as PydanticBaseModel
 
 from pearl.dependencies import get_db, get_trace_id
-from pearl.errors.exceptions import ConflictError, NotFoundError, ValidationError
+from pearl.errors.exceptions import AuthorizationError, ConflictError, NotFoundError, ValidationError
 from pearl.models.common import TraceabilityRef
 from pearl.models.enums import BusinessCriticality, ExternalExposure
 from pearl.models.project import Project
+from pearl.repositories.approval_repo import ApprovalRequestRepository
+from pearl.repositories.compiled_package_repo import CompiledPackageRepository
 from pearl.repositories.environment_profile_repo import EnvironmentProfileRepository
 from pearl.repositories.project_repo import ProjectRepository
 from pearl.services.id_generator import generate_id
@@ -837,14 +839,9 @@ async def register_project_agents(
     """WTK registers coordinator, worker, and evaluator agents against a project."""
     user = getattr(request.state, "user", {})
     if not any(r in user.get("roles", []) for r in ("admin", "operator", "service_account")):
-        from pearl.errors.exceptions import AuthorizationError
         raise AuthorizationError("operator, admin, or service_account role required")
 
     repo = ProjectRepository(db)
-    row = await repo.get(project_id)
-    if not row:
-        raise NotFoundError("Project", project_id)
-
     agent_members = {
         "coordinator": body.coordinator,
         "workers": body.workers,
@@ -893,7 +890,6 @@ async def get_project_governance_state(
     if not row:
         raise NotFoundError("Project", project_id)
 
-    from pearl.repositories.approval_repo import ApprovalRequestRepository
     approval_repo = ApprovalRequestRepository(db)
     pending = await approval_repo.list_by_project(project_id)
     pending_list = [
@@ -908,7 +904,6 @@ async def get_project_governance_state(
         if a.status in ("pending", "needs_info")
     ]
 
-    from pearl.repositories.compiled_package_repo import CompiledPackageRepository
     pkg_repo = CompiledPackageRepository(db)
     pkg = await pkg_repo.get_latest_by_project(project_id)
     gate_status = None
