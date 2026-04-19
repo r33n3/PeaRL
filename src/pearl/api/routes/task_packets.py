@@ -16,6 +16,7 @@ from pearl.repositories.allowance_profile_repo import AllowanceProfileRepository
 from pearl.repositories.promotion_repo import PromotionGateRepository
 from pearl.repositories.project_repo import ProjectRepository
 from pearl.repositories.task_packet_repo import TaskPacketRepository
+from pearl.services.id_generator import generate_id
 from pearl.services.task_packet_generator import generate_task_packet
 
 logger = logging.getLogger(__name__)
@@ -117,8 +118,6 @@ async def create_contract_snapshot(
     and budget. Returns the task_packet_id so the provisioner can later call
     pearl_check_agent_contract(packet_id=...) to detect drift.
     """
-    from pearl.services.id_generator import generate_id
-
     proj_repo = ProjectRepository(db)
     project = await proj_repo.get(project_id)
     if project is None:
