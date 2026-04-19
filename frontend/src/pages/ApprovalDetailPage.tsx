@@ -2,9 +2,11 @@ import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useApprovalThread } from "@/api/dashboard";
 import { useDecideApproval, useAddComment } from "@/api/approvals";
+import { useGovernanceState } from "@/api/projects";
 import { VaultCard } from "@/components/shared/VaultCard";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { MonoText } from "@/components/shared/MonoText";
+import { EnvBadge } from "@/components/shared/EnvBadge";
 import { formatTimestamp } from "@/lib/utils";
 import { CheckCircle, XCircle, HelpCircle, Send } from "lucide-react";
 import type { ApprovalStatus } from "@/lib/types";
@@ -92,6 +94,9 @@ export function ApprovalDetailPage() {
   const decideApproval = useDecideApproval();
   const addComment = useAddComment();
 
+  const projectId = thread?.approval?.project_id;
+  const { data: govState } = useGovernanceState(projectId);
+
   const [comment, setComment] = useState("");
   const [confirmReject, setConfirmReject] = useState(false);
 
@@ -154,6 +159,82 @@ export function ApprovalDetailPage() {
 
   return (
     <div className="max-w-4xl">
+      {/* Project governance context — reviewer situational awareness */}
+      {govState && (
+        <VaultCard className="mb-4 border-cold-teal/20">
+          <div className="flex items-start justify-between mb-3">
+            <div>
+              <a
+                href={`/projects/${govState.project_id}`}
+                className="font-heading font-semibold text-bone hover:text-cold-teal transition-colors"
+              >
+                {govState.name}
+              </a>
+              <MonoText className="text-xs mt-0.5">{govState.project_id}</MonoText>
+            </div>
+            <div className="flex items-center gap-2">
+              {govState.current_environment && <EnvBadge env={govState.current_environment} />}
+              {govState.risk_classification && (
+                <span className={`px-2 py-0.5 rounded text-[10px] font-mono ${
+                  govState.risk_classification === "high" ? "bg-red-900/40 text-red-400" :
+                  govState.risk_classification === "medium" ? "bg-yellow-900/40 text-yellow-400" :
+                  "bg-green-900/40 text-green-400"
+                }`}>
+                  {govState.risk_classification} risk
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3 text-xs font-mono">
+            {govState.intake_card_id && (
+              <div>
+                <p className="text-bone-dim/60 text-[10px] uppercase tracking-wider mb-0.5">Intake Card</p>
+                <MonoText>{govState.intake_card_id}</MonoText>
+              </div>
+            )}
+            {govState.goal_id && (
+              <div>
+                <p className="text-bone-dim/60 text-[10px] uppercase tracking-wider mb-0.5">WTK Goal</p>
+                <MonoText>{govState.goal_id}</MonoText>
+              </div>
+            )}
+            {govState.target_id && (
+              <div>
+                <p className="text-bone-dim/60 text-[10px] uppercase tracking-wider mb-0.5">Target</p>
+                <MonoText>{govState.target_type ? `${govState.target_type}:` : ""}{govState.target_id}</MonoText>
+              </div>
+            )}
+          </div>
+
+          {govState.agent_members && (
+            <div className="mt-3 pt-3 border-t border-slate-border flex flex-wrap gap-2">
+              {govState.agent_members.coordinator && (
+                <span className="px-2 py-0.5 rounded border border-cold-teal/30 text-[10px] font-mono text-cold-teal">
+                  coord: {govState.agent_members.coordinator}
+                </span>
+              )}
+              {(govState.agent_members.workers ?? []).map((w) => (
+                <span key={w} className="px-2 py-0.5 rounded border border-slate-border text-[10px] font-mono text-bone-muted">
+                  worker: {w}
+                </span>
+              ))}
+              {(govState.agent_members.evaluators ?? []).map((e) => (
+                <span key={e} className="px-2 py-0.5 rounded border border-clinical-cyan/30 text-[10px] font-mono text-clinical-cyan">
+                  eval: {e}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {(govState.pending_approvals_count ?? 0) > 1 && (
+            <p className="mt-2 text-[10px] font-mono text-bone-dim">
+              {govState.pending_approvals_count - 1} other pending approval{govState.pending_approvals_count > 2 ? "s" : ""} on this project
+            </p>
+          )}
+        </VaultCard>
+      )}
+
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
