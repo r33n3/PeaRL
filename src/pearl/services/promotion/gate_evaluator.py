@@ -313,6 +313,8 @@ class _EvalContext:
         self.mass_scan_seen: bool = False
         self.mass_risk_score: float = 0.0
         self.mass_verdict_risk_level: str | None = None  # "low"|"medium"|"high"|"critical"
+        # LiteLLM compliance context
+        self.litellm_scan_seen: bool = False
 
 
 async def _build_eval_context(
@@ -566,6 +568,11 @@ async def _build_eval_context(
             ctx.snyk_open_critical += 1
         elif snyk_f.severity == "high":
             ctx.snyk_open_high += 1
+
+    # LiteLLM compliance context
+    ctx.litellm_scan_seen = any(
+        (f.source or {}).get("tool_name") == "litellm" for f in all_project_findings
+    )
 
     return ctx
 
@@ -1187,6 +1194,26 @@ def _eval_snyk_open_high_critical(rule, ctx):
     return True, "Snyk SCA: no open HIGH/CRITICAL vulnerabilities", {"critical": 0, "high": 0}
 
 
+def _eval_litellm_compliance(rule, ctx):
+    if not ctx.litellm_scan_seen:
+        return (
+            False,
+            "No LiteLLM compliance scan ingested — configure LiteLLM integration and pull findings first",
+            None,
+        )
+    open_litellm = [
+        f for f in ctx.open_findings
+        if (f.source or {}).get("tool_name") == "litellm"
+    ]
+    if open_litellm:
+        return (
+            False,
+            f"LiteLLM: {len(open_litellm)} compliance violation(s) open — fix policy violations in LiteLLM virtual key configuration",
+            {"violations": len(open_litellm)},
+        )
+    return True, "LiteLLM: no open compliance violations", {"violations": 0}
+
+
 def _eval_aiuc1_control_required(rule, ctx):
     """Check that a specific AIUC-1 sub-control is set to True in the org baseline.
 
@@ -1567,4 +1594,6 @@ RULE_EVALUATORS = {
     GateRuleType.FRAMEWORK_CONTROL_REQUIRED: _eval_framework_control_required,
     # Governance compliance
     GateRuleType.CLAUDE_MD_GOVERNANCE_PRESENT: _eval_claude_md_governance_present,
+    # LiteLLM AI gateway compliance
+    GateRuleType.LITELLM_COMPLIANCE: _eval_litellm_compliance,
 }

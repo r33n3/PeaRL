@@ -274,6 +274,8 @@ class GateRuleType(StrEnum):
     FRAMEWORK_CONTROL_REQUIRED = "framework_control_required"
     # Governance compliance
     CLAUDE_MD_GOVERNANCE_PRESENT = "claude_md_governance_present"
+    # LiteLLM AI gateway compliance
+    LITELLM_COMPLIANCE = "litellm_compliance"
 
 
 class GateEvaluationStatus(StrEnum):
