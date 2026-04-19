@@ -542,7 +542,7 @@ class MCPServer:
 
     async def _submit_contract_snapshot(self, args: dict) -> dict:
         pid = args["project_id"]
-        body = {
+        body: dict = {
             "package_id": args["package_id"],
             "environment": args["environment"],
             "agent_roles": args.get("agent_roles", []),
@@ -552,6 +552,7 @@ class MCPServer:
             "mcp_allowlist": args.get("mcp_allowlist", []),
             "budget_usd": args.get("budget_usd"),
         }
+        body = {k: v for k, v in body.items() if v is not None}
         return await self._request("POST", f"/projects/{pid}/contract-snapshots", body)
 
     async def _check_agent_contract(self, args: dict) -> dict:

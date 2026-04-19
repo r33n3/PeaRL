@@ -834,16 +834,19 @@ TOOL_DEFINITIONS = [
                 "agent_roles": {
                     "type": "array",
                     "items": {"type": "string"},
+                    "maxItems": 100,
                     "description": "Agent role names in this team (e.g. coordinator, worker, evaluator)",
                 },
                 "litellm_agent_ids": {
                     "type": "array",
                     "items": {"type": "string"},
+                    "maxItems": 100,
                     "description": "LiteLLM agent IDs assigned during provisioning",
                 },
                 "key_aliases": {
                     "type": "array",
                     "items": {"type": "string"},
+                    "maxItems": 100,
                     "description": "LiteLLM virtual key aliases this team uses (e.g. vk-worker-agent)",
                 },
                 "skill_content_hash": {
@@ -853,6 +856,7 @@ TOOL_DEFINITIONS = [
                 "mcp_allowlist": {
                     "type": "array",
                     "items": {"type": "string"},
+                    "maxItems": 100,
                     "description": "MCP server names this team is permitted to call",
                 },
                 "budget_usd": {
