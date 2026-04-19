@@ -563,10 +563,10 @@ class MCPServer:
         return await self._request("GET", f"/task-packets/{packet_id}/contract-compliance")
 
     async def _check_litellm_compliance(self, args: dict) -> dict:
-        pid = args["project_id"]
-        body: dict = {}
-        if "key_aliases" in args:
-            body["key_aliases"] = args["key_aliases"]
-        if body:
-            return await self._request("POST", f"/projects/{pid}/litellm-compliance", body)
+        pid = args.get("project_id")
+        if not pid:
+            return {"error": "project_id is required"}
+        key_aliases = args.get("key_aliases")
+        if key_aliases:
+            return await self._request("POST", f"/projects/{pid}/litellm-compliance", {"key_aliases": key_aliases})
         return await self._request("GET", f"/projects/{pid}/litellm-compliance")

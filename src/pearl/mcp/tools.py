@@ -907,6 +907,7 @@ TOOL_DEFINITIONS = [
                 "key_aliases": {
                     "type": "array",
                     "items": {"type": "string"},
+                    "maxItems": 100,
                     "description": "Optional list of specific virtual key aliases to check. If omitted, checks all aliases configured on the project's LiteLLM integration endpoint.",
                 },
             },
