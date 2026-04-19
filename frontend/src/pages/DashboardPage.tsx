@@ -98,6 +98,49 @@ export function DashboardPage() {
           ))}
         </div>
       )}
+
+      {/* Governance queue */}
+      {(() => {
+        const projectsWithPending = (projects ?? []).filter((p) => (p.pending_approvals ?? 0) > 0);
+        if (projectsWithPending.length === 0) return null;
+        return (
+          <div className="mt-8">
+            <h2 className="vault-heading text-lg mb-4 flex items-center gap-2">
+              <span>Governance Queue</span>
+              <span className="ml-2 px-2 py-0.5 rounded bg-clinical-cyan/20 text-clinical-cyan text-xs font-mono">
+                {projectsWithPending.reduce((sum, p) => sum + (p.pending_approvals ?? 0), 0)} pending
+              </span>
+            </h2>
+            <div className="space-y-2">
+              {projectsWithPending.map((p) => (
+                <div
+                  key={p.project_id}
+                  className="flex items-center justify-between px-4 py-3 rounded border border-clinical-cyan/30 bg-clinical-cyan/5 cursor-pointer hover:border-clinical-cyan transition-colors"
+                  onClick={() => navigate(`/projects/${p.project_id}`)}
+                >
+                  <div>
+                    <p className="text-sm font-heading font-semibold text-bone">{p.name}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[10px] font-mono text-bone-dim">{p.project_id}</span>
+                      {p.target_id && (
+                        <span className="text-[10px] font-mono text-bone-dim">
+                          → {p.target_type ? `${p.target_type}:` : ""}{p.target_id}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {p.environment && <EnvBadge env={p.environment} />}
+                    <span className="text-xs font-mono text-clinical-cyan">
+                      {p.pending_approvals} pending
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

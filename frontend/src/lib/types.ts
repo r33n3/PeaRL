@@ -128,6 +128,16 @@ export interface ProjectSummary {
   gate_status: GateEvaluationStatus | null;
   gate_progress_pct: number;
   bu_id?: string | null;
+  intake_card_id?: string | null;
+  goal_id?: string | null;
+  target_type?: string | null;
+  target_id?: string | null;
+  risk_classification?: string | null;
+  agent_members?: {
+    coordinator: string | null;
+    workers: string[];
+    evaluators: string[];
+  } | null;
 }
 
 export interface ProjectOverview extends ProjectSummary {

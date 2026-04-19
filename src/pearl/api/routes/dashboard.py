@@ -70,6 +70,12 @@ async def dashboard_projects(db: AsyncSession = Depends(get_db)) -> list[dict]:
             "gate_status": latest_eval.status if latest_eval else None,
             "gate_progress_pct": latest_eval.progress_pct if latest_eval else 0.0,
             "bu_id": p.bu_id,
+            "intake_card_id": p.intake_card_id,
+            "goal_id": p.goal_id,
+            "target_type": p.target_type,
+            "target_id": p.target_id,
+            "risk_classification": p.risk_classification,
+            "agent_members": p.agent_members,
         })
 
     return summaries
