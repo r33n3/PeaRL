@@ -124,3 +124,81 @@ async def test_mcp_tools_list_includes_submit_contract_snapshot(app):
     names = {t["name"] for t in TOOL_DEFINITIONS}
     assert "pearl_submit_contract_snapshot" in names, \
         f"Missing tool. Found: {sorted(names)}"
+
+
+@pytest.mark.asyncio
+async def test_drift_detected_when_agent_missing():
+    """check_drift returns drifted=True when a litellm_agent_id is not found."""
+    from unittest.mock import AsyncMock, patch
+    from pearl.integrations.litellm import LiteLLMClient
+
+    client = LiteLLMClient(base_url="http://fake-litellm", api_key="key")
+
+    snapshot = {
+        "litellm_agent_ids": ["agent_missing_1"],
+        "skill_content_hash": "sha256:abc",
+        "key_aliases": ["vk-worker-agent"],
+        "mcp_allowlist": ["pearl-api"],
+    }
+
+    with patch.object(client, "get_agent", new=AsyncMock(return_value=None)):
+        report = await client.check_drift(snapshot)
+
+    assert report.drifted is True
+    assert any("not found" in v.lower() for v in report.violations)
+
+
+@pytest.mark.asyncio
+async def test_no_drift_when_agent_exists_no_hash():
+    """check_drift returns drifted=False when agent exists and no live hash to compare."""
+    from unittest.mock import AsyncMock, patch
+    from pearl.integrations.litellm import LiteLLMClient
+
+    client = LiteLLMClient(base_url="http://fake-litellm", api_key="key")
+
+    snapshot = {
+        "litellm_agent_ids": ["agent_coord_1"],
+        "skill_content_hash": "sha256:abc",
+        "key_aliases": ["vk-worker-agent"],
+        "mcp_allowlist": ["pearl-api"],
+    }
+
+    live_agent = {
+        "agent_id": "agent_coord_1",
+        "agent_card_params": {},
+        "litellm_params": {"model": "gpt-4o"},
+    }
+
+    with patch.object(client, "get_agent", new=AsyncMock(return_value=live_agent)):
+        report = await client.check_drift(snapshot)
+
+    assert report.agents_checked == 1
+    # No drift: agent exists, live agent has no hash to compare against
+    assert report.drifted is False
+    assert report.violations == []
+
+
+@pytest.mark.asyncio
+async def test_drift_check_degrades_gracefully_when_litellm_unreachable():
+    """check_drift returns drifted=False with a note when LiteLLM is unreachable."""
+    import httpx
+    from unittest.mock import AsyncMock, patch
+    from pearl.integrations.litellm import LiteLLMClient
+
+    client = LiteLLMClient(base_url="http://unreachable", api_key="key")
+
+    snapshot = {
+        "litellm_agent_ids": ["agent_1"],
+        "skill_content_hash": "sha256:abc",
+        "key_aliases": [],
+        "mcp_allowlist": [],
+    }
+
+    with patch.object(
+        client, "get_agent",
+        new=AsyncMock(side_effect=httpx.ConnectError("unreachable")),
+    ):
+        report = await client.check_drift(snapshot)
+
+    assert report.drifted is False
+    assert any("unreachable" in v.lower() for v in report.violations)
