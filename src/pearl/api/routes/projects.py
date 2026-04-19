@@ -477,6 +477,16 @@ async def get_project(
             updated_at=row.updated_at,
         ).model_dump(mode="json", exclude_none=True),
         "current_environment": row.current_environment or "sandbox",
+        # ── Governance container fields ──
+        "intake_card_id": row.intake_card_id,
+        "goal_id": row.goal_id,
+        "target_type": row.target_type,
+        "target_id": row.target_id,
+        "risk_classification": row.risk_classification,
+        "agent_members": row.agent_members,
+        "litellm_key_refs": row.litellm_key_refs,
+        "memory_policy_refs": row.memory_policy_refs,
+        "qualification_packet_id": row.qualification_packet_id,
     }
 
 
@@ -800,4 +810,130 @@ async def confirm_claude_md(
         "claude_md_verified": True,
         "governance_block": PEARL_GOVERNANCE_BLOCK.strip(),
         "message": "Governance block confirmed. Gate rule CLAUDE_MD_GOVERNANCE_PRESENT will now pass.",
+    }
+
+
+class RegisterAgentsRequest(PydanticBaseModel):
+    coordinator: str | None = None
+    workers: list[str] = []
+    evaluators: list[str] = []
+    litellm_key_refs: list[str] = []
+    memory_policy_refs: list[str] = []
+    goal_id: str | None = None
+    intake_card_id: str | None = None
+    target_type: str | None = None
+    target_id: str | None = None
+    risk_classification: str | None = None
+    qualification_packet_id: str | None = None
+
+
+@router.post("/projects/{project_id}/agents")
+async def register_project_agents(
+    project_id: str,
+    body: RegisterAgentsRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """WTK registers coordinator, worker, and evaluator agents against a project."""
+    user = getattr(request.state, "user", {})
+    if not any(r in user.get("roles", []) for r in ("admin", "operator", "service_account")):
+        from pearl.errors.exceptions import AuthorizationError
+        raise AuthorizationError("operator, admin, or service_account role required")
+
+    repo = ProjectRepository(db)
+    row = await repo.get(project_id)
+    if not row:
+        raise NotFoundError("Project", project_id)
+
+    agent_members = {
+        "coordinator": body.coordinator,
+        "workers": body.workers,
+        "evaluators": body.evaluators,
+    }
+    row = await repo.update_governance_fields(
+        project_id=project_id,
+        agent_members=agent_members,
+        litellm_key_refs=body.litellm_key_refs or None,
+        memory_policy_refs=body.memory_policy_refs or None,
+        goal_id=body.goal_id,
+        intake_card_id=body.intake_card_id,
+        target_type=body.target_type,
+        target_id=body.target_id,
+        risk_classification=body.risk_classification,
+        qualification_packet_id=body.qualification_packet_id,
+    )
+    await db.commit()
+    await db.refresh(row)
+    return {
+        "project_id": row.project_id,
+        "agent_members": row.agent_members,
+        "litellm_key_refs": row.litellm_key_refs,
+        "memory_policy_refs": row.memory_policy_refs,
+        "goal_id": row.goal_id,
+        "intake_card_id": row.intake_card_id,
+        "target_type": row.target_type,
+        "target_id": row.target_id,
+        "risk_classification": row.risk_classification,
+        "qualification_packet_id": row.qualification_packet_id,
+    }
+
+
+@router.get("/projects/{project_id}/governance-state")
+async def get_project_governance_state(
+    project_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return the full governance container state for a project.
+
+    Used by WTK to check gate status and by the PeaRL reviewer UI.
+    """
+    repo = ProjectRepository(db)
+    row = await repo.get(project_id)
+    if not row:
+        raise NotFoundError("Project", project_id)
+
+    from pearl.repositories.approval_repo import ApprovalRequestRepository
+    approval_repo = ApprovalRequestRepository(db)
+    pending = await approval_repo.list_by_project(project_id)
+    pending_list = [
+        {
+            "approval_request_id": a.approval_request_id,
+            "request_type": a.request_type,
+            "status": a.status,
+            "environment": a.environment,
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+        }
+        for a in pending
+        if a.status in ("pending", "needs_info")
+    ]
+
+    from pearl.repositories.compiled_package_repo import CompiledPackageRepository
+    pkg_repo = CompiledPackageRepository(db)
+    pkg = await pkg_repo.get_latest_by_project(project_id)
+    gate_status = None
+    if pkg:
+        pkg_data = pkg.package_data or {}
+        gate_status = {
+            "package_id": pkg.package_id,
+            "compiled_at": pkg_data.get("package_metadata", {}).get("integrity", {}).get("compiled_at"),
+            "environment": pkg_data.get("project_identity", {}).get("environment"),
+        }
+
+    return {
+        "project_id": row.project_id,
+        "name": row.name,
+        "current_environment": row.current_environment,
+        "intake_card_id": row.intake_card_id,
+        "goal_id": row.goal_id,
+        "target_type": row.target_type,
+        "target_id": row.target_id,
+        "risk_classification": row.risk_classification,
+        "agent_members": row.agent_members,
+        "litellm_key_refs": row.litellm_key_refs,
+        "memory_policy_refs": row.memory_policy_refs,
+        "qualification_packet_id": row.qualification_packet_id,
+        "pending_approvals": pending_list,
+        "pending_approvals_count": len(pending_list),
+        "gate_status": gate_status,
     }

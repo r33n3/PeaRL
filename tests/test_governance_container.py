@@ -119,3 +119,42 @@ async def test_project_repo_update_governance_fields(app):
         assert updated.target_type == "repo"
         assert updated.target_id == "repo:MASS-2.0"
         assert updated.risk_classification == "medium"
+
+
+@pytest.mark.asyncio
+async def test_register_agents_on_project(app, admin_token, sample_project_id):
+    """POST /projects/{id}/agents stores agent_members on the project."""
+    payload = {
+        "coordinator": "agent_coord_abc",
+        "workers": ["agent_worker_1", "agent_worker_2"],
+        "evaluators": ["agent_eval_1"],
+        "litellm_key_refs": ["vk-worker-agent", "vk-governance-agent"],
+    }
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        r = await ac.post(
+            f"/api/v1/projects/{sample_project_id}/agents",
+            json=payload,
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["agent_members"]["coordinator"] == "agent_coord_abc"
+    assert len(data["agent_members"]["workers"]) == 2
+    assert data["litellm_key_refs"] == ["vk-worker-agent", "vk-governance-agent"]
+
+
+@pytest.mark.asyncio
+async def test_governance_state_returns_project_context(app, admin_token, sample_project_id):
+    """GET /projects/{id}/governance-state returns gates, approvals, and governance fields."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        r = await ac.get(
+            f"/api/v1/projects/{sample_project_id}/governance-state",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert "project_id" in data
+    assert "pending_approvals" in data
+    assert "gate_status" in data
+    assert "agent_members" in data
+    assert "goal_id" in data
