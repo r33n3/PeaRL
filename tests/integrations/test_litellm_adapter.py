@@ -19,7 +19,7 @@ from pearl.models.enums import IntegrationCategory, IntegrationType
 
 
 def _make_endpoint(
-    key_aliases: str = "alias1,alias2",
+    key_aliases: str,
     raw_token: str = "sk-master",
 ) -> IntegrationEndpoint:
     return IntegrationEndpoint(
@@ -48,6 +48,13 @@ def _make_compliance(violations: list[str]) -> ContractCompliance:
     )
 
 
+# Real violation format strings from LiteLLMClient (matched by substring keywords).
+# The adapter maps "budget" → high, "model" → medium, default → high.
+_BUDGET_VIOLATION = "Budget exceeded: actual $11.0000 > cap $10.00"
+_MODEL_VIOLATION = "Unauthorized model called: 'gpt-4' (allowed: [])"
+_UNKNOWN_VIOLATION = "Unknown policy violation"
+
+
 # ---------------------------------------------------------------------------
 # pull_findings tests
 # ---------------------------------------------------------------------------
@@ -67,11 +74,10 @@ async def test_pull_findings_returns_empty_when_no_violations():
 @pytest.mark.asyncio
 async def test_pull_findings_maps_budget_violation_to_high_severity():
     endpoint = _make_endpoint(key_aliases="alias1")
-    violation = "Budget exceeded: spent $11.00 of $10.00"
     with patch("pearl.integrations.litellm.LiteLLMClient") as MockClient:
         instance = MockClient.return_value
         instance.get_key_compliance = AsyncMock(
-            return_value=_make_compliance([violation])
+            return_value=_make_compliance([_BUDGET_VIOLATION])
         )
         adapter = LiteLLMAdapter()
         result = await adapter.pull_findings(endpoint)
@@ -79,16 +85,18 @@ async def test_pull_findings_maps_budget_violation_to_high_severity():
     assert len(result) == 1
     assert result[0].severity == "high"
     assert result[0].source_tool == "litellm"
+    assert result[0].raw_record["actual_spend_usd"] == 1.0
+    assert result[0].raw_record["budget_cap_usd"] == 10.0
+    assert result[0].raw_record["key_alias"] == "alias1"
 
 
 @pytest.mark.asyncio
 async def test_pull_findings_maps_model_violation_to_medium_severity():
     endpoint = _make_endpoint(key_aliases="alias1")
-    violation = "Unauthorized model used: gpt-4"
     with patch("pearl.integrations.litellm.LiteLLMClient") as MockClient:
         instance = MockClient.return_value
         instance.get_key_compliance = AsyncMock(
-            return_value=_make_compliance([violation])
+            return_value=_make_compliance([_MODEL_VIOLATION])
         )
         adapter = LiteLLMAdapter()
         result = await adapter.pull_findings(endpoint)
@@ -100,11 +108,10 @@ async def test_pull_findings_maps_model_violation_to_medium_severity():
 @pytest.mark.asyncio
 async def test_pull_findings_default_violation_is_high():
     endpoint = _make_endpoint(key_aliases="alias1")
-    violation = "Unknown policy violation"
     with patch("pearl.integrations.litellm.LiteLLMClient") as MockClient:
         instance = MockClient.return_value
         instance.get_key_compliance = AsyncMock(
-            return_value=_make_compliance([violation])
+            return_value=_make_compliance([_UNKNOWN_VIOLATION])
         )
         adapter = LiteLLMAdapter()
         result = await adapter.pull_findings(endpoint)
@@ -116,11 +123,10 @@ async def test_pull_findings_default_violation_is_high():
 @pytest.mark.asyncio
 async def test_pull_findings_multiple_aliases_aggregates_findings():
     endpoint = _make_endpoint(key_aliases="alias1,alias2")
-    violation = "Budget exceeded: spent $11.00 of $10.00"
     with patch("pearl.integrations.litellm.LiteLLMClient") as MockClient:
         instance = MockClient.return_value
         instance.get_key_compliance = AsyncMock(
-            return_value=_make_compliance([violation])
+            return_value=_make_compliance([_BUDGET_VIOLATION])
         )
         adapter = LiteLLMAdapter()
         result = await adapter.pull_findings(endpoint)
@@ -133,27 +139,25 @@ async def test_pull_findings_multiple_aliases_aggregates_findings():
 @pytest.mark.asyncio
 async def test_pull_findings_unreachable_on_one_alias_continues_to_next():
     endpoint = _make_endpoint(key_aliases="alias1,alias2")
-    violation = "Budget exceeded: spent $11.00 of $10.00"
 
     with patch("pearl.integrations.litellm.LiteLLMClient") as MockClient:
         instance = MockClient.return_value
         instance.get_key_compliance = AsyncMock(
             side_effect=[
                 httpx.ConnectError("Connection refused"),
-                _make_compliance([violation]),
+                _make_compliance([_BUDGET_VIOLATION]),
             ]
         )
         adapter = LiteLLMAdapter()
         result = await adapter.pull_findings(endpoint)
 
-    # alias1 failed, alias2 succeeded → 1 finding
+    # alias1 failed, alias2 succeeded → 1 finding (continue, not return [])
     assert len(result) == 1
 
 
 @pytest.mark.asyncio
 async def test_pull_findings_http_error_on_alias_continues():
     endpoint = _make_endpoint(key_aliases="alias1,alias2")
-    violation = "Budget exceeded: spent $11.00 of $10.00"
 
     with patch("pearl.integrations.litellm.LiteLLMClient") as MockClient:
         instance = MockClient.return_value
@@ -162,7 +166,7 @@ async def test_pull_findings_http_error_on_alias_continues():
         instance.get_key_compliance = AsyncMock(
             side_effect=[
                 httpx.HTTPStatusError("503", request=request, response=response),
-                _make_compliance([violation]),
+                _make_compliance([_BUDGET_VIOLATION]),
             ]
         )
         adapter = LiteLLMAdapter()
@@ -175,12 +179,11 @@ async def test_pull_findings_http_error_on_alias_continues():
 @pytest.mark.asyncio
 async def test_pull_findings_external_id_format():
     endpoint = _make_endpoint(key_aliases="alias1")
-    violations = ["Budget exceeded: spent $11.00 of $10.00", "Unauthorized model used: gpt-4"]
 
     with patch("pearl.integrations.litellm.LiteLLMClient") as MockClient:
         instance = MockClient.return_value
         instance.get_key_compliance = AsyncMock(
-            return_value=_make_compliance(violations)
+            return_value=_make_compliance([_BUDGET_VIOLATION, _MODEL_VIOLATION])
         )
         adapter = LiteLLMAdapter()
         result = await adapter.pull_findings(endpoint)
@@ -208,6 +211,11 @@ async def test_test_connection_returns_true_on_200():
         result = await adapter.test_connection(endpoint)
 
     assert result is True
+    mock_http.get.assert_called_once_with(
+        "http://litellm:4000/health/liveliness",
+        headers={"Authorization": "Bearer sk-master"},
+        timeout=10.0,
+    )
 
 
 @pytest.mark.asyncio
