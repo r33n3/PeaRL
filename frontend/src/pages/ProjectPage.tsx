@@ -342,7 +342,7 @@ export function ProjectPage() {
                 Pending Approvals
               </h3>
               <div className="space-y-2">
-                {govState!.pending_approvals.map((a) => (
+                {(govState?.pending_approvals ?? []).map((a) => (
                   <a
                     key={a.approval_request_id}
                     href={`/approvals/${a.approval_request_id}`}
