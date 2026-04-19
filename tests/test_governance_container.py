@@ -75,3 +75,47 @@ async def test_register_agents_endpoint_exists(app, admin_token):
             headers={"Authorization": f"Bearer {admin_token}"},
         )
     assert r.status_code == 404, f"Expected 404, got {r.status_code}: {r.text}"
+
+
+@pytest.mark.asyncio
+async def test_project_repo_update_governance_fields(app):
+    """update_governance_fields sets Dark Factory fields on an existing project row."""
+    from pearl.repositories.project_repo import ProjectRepository
+    from pearl.db.models.project import ProjectRow
+
+    project_id = "proj_repotest01"
+    session_factory = app.state.db_session_factory
+
+    async with session_factory() as session:
+        existing = await session.get(ProjectRow, project_id)
+        if not existing:
+            row = ProjectRow(
+                project_id=project_id,
+                name="Repo Test",
+                owner_team="test-team",
+                business_criticality="medium",
+                external_exposure="internal",
+                ai_enabled=True,
+                schema_version="1.1",
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
+            session.add(row)
+            await session.commit()
+
+    async with session_factory() as session:
+        repo = ProjectRepository(session)
+        updated = await repo.update_governance_fields(
+            project_id=project_id,
+            intake_card_id="card_001",
+            goal_id="goal_abc",
+            target_type="repo",
+            target_id="repo:MASS-2.0",
+            risk_classification="medium",
+        )
+        await session.commit()
+
+        assert updated.intake_card_id == "card_001"
+        assert updated.target_type == "repo"
+        assert updated.target_id == "repo:MASS-2.0"
+        assert updated.risk_classification == "medium"
