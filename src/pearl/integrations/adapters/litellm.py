@@ -55,7 +55,7 @@ class LiteLLMAdapter(SourceAdapter):
         """
         from pearl.integrations.litellm import LiteLLMClient
 
-        api_key = (endpoint.auth.raw_token or endpoint.auth.resolve_bearer_token() or "")
+        api_key = endpoint.auth.resolve_bearer_token() or ""
         client = LiteLLMClient(base_url=endpoint.base_url, api_key=api_key)
 
         labels: dict[str, str] = endpoint.labels or {}
@@ -79,7 +79,7 @@ class LiteLLMAdapter(SourceAdapter):
                     endpoint.endpoint_id,
                     exc,
                 )
-                return []
+                continue
 
             for idx, violation in enumerate(compliance.violations):
                 violation_lower = violation.lower()
@@ -123,8 +123,9 @@ class LiteLLMAdapter(SourceAdapter):
         """GET {endpoint.base_url}/health/liveliness — return True if 200."""
         base = endpoint.base_url.rstrip("/")
         try:
+            headers = endpoint.auth.get_headers()
             client = await self._get_client()
-            resp = await client.get(f"{base}/health/liveliness", timeout=10.0)
+            resp = await client.get(f"{base}/health/liveliness", headers=headers, timeout=10.0)
             if resp.status_code == 200:
                 logger.info("LiteLLM connection test succeeded for %s", endpoint.endpoint_id)
                 return True
