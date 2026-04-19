@@ -164,8 +164,8 @@ class LiteLLMClient:
                     "LiteLLM unreachable during drift check for agent %s: %s", agent_id, exc
                 )
                 return DriftReport(
-                    drifted=False,
-                    violations=["LiteLLM unreachable — drift check skipped"],
+                    drifted=len(violations) > 0,
+                    violations=violations + ["LiteLLM unreachable — drift check skipped"],
                     agents_checked=agents_checked,
                     checked_at=checked_at,
                 )

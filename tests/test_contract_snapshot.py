@@ -205,3 +205,80 @@ async def test_drift_check_degrades_gracefully_when_litellm_unreachable():
 
     assert report.drifted is False
     assert any("unreachable" in v.lower() for v in report.violations)
+
+
+@pytest.mark.asyncio
+async def test_drift_detected_sets_passed_false_in_route(app, admin_token, sample_project_id):
+    """GET /task-packets/{id}/contract-compliance returns passed=False when drift is detected."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+    from pearl.integrations.litellm import ContractCompliance, DriftReport
+    from pearl.repositories.task_packet_repo import TaskPacketRepository
+    from datetime import datetime, timezone
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    # Create a contract snapshot task packet
+    payload = {
+        "package_id": "pkg_drift_passed_false",
+        "litellm_agent_ids": ["agent-abc"],
+        "key_aliases": ["vk-drift-test"],
+        "skill_content_hash": "sha256:abc",
+        "mcp_allowlist": ["pearl-api"],
+        "budget_usd": 1.0,
+        "environment": "dev",
+    }
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        snap_r = await ac.post(
+            f"/api/v1/projects/{sample_project_id}/contract-snapshots",
+            json=payload,
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+    assert snap_r.status_code == 201, snap_r.text
+    packet_id = snap_r.json()["task_packet_id"]
+
+    # Patch the packet to include a run_id so the endpoint doesn't short-circuit
+    async with app.state.db_session_factory() as session:
+        repo = TaskPacketRepository(session)
+        packet = await repo.get(packet_id)
+        existing_data = dict(packet.packet_data or {})
+        existing_data["run_id"] = "test-run-123"
+        packet.packet_data = existing_data
+        await session.commit()
+
+    # Build mock compliance and drift objects
+    mock_compliance = ContractCompliance(
+        passed=True,
+        violations=[],
+        key_alias=None,
+        approved_models=[],
+        actual_models_used=[],
+        budget_cap_usd=None,
+        actual_spend_usd=0.0,
+        request_count=0,
+        checked_at=datetime.now(timezone.utc).isoformat(),
+    )
+    mock_drift = DriftReport(
+        drifted=True,
+        violations=["agent abc not found"],
+        agents_checked=1,
+        checked_at=datetime.now(timezone.utc).isoformat(),
+    )
+    mock_client = MagicMock()
+    mock_client.get_key_compliance = AsyncMock(return_value=mock_compliance)
+    mock_client.check_drift = AsyncMock(return_value=mock_drift)
+
+    with patch("pearl.api.routes.task_packets.settings") as mock_settings, \
+         patch("pearl.api.routes.task_packets.LiteLLMClient", return_value=mock_client):
+        mock_settings.litellm_api_url = "http://fake-litellm"
+        mock_settings.litellm_api_key = "fake-key"
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            r = await ac.get(
+                f"/api/v1/task-packets/{packet_id}/contract-compliance",
+                headers={"Authorization": f"Bearer {admin_token}"},
+            )
+
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["passed"] is False
+    assert data["drift_check"]["drifted"] is True
+    assert "agent abc not found" in data["drift_check"]["violations"]
