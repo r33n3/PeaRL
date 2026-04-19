@@ -377,6 +377,47 @@ export function ProjectPage() {
         </button>
       </div>
 
+      {/* Governance context strip — shows when governance fields are populated */}
+      {(govState?.goal_id || govState?.target_id || govState?.intake_card_id) && (
+        <div className="flex flex-wrap gap-4 px-4 py-2 bg-slate-border/10 rounded border border-slate-border text-xs font-mono mb-4">
+          {govState.intake_card_id && (
+            <span className="flex items-center gap-1.5 text-bone-dim">
+              <span className="text-bone-dim/50 uppercase text-[10px] tracking-wider">Card</span>
+              <MonoText>{govState.intake_card_id}</MonoText>
+            </span>
+          )}
+          {govState.goal_id && (
+            <span className="flex items-center gap-1.5 text-bone-dim">
+              <span className="text-bone-dim/50 uppercase text-[10px] tracking-wider">Goal</span>
+              <MonoText>{govState.goal_id}</MonoText>
+            </span>
+          )}
+          {govState.target_id && (
+            <span className="flex items-center gap-1.5 text-bone-dim">
+              <span className="text-bone-dim/50 uppercase text-[10px] tracking-wider">Target</span>
+              <MonoText>{govState.target_type ? `${govState.target_type}:` : ""}{govState.target_id}</MonoText>
+            </span>
+          )}
+          {govState.risk_classification && (
+            <span className={`px-2 py-0.5 rounded text-[10px] font-mono ${
+              govState.risk_classification === "high" ? "bg-red-900/40 text-red-400" :
+              govState.risk_classification === "medium" ? "bg-yellow-900/40 text-yellow-400" :
+              "bg-green-900/40 text-green-400"
+            }`}>
+              {govState.risk_classification} risk
+            </span>
+          )}
+          {(govState.agent_members?.coordinator || (govState.agent_members?.workers?.length ?? 0) > 0) && (
+            <span
+              className="text-cold-teal cursor-pointer hover:underline text-[10px]"
+              onClick={() => setActiveTab("team")}
+            >
+              {1 + (govState.agent_members?.workers?.length ?? 0) + (govState.agent_members?.evaluators?.length ?? 0)} agents →
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Governance Outcomes */}
       {gov && (
         <div className="mb-8">
