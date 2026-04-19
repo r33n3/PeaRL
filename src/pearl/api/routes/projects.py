@@ -853,8 +853,8 @@ async def register_project_agents(
     row = await repo.update_governance_fields(
         project_id=project_id,
         agent_members=agent_members,
-        litellm_key_refs=body.litellm_key_refs or None,
-        memory_policy_refs=body.memory_policy_refs or None,
+        litellm_key_refs=body.litellm_key_refs,
+        memory_policy_refs=body.memory_policy_refs,
         goal_id=body.goal_id,
         intake_card_id=body.intake_card_id,
         target_type=body.target_type,
