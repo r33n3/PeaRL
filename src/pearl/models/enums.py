@@ -276,6 +276,8 @@ class GateRuleType(StrEnum):
     CLAUDE_MD_GOVERNANCE_PRESENT = "claude_md_governance_present"
     # LiteLLM AI gateway compliance
     LITELLM_COMPLIANCE = "litellm_compliance"
+    # Factory Run Summary gate
+    FACTORY_RUN_SUMMARY_PRESENT = "factory_run_summary_present"
 
 
 class GateEvaluationStatus(StrEnum):

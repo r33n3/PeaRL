@@ -315,6 +315,9 @@ class _EvalContext:
         self.mass_verdict_risk_level: str | None = None  # "low"|"medium"|"high"|"critical"
         # LiteLLM compliance context
         self.litellm_scan_seen: bool = False
+        # Factory run summary context
+        self.has_factory_run_summary: bool = False
+        self.factory_run_anomaly_count: int = 0
 
 
 async def _build_eval_context(
@@ -574,6 +577,23 @@ async def _build_eval_context(
         (f.source or {}).get("tool_name") == "litellm" for f in all_project_findings
     )
 
+    # Factory run summary context
+    try:
+        from pearl.db.models.factory_run_summary import FactoryRunSummaryRow
+        frun_stmt = (
+            select(FactoryRunSummaryRow)
+            .where(FactoryRunSummaryRow.project_id == project_id)
+            .order_by(FactoryRunSummaryRow.created_at.desc())
+            .limit(1)
+        )
+        frun_result = await session.execute(frun_stmt)
+        latest_frun = frun_result.scalar_one_or_none()
+        ctx.has_factory_run_summary = latest_frun is not None
+        if latest_frun:
+            ctx.factory_run_anomaly_count = len(latest_frun.anomaly_flags or [])
+    except Exception:
+        pass
+
     return ctx
 
 
@@ -634,6 +654,11 @@ _FIX_GUIDANCE: dict[str, str] = {
         "Run `snyk test --json > snyk_results.json` in the project root, "
         "then POST the results to /projects/{id}/integrations/snyk/ingest. "
         "Fix or accept all HIGH/CRITICAL vulnerabilities before re-ingesting."
+    ),
+    "factory_run_summary_present": (
+        "Complete a WTK factory run: register a workload, execute the agent task, "
+        "then deregister with DELETE /workloads/{svid}?frun_id=<session_id>. "
+        "Resolve any behavioral drift anomaly flags before promoting."
     ),
 }
 
@@ -1214,6 +1239,22 @@ def _eval_litellm_compliance(rule, ctx):
     return True, "LiteLLM: no open compliance violations", {"violations": 0}
 
 
+def _eval_factory_run_summary_present(rule, ctx):
+    if not ctx.has_factory_run_summary:
+        return (
+            False,
+            "No factory run summary — complete a WTK run with DELETE /workloads/{svid}?frun_id=<session_id>",
+            None,
+        )
+    if ctx.factory_run_anomaly_count > 0:
+        return (
+            False,
+            f"Factory run has {ctx.factory_run_anomaly_count} open anomaly flag(s) — resolve behavioral drift findings",
+            {"anomaly_count": ctx.factory_run_anomaly_count},
+        )
+    return True, "Factory run summary present with no anomaly flags", None
+
+
 def _eval_aiuc1_control_required(rule, ctx):
     """Check that a specific AIUC-1 sub-control is set to True in the org baseline.
 
@@ -1596,4 +1637,6 @@ RULE_EVALUATORS = {
     GateRuleType.CLAUDE_MD_GOVERNANCE_PRESENT: _eval_claude_md_governance_present,
     # LiteLLM AI gateway compliance
     GateRuleType.LITELLM_COMPLIANCE: _eval_litellm_compliance,
+    # Factory run summary gate
+    GateRuleType.FACTORY_RUN_SUMMARY_PRESENT: _eval_factory_run_summary_present,
 }

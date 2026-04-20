@@ -57,3 +57,54 @@ def test_missing_verdict_falls_back_to_score():
     rule = _make_rule()
     passed, _, _ = _eval_ai_risk_acceptable(rule, ctx)
     assert passed
+
+
+# ---------------------------------------------------------------------------
+# FACTORY_RUN_SUMMARY_PRESENT evaluator tests
+# ---------------------------------------------------------------------------
+
+def _make_frun_ctx(has_summary=True, anomaly_count=0):
+    """Build a minimal _EvalContext for factory run summary gate tests."""
+    from pearl.services.promotion.gate_evaluator import _EvalContext
+    ctx = _EvalContext()
+    ctx.has_factory_run_summary = has_summary
+    ctx.factory_run_anomaly_count = anomaly_count
+    return ctx
+
+
+def _make_simple_rule():
+    rule = MagicMock()
+    rule.parameters = {}
+    rule.threshold = None
+    return rule
+
+
+def test_factory_run_summary_missing_blocks():
+    """No factory run summary → gate fails with descriptive message."""
+    from pearl.services.promotion.gate_evaluator import _eval_factory_run_summary_present
+    ctx = _make_frun_ctx(has_summary=False)
+    rule = _make_simple_rule()
+    passed, message, details = _eval_factory_run_summary_present(rule, ctx)
+    assert not passed
+    assert "No factory run summary" in message
+
+
+def test_factory_run_summary_present_no_anomalies_passes():
+    """Factory run summary present and no anomaly flags → gate passes."""
+    from pearl.services.promotion.gate_evaluator import _eval_factory_run_summary_present
+    ctx = _make_frun_ctx(has_summary=True, anomaly_count=0)
+    rule = _make_simple_rule()
+    passed, message, details = _eval_factory_run_summary_present(rule, ctx)
+    assert passed
+    assert "no anomaly flags" in message.lower()
+
+
+def test_factory_run_summary_with_anomalies_blocks():
+    """Factory run summary present but 2 anomaly flags → gate fails."""
+    from pearl.services.promotion.gate_evaluator import _eval_factory_run_summary_present
+    ctx = _make_frun_ctx(has_summary=True, anomaly_count=2)
+    rule = _make_simple_rule()
+    passed, message, details = _eval_factory_run_summary_present(rule, ctx)
+    assert not passed
+    assert "anomaly flag(s)" in message
+    assert details == {"anomaly_count": 2}
