@@ -7,8 +7,8 @@ from pearl.mcp.tools import TOOL_DEFINITIONS
 
 
 def test_tool_definitions_count():
-    """All 53 API operations have tool definitions."""
-    assert len(TOOL_DEFINITIONS) == 53
+    """All 54 API operations have tool definitions."""
+    assert len(TOOL_DEFINITIONS) == 54
 
 
 def test_tool_definitions_structure():
@@ -30,7 +30,7 @@ def test_mcp_server_list_tools():
     """MCPServer.list_tools returns all definitions."""
     server = MCPServer()
     tools = server.list_tools()
-    assert len(tools) == 53
+    assert len(tools) == 54
 
 
 def test_mcp_server_routes_all_tools():
@@ -168,6 +168,8 @@ def test_required_tool_names():
         "pearl_submit_contract_snapshot",
         "pearl_check_agent_contract",
         "pearl_check_litellm_compliance",
+        # Factory run summary
+        "pearl_get_run_summary",
     }
     actual = {t["name"] for t in TOOL_DEFINITIONS}
     assert actual == expected

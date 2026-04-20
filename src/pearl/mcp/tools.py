@@ -914,4 +914,24 @@ TOOL_DEFINITIONS = [
             "required": ["project_id"],
         },
     },
+
+    # ─── Factory Run Summary ──────────────────────────
+    {
+        "name": "pearl_get_run_summary",
+        "description": "Retrieve a factory run summary record by frun_id. Returns aggregated cost, models used, tools called, outcome, and anomaly flags for a completed WTK factory run.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "frun_id": {
+                    "type": "string",
+                    "description": "The factory run ID (= the session_id / frun_id used when pushing cost entries).",
+                },
+                "project_id": {
+                    "type": "string",
+                    "description": "Optional project scope hint (not used for lookup, informational only).",
+                },
+            },
+            "required": ["frun_id"],
+        },
+    },
 ]

@@ -156,6 +156,8 @@ class MCPServer:
             "pearl_submit_contract_snapshot": self._submit_contract_snapshot,
             "pearl_check_agent_contract": self._check_agent_contract,
             "pearl_check_litellm_compliance": self._check_litellm_compliance,
+            # Factory run summary
+            "pearl_get_run_summary": self._get_run_summary,
         }
         return routes.get(tool_name)
 
@@ -570,3 +572,9 @@ class MCPServer:
         if key_aliases:
             return await self._request("POST", f"/projects/{pid}/litellm-compliance", {"key_aliases": key_aliases})
         return await self._request("GET", f"/projects/{pid}/litellm-compliance")
+
+    async def _get_run_summary(self, args: dict) -> dict:
+        frun_id = args.get("frun_id")
+        if not frun_id:
+            return {"error": "frun_id is required"}
+        return await self._request("GET", f"/workloads/run-summaries/{frun_id}")
