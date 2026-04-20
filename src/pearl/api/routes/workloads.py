@@ -4,6 +4,7 @@ Agents register on startup, send periodic heartbeats, and deregister on exit.
 Workloads with no heartbeat for >5 minutes are auto-marked inactive on read.
 """
 
+import structlog
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -12,8 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pearl.api.routes.stream import publish_event
 from pearl.dependencies import get_db, get_redis, require_role
 from pearl.errors.exceptions import ConflictError, NotFoundError
+from pearl.repositories.task_packet_repo import TaskPacketRepository
 from pearl.repositories.workload_repo import WorkloadRepository
 from pearl.services.id_generator import generate_id
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/workloads", tags=["Workloads"])
 
@@ -95,6 +99,7 @@ async def workload_heartbeat(
 async def deregister_workload(
     svid: str,
     request: Request,
+    frun_id: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     _user: dict = _RequireOperator,
 ) -> dict:
@@ -105,6 +110,22 @@ async def deregister_workload(
         raise NotFoundError("Workload", svid)
 
     await repo.deactivate(workload)
+
+    if frun_id and workload.task_packet_id:
+        try:
+            packet = await TaskPacketRepository(db).get(workload.task_packet_id)
+            if packet:
+                from pearl.services.factory_run.materializer import materialize_run
+                await materialize_run(
+                    frun_id=frun_id,
+                    task_packet_id=workload.task_packet_id,
+                    project_id=packet.project_id,
+                    session=db,
+                    svid=workload.svid,
+                )
+        except Exception:
+            logger.warning("materialize_run failed", svid=workload.svid, exc_info=True)
+
     await db.commit()
 
     redis = getattr(request.app.state, "redis", None)
@@ -152,3 +173,31 @@ async def list_workloads(
         }
         for r in rows
     ]
+
+
+@router.get("/run-summaries/{frun_id}", dependencies=[Depends(require_role("viewer"))])
+async def get_run_summary(frun_id: str, db: AsyncSession = Depends(get_db)):
+    from pearl.repositories.factory_run_summary_repo import FactoryRunSummaryRepository
+    repo = FactoryRunSummaryRepository(db)
+    row = await repo.get(frun_id)
+    if row is None:
+        raise NotFoundError("factory_run_summary", frun_id)
+    return {
+        "frun_id": row.frun_id,
+        "project_id": row.project_id,
+        "task_packet_id": row.task_packet_id,
+        "goal_id": row.goal_id,
+        "svid": row.svid,
+        "environment": row.environment,
+        "outcome": row.outcome,
+        "total_cost_usd": row.total_cost_usd,
+        "models_used": row.models_used,
+        "tools_called": row.tools_called,
+        "duration_ms": row.duration_ms,
+        "anomaly_flags": row.anomaly_flags,
+        "promoted": row.promoted,
+        "promotion_env": row.promotion_env,
+        "started_at": row.started_at.isoformat() if row.started_at else None,
+        "completed_at": row.completed_at.isoformat() if row.completed_at else None,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }

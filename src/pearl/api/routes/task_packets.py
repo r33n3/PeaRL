@@ -372,6 +372,21 @@ async def complete_task_packet(
 
     await db.commit()
 
+    # Materialize factory run summary if packet carries a run_id / session_id
+    _frun_id = (packet.packet_data or {}).get("run_id") or (packet.packet_data or {}).get("session_id")
+    if _frun_id:
+        try:
+            from pearl.services.factory_run.materializer import materialize_run
+            await materialize_run(
+                frun_id=_frun_id,
+                task_packet_id=packet_id,
+                project_id=packet.project_id,
+                session=db,
+            )
+            await db.commit()
+        except Exception:
+            logger.warning("materialize_run failed", packet_id=packet_id, exc_info=True)
+
     # Re-evaluate gate after completion
     gate_status = None
     gate_evaluation_id = None
