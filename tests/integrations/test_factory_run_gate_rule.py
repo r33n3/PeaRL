@@ -42,7 +42,7 @@ def test_factory_run_summary_present_gate_passes_when_summary_exists():
     passed, message, detail = _eval_factory_run_summary_present(None, ctx)
 
     assert passed is True
-    assert "no anomaly" in message.lower() or "present" in message.lower()
+    assert "present" in message.lower() and "no anomaly" in message.lower()
 
 
 def test_factory_run_summary_present_gate_fails_when_no_summary():
