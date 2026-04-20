@@ -175,8 +175,12 @@ async def list_workloads(
     ]
 
 
-@router.get("/run-summaries/{frun_id}", dependencies=[Depends(require_role("viewer"))])
-async def get_run_summary(frun_id: str, db: AsyncSession = Depends(get_db)):
+@router.get("/run-summaries/{frun_id}")
+async def get_run_summary(
+    frun_id: str,
+    db: AsyncSession = Depends(get_db),
+    _user: dict = _RequireViewer,
+):
     from pearl.repositories.factory_run_summary_repo import FactoryRunSummaryRepository
     repo = FactoryRunSummaryRepository(db)
     row = await repo.get(frun_id)
@@ -200,4 +204,5 @@ async def get_run_summary(frun_id: str, db: AsyncSession = Depends(get_db)):
         "started_at": row.started_at.isoformat() if row.started_at else None,
         "completed_at": row.completed_at.isoformat() if row.completed_at else None,
         "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
