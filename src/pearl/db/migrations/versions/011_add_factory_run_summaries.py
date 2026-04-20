@@ -29,7 +29,7 @@ def upgrade() -> None:
         sa.Column("tools_called", sa.JSON, nullable=False, server_default=sa.text("'[]'")),
         sa.Column("duration_ms", sa.Integer, nullable=True),
         sa.Column("anomaly_flags", sa.JSON, nullable=False, server_default=sa.text("'[]'")),
-        sa.Column("promoted", sa.Boolean, nullable=False, server_default="false"),
+        sa.Column("promoted", sa.Boolean, nullable=False, server_default=sa.false()),
         sa.Column("promotion_env", sa.String(50), nullable=True),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
