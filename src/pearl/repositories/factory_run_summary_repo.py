@@ -41,25 +41,21 @@ class FactoryRunSummaryRepository(BaseRepository):
         frun_id = data["frun_id"]
 
         try:
+            dialect = self.session.sync_session.get_bind().dialect.name
+        except (AttributeError, TypeError):
+            dialect = "sqlite"
+        if dialect == "postgresql":
             from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-            set_cols = {
-                k: v
-                for k, v in data.items()
-                if k not in ("frun_id", "created_at")
-            }
+            set_cols = {k: v for k, v in data.items() if k not in ("frun_id", "created_at")}
             stmt = (
                 pg_insert(FactoryRunSummaryRow)
                 .values(**data)
-                .on_conflict_do_update(
-                    index_elements=["frun_id"],
-                    set_=set_cols,
-                )
+                .on_conflict_do_update(index_elements=["frun_id"], set_=set_cols)
             )
             await self.session.execute(stmt)
-            await self.session.flush()
-        except Exception:
-            # SQLite (local dev / tests) — fall back to manual upsert
+        else:
+            # SQLite (local dev / tests) — manual upsert
             existing = await self.get(frun_id)
             if existing is None:
                 await self.create(**data)
