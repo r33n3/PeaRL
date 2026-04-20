@@ -63,7 +63,6 @@ async def materialize_run(
 
     started_at = min(e.timestamp for e in entries) if entries else None
     completed_at = max(e.timestamp for e in entries) if entries else None
-    environment: str = entries[0].environment if entries else "sandbox"
 
     # ── 2. Early exit guard ───────────────────────────────────────────────
     if not entries and not task_packet_id:
@@ -95,6 +94,7 @@ async def materialize_run(
 
     # ── 5. Derive outcome from task packet ────────────────────────────────
     outcome: str = "abandoned"
+    packet = None
     if task_packet_id:
         try:
             packet = await TaskPacketRepository(session).get(task_packet_id)
@@ -113,6 +113,14 @@ async def materialize_run(
         except Exception as exc:  # noqa: BLE001
             logger.warning("materialize_run: outcome lookup failed", frun_id=frun_id, error=str(exc))
             outcome = "abandoned"
+
+    # Resolve environment: prefer cost entries, then packet, then default
+    if entries:
+        environment: str = entries[0].environment
+    elif packet is not None:
+        environment = packet.environment
+    else:
+        environment = "sandbox"
 
     # ── 6. Anomaly flags from open drift findings (best-effort) ──────────
     anomaly_flags: list[str] = []
@@ -143,11 +151,11 @@ async def materialize_run(
         )
         promo_result = await session.execute(promo_stmt)
         promo_row = promo_result.scalar_one_or_none()
-        if promo_row is not None:
+        if promo_row is not None and started_at is not None and promo_row.promoted_at >= started_at:
             promoted = True
             promotion_env = promo_row.target_environment
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("materialize_run: promotion check failed", frun_id=frun_id, error=str(exc))
+    except Exception:
+        logger.warning("promotion check failed", frun_id=frun_id, exc_info=True)
 
     # ── 8. Upsert — caller commits ────────────────────────────────────────
     await FactoryRunSummaryRepository(session).upsert(
