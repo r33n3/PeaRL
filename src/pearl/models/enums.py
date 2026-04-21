@@ -278,6 +278,25 @@ class GateRuleType(StrEnum):
     LITELLM_COMPLIANCE = "litellm_compliance"
     # Factory Run Summary gate
     FACTORY_RUN_SUMMARY_PRESENT = "factory_run_summary_present"
+    # OWASP LLM Top 10 — per-control discrete rules (v2025)
+    OWASP_LLM06_EXCESSIVE_AGENCY = "owasp_llm06_excessive_agency"
+    OWASP_LLM07_SYSTEM_PROMPT_LEAKAGE = "owasp_llm07_system_prompt_leakage"
+    OWASP_LLM08_VECTOR_WEAKNESSES = "owasp_llm08_vector_weaknesses"
+    OWASP_LLM10_UNBOUNDED_CONSUMPTION = "owasp_llm10_unbounded_consumption"
+    OWASP_LLM05_IMPROPER_OUTPUT_HANDLING = "owasp_llm05_improper_output_handling"
+    # NHI (Non-Human Identity) — agent credential governance
+    NHI_IDENTITY_REGISTERED = "nhi_identity_registered"
+    NHI_SECRETS_IN_VAULT = "nhi_secrets_in_vault"
+    NHI_CREDENTIAL_ROTATION_POLICY = "nhi_credential_rotation_policy"
+    NHI_LEAST_PRIVILEGE_VERIFIED = "nhi_least_privilege_verified"
+    NHI_TOKEN_EXPIRY_CONFIGURED = "nhi_token_expiry_configured"
+    # Agent operational governance
+    AGENT_CAPABILITY_SCOPE_DOCUMENTED = "agent_capability_scope_documented"
+    AGENT_KILL_SWITCH_IMPLEMENTED = "agent_kill_switch_implemented"
+    AGENT_BLAST_RADIUS_ASSESSED = "agent_blast_radius_assessed"
+    AGENT_COMMUNICATION_SECURED = "agent_communication_secured"
+    # Supply chain integrity
+    SBOM_GENERATED = "sbom_generated"
 
 
 class GateEvaluationStatus(StrEnum):

@@ -660,6 +660,21 @@ _FIX_GUIDANCE: dict[str, str] = {
         "then deregister with DELETE /workloads/{svid}?frun_id=<session_id>. "
         "Resolve any behavioral drift anomaly flags before promoting."
     ),
+    "owasp_llm06_excessive_agency": "Declare agent.allowed_tools and agent.capability_scope in the app spec. Resolve any open excessive_agency findings from MASS scans.",
+    "owasp_llm07_system_prompt_leakage": "Classify system prompts as confidential. Resolve open system_prompt_leakage findings. Implement prompt confidentiality controls.",
+    "owasp_llm08_vector_weaknesses": "Validate RAG pipeline integrity. Resolve open vector_weakness or rag_poisoning findings. Implement retrieval input/output validation.",
+    "owasp_llm10_unbounded_consumption": "Add agent.rate_limits or agent.cost_ceiling to app spec. Configure LiteLLM token limits. Resolve open unbounded_consumption findings.",
+    "owasp_llm05_improper_output_handling": "Implement output sanitization and validation. Resolve open output_handling or output_injection findings.",
+    "nhi_identity_registered": "Register a workload identity (SPIFFE/SVID) for the agent. Add agent.workload_identity to app spec or register a workload via POST /workloads.",
+    "nhi_secrets_in_vault": "Move all agent credentials to a vault or secrets manager. Add agent.secrets_backend to app spec. Resolve open nhi_secret_exposure findings.",
+    "nhi_credential_rotation_policy": "Define a credential rotation schedule. Add agent.credential_rotation or agent.key_rotation_days to app spec.",
+    "nhi_least_privilege_verified": "Reduce agent API key and IAM scope to minimum required. Add agent.iam_scope to app spec. Resolve open nhi_overprivileged findings.",
+    "nhi_token_expiry_configured": "Configure short-lived tokens (recommend ≤3600s). Add agent.token_ttl_seconds to app spec. Resolve open long_lived_token findings.",
+    "agent_capability_scope_documented": "Add agent.allowed_tools or agent.capability_scope to app spec listing every tool/API the agent may call.",
+    "agent_kill_switch_implemented": "Implement a halt mechanism for the agent. Add agent.kill_switch or agent.halt_endpoint to app spec.",
+    "agent_blast_radius_assessed": "Document the maximum impact of a runaway agent. Add agent.blast_radius to app spec describing bounded worst-case impact.",
+    "agent_communication_secured": "Secure inter-agent channels with mTLS. Add agent.communication_security to app spec. Resolve open mtls_missing findings.",
+    "sbom_generated": "Generate an SBOM using Syft, Trivy, or CycloneDX. Submit via POST /projects/{id}/fairness-evidence with evidence_type='sbom'.",
 }
 
 
@@ -1255,6 +1270,241 @@ def _eval_factory_run_summary_present(rule, ctx):
     return True, "Factory run summary present with no anomaly flags", None
 
 
+# ── OWASP LLM Top 10 discrete rules ──────────────────────────────────────────
+
+def _eval_owasp_llm06_excessive_agency(rule, ctx):
+    findings = [
+        f for f in ctx.open_findings
+        if any(kw in (f.category or "").lower() or kw in (f.title or "").lower()
+               for kw in ("excessive_agency", "excessive_autonomy", "unbounded_action", "capability_scope"))
+    ]
+    if findings:
+        return False, f"LLM06 Excessive Agency: {len(findings)} open finding(s) — restrict agent tool/action scope", {"count": len(findings), "finding_ids": [f.finding_id for f in findings]}
+    # Fallback: app spec must declare capability scope
+    agent_spec = ctx.app_spec_data.get("agent", {}) or ctx.app_spec_data.get("ai_agent", {})
+    allowed_tools = agent_spec.get("allowed_tools") or agent_spec.get("capabilities") or agent_spec.get("capability_scope")
+    if not allowed_tools and ctx.has_app_spec:
+        return False, "LLM06 Excessive Agency: app spec missing 'agent.allowed_tools' or 'agent.capability_scope' — declare what the agent is permitted to do", None
+    if ctx.has_app_spec and allowed_tools:
+        return True, "LLM06 Excessive Agency: agent capability scope declared in app spec, 0 open findings", None
+    return False, "LLM06 Excessive Agency: no app spec and no scan findings to confirm scope — define agent.allowed_tools in app spec", None
+
+
+def _eval_owasp_llm07_system_prompt_leakage(rule, ctx):
+    findings = [
+        f for f in ctx.open_findings
+        if any(kw in (f.category or "").lower() or kw in (f.title or "").lower()
+               for kw in ("system_prompt_leakage", "system_prompt_exposure", "prompt_leakage", "system_prompt"))
+    ]
+    passed = len(findings) == 0
+    if not passed:
+        return False, f"LLM07 System Prompt Leakage: {len(findings)} open finding(s) — classify and protect system prompts", {"count": len(findings)}
+    return True, "LLM07 System Prompt Leakage: no open findings", None
+
+
+def _eval_owasp_llm08_vector_weaknesses(rule, ctx):
+    findings = [
+        f for f in ctx.open_findings
+        if any(kw in (f.category or "").lower() or kw in (f.title or "").lower()
+               for kw in ("vector_weakness", "embedding_weakness", "rag_poisoning", "retrieval_poisoning", "vector_store"))
+    ]
+    passed = len(findings) == 0
+    if not passed:
+        return False, f"LLM08 Vector/Embedding Weaknesses: {len(findings)} open finding(s) — validate RAG pipeline integrity", {"count": len(findings)}
+    # If no RAG in app spec, skip as not applicable
+    agent_spec = ctx.app_spec_data.get("agent", {}) or {}
+    uses_rag = agent_spec.get("uses_rag") or agent_spec.get("rag_enabled") or "rag" in str(ctx.app_spec_data).lower()
+    if not uses_rag:
+        return True, "LLM08 Vector/Embedding Weaknesses: no RAG pipeline declared — not applicable", None
+    return True, "LLM08 Vector/Embedding Weaknesses: 0 open findings", None
+
+
+def _eval_owasp_llm10_unbounded_consumption(rule, ctx):
+    findings = [
+        f for f in ctx.open_findings
+        if any(kw in (f.category or "").lower() or kw in (f.title or "").lower()
+               for kw in ("unbounded_consumption", "resource_exhaustion", "cost_anomaly", "token_limit", "rate_limit_missing"))
+    ]
+    if findings:
+        return False, f"LLM10 Unbounded Consumption: {len(findings)} open finding(s) — implement token/cost limits", {"count": len(findings)}
+    # Check app spec for rate limiting declaration
+    agent_spec = ctx.app_spec_data.get("agent", {}) or {}
+    has_limits = agent_spec.get("max_tokens") or agent_spec.get("rate_limits") or agent_spec.get("cost_ceiling")
+    if has_limits:
+        return True, "LLM10 Unbounded Consumption: consumption limits declared in app spec, 0 open findings", None
+    # LiteLLM compliance implicitly covers this if scan has been done
+    if ctx.litellm_scan_seen:
+        return True, "LLM10 Unbounded Consumption: LiteLLM compliance scan covers rate limiting — 0 open findings", None
+    return False, "LLM10 Unbounded Consumption: no rate/token limits declared in app spec (add agent.rate_limits or agent.cost_ceiling) and no LiteLLM scan ingested", None
+
+
+def _eval_owasp_llm05_improper_output_handling(rule, ctx):
+    findings = [
+        f for f in ctx.open_findings
+        if any(kw in (f.category or "").lower() or kw in (f.title or "").lower()
+               for kw in ("output_handling", "improper_output", "output_injection", "output_sanitization", "xss"))
+    ]
+    passed = len(findings) == 0
+    if not passed:
+        return False, f"LLM05 Improper Output Handling: {len(findings)} open finding(s) — implement output validation and sanitization", {"count": len(findings)}
+    return True, "LLM05 Improper Output Handling: 0 open findings", None
+
+
+# ── NHI (Non-Human Identity) rules ───────────────────────────────────────────
+
+def _eval_nhi_identity_registered(rule, ctx):
+    # Check app spec for workload identity declaration
+    agent_spec = ctx.app_spec_data.get("agent", {}) or {}
+    identity = agent_spec.get("workload_identity") or agent_spec.get("spiffe_id") or agent_spec.get("svid")
+    if identity:
+        return True, f"NHI Identity: workload identity declared in app spec ({identity})", None
+    # Check scan targets — a registered workload with an svid counts
+    svid_targets = [st for st in ctx.scan_targets if getattr(st, "svid", None)]
+    if svid_targets:
+        return True, f"NHI Identity: {len(svid_targets)} workload(s) with SPIFFE identity registered", None
+    # Check open findings for NHI identity gaps
+    findings = [
+        f for f in ctx.open_findings
+        if any(kw in (f.category or "").lower() or kw in (f.title or "").lower()
+               for kw in ("nhi_identity", "workload_identity", "identity_missing", "no_workload_identity"))
+    ]
+    if findings:
+        return False, f"NHI Identity: {len(findings)} open identity finding(s) — register a workload identity (SPIFFE/SVID)", {"count": len(findings)}
+    return False, "NHI Identity: no workload identity declared — add agent.workload_identity to app spec or register a workload with an SVID", None
+
+
+def _eval_nhi_secrets_in_vault(rule, ctx):
+    findings = [
+        f for f in ctx.open_findings
+        if any(kw in (f.category or "").lower() or kw in (f.title or "").lower()
+               for kw in ("nhi_secret_exposure", "secret_in_env", "credential_in_config", "secret_not_in_vault", "env_var_secret"))
+    ]
+    if findings:
+        return False, f"NHI Secrets: {len(findings)} open finding(s) — move agent credentials to a vault or secrets manager", {"count": len(findings)}
+    agent_spec = ctx.app_spec_data.get("agent", {}) or {}
+    secrets_backend = agent_spec.get("secrets_backend") or agent_spec.get("vault_config")
+    if secrets_backend:
+        return True, f"NHI Secrets: secrets backend declared in app spec ({secrets_backend}), 0 open findings", None
+    # If no vault declared and no open findings, pass with warning guidance embedded in message
+    return True, "NHI Secrets: no open secret-exposure findings (ensure agent credentials are stored in a vault, not env vars)", None
+
+
+def _eval_nhi_credential_rotation_policy(rule, ctx):
+    findings = [
+        f for f in ctx.open_findings
+        if any(kw in (f.category or "").lower() or kw in (f.title or "").lower()
+               for kw in ("credential_rotation", "static_credential", "rotation_policy_missing"))
+    ]
+    if findings:
+        return False, f"NHI Credential Rotation: {len(findings)} open finding(s) — define a credential rotation policy", {"count": len(findings)}
+    agent_spec = ctx.app_spec_data.get("agent", {}) or {}
+    rotation = agent_spec.get("credential_rotation") or agent_spec.get("key_rotation_days")
+    if rotation:
+        return True, f"NHI Credential Rotation: rotation policy declared in app spec", None
+    return False, "NHI Credential Rotation: no rotation policy declared — add agent.credential_rotation or agent.key_rotation_days to app spec", None
+
+
+def _eval_nhi_least_privilege_verified(rule, ctx):
+    findings = [
+        f for f in ctx.open_findings
+        if any(kw in (f.category or "").lower() or kw in (f.title or "").lower()
+               for kw in ("nhi_overprivileged", "excessive_privilege", "overpermissioned", "least_privilege"))
+    ]
+    if findings:
+        return False, f"NHI Least Privilege: {len(findings)} open overprivilege finding(s) — reduce agent API key/IAM scope", {"count": len(findings)}
+    agent_spec = ctx.app_spec_data.get("agent", {}) or {}
+    iam_scope = agent_spec.get("iam_scope") or agent_spec.get("api_key_permissions") or agent_spec.get("permission_scope")
+    if iam_scope:
+        return True, "NHI Least Privilege: permission scope declared in app spec, 0 open overprivilege findings", None
+    return False, "NHI Least Privilege: no permission scope declared — add agent.iam_scope or agent.api_key_permissions to app spec", None
+
+
+def _eval_nhi_token_expiry_configured(rule, ctx):
+    findings = [
+        f for f in ctx.open_findings
+        if any(kw in (f.category or "").lower() or kw in (f.title or "").lower()
+               for kw in ("long_lived_token", "token_no_expiry", "static_token", "token_expiry_missing"))
+    ]
+    if findings:
+        return False, f"NHI Token Expiry: {len(findings)} open finding(s) — configure short-lived tokens with max TTL", {"count": len(findings)}
+    agent_spec = ctx.app_spec_data.get("agent", {}) or {}
+    token_ttl = agent_spec.get("token_ttl_seconds") or agent_spec.get("token_max_ttl") or agent_spec.get("token_expiry")
+    if token_ttl:
+        return True, f"NHI Token Expiry: token TTL configured in app spec ({token_ttl}s max)", None
+    return False, "NHI Token Expiry: no token expiry configured — add agent.token_ttl_seconds to app spec (recommend ≤3600s)", None
+
+
+# ── Agent operational governance ──────────────────────────────────────────────
+
+def _eval_agent_capability_scope_documented(rule, ctx):
+    agent_spec = ctx.app_spec_data.get("agent", {}) or ctx.app_spec_data.get("ai_agent", {})
+    allowed = agent_spec.get("allowed_tools") or agent_spec.get("capabilities") or agent_spec.get("capability_scope")
+    if allowed:
+        return True, f"Agent Capability Scope: declared in app spec", None
+    return False, "Agent Capability Scope: missing — add agent.allowed_tools or agent.capability_scope to app spec listing what tools/APIs the agent may call", None
+
+
+def _eval_agent_kill_switch_implemented(rule, ctx):
+    findings = [
+        f for f in ctx.open_findings
+        if any(kw in (f.category or "").lower() or kw in (f.title or "").lower()
+               for kw in ("kill_switch_missing", "agent_control_missing", "no_interrupt", "no_kill_switch"))
+    ]
+    if findings:
+        return False, f"Agent Kill Switch: {len(findings)} open finding(s) — implement a mechanism to halt the agent mid-run", {"count": len(findings)}
+    agent_spec = ctx.app_spec_data.get("agent", {}) or {}
+    kill_switch = agent_spec.get("kill_switch") or agent_spec.get("interrupt_mechanism") or agent_spec.get("halt_endpoint")
+    if kill_switch:
+        return True, "Agent Kill Switch: mechanism declared in app spec", None
+    return False, "Agent Kill Switch: not declared — add agent.kill_switch (true/endpoint) to app spec confirming a halt mechanism exists", None
+
+
+def _eval_agent_blast_radius_assessed(rule, ctx):
+    agent_spec = ctx.app_spec_data.get("agent", {}) or {}
+    blast_radius = agent_spec.get("blast_radius") or agent_spec.get("max_impact") or agent_spec.get("blast_radius_assessment")
+    if blast_radius:
+        return True, "Agent Blast Radius: assessment present in app spec", None
+    findings = [
+        f for f in ctx.open_findings
+        if any(kw in (f.category or "").lower() or kw in (f.title or "").lower()
+               for kw in ("blast_radius", "impact_unbound", "runaway_agent"))
+    ]
+    if findings:
+        return False, f"Agent Blast Radius: {len(findings)} open finding(s) — bound and document maximum agent impact", {"count": len(findings)}
+    return False, "Agent Blast Radius: not assessed — add agent.blast_radius to app spec describing maximum impact if the agent runs unconstrained", None
+
+
+def _eval_agent_communication_secured(rule, ctx):
+    findings = [
+        f for f in ctx.open_findings
+        if any(kw in (f.category or "").lower() or kw in (f.title or "").lower()
+               for kw in ("insecure_agent_channel", "agent_communication", "plaintext_agent", "mtls_missing", "agent_channel"))
+    ]
+    if findings:
+        return False, f"Agent Communication: {len(findings)} open finding(s) — secure inter-agent channels with mTLS or equivalent", {"count": len(findings)}
+    agent_spec = ctx.app_spec_data.get("agent", {}) or {}
+    comm_security = agent_spec.get("communication_security") or agent_spec.get("mtls_enabled") or agent_spec.get("channel_security")
+    if comm_security:
+        return True, "Agent Communication: channel security declared in app spec, 0 open findings", None
+    return True, "Agent Communication: no open channel-security findings (add agent.communication_security to app spec for explicit attestation)", None
+
+
+# ── Supply chain integrity ────────────────────────────────────────────────────
+
+def _eval_sbom_generated(rule, ctx):
+    sbom_evidence = [e for e in ctx.evidence_packages if getattr(e, "evidence_type", None) in ("sbom", "provenance")]
+    if sbom_evidence:
+        return True, f"SBOM: {len(sbom_evidence)} SBOM/provenance evidence package(s) on file", None
+    findings = [
+        f for f in ctx.open_findings
+        if any(kw in (f.category or "").lower() or kw in (f.title or "").lower()
+               for kw in ("sbom_missing", "no_sbom", "provenance_missing"))
+    ]
+    if findings:
+        return False, f"SBOM: {len(findings)} open finding(s) — generate an SBOM (Syft, Trivy, or CycloneDX)", {"count": len(findings)}
+    return False, "SBOM: no SBOM evidence — generate an SBOM and submit via POST /projects/{id}/fairness-evidence with evidence_type='sbom'", None
+
+
 def _eval_aiuc1_control_required(rule, ctx):
     """Check that a specific AIUC-1 sub-control is set to True in the org baseline.
 
@@ -1639,4 +1889,23 @@ RULE_EVALUATORS = {
     GateRuleType.LITELLM_COMPLIANCE: _eval_litellm_compliance,
     # Factory run summary gate
     GateRuleType.FACTORY_RUN_SUMMARY_PRESENT: _eval_factory_run_summary_present,
+    # OWASP LLM Top 10 discrete rules
+    GateRuleType.OWASP_LLM06_EXCESSIVE_AGENCY: _eval_owasp_llm06_excessive_agency,
+    GateRuleType.OWASP_LLM07_SYSTEM_PROMPT_LEAKAGE: _eval_owasp_llm07_system_prompt_leakage,
+    GateRuleType.OWASP_LLM08_VECTOR_WEAKNESSES: _eval_owasp_llm08_vector_weaknesses,
+    GateRuleType.OWASP_LLM10_UNBOUNDED_CONSUMPTION: _eval_owasp_llm10_unbounded_consumption,
+    GateRuleType.OWASP_LLM05_IMPROPER_OUTPUT_HANDLING: _eval_owasp_llm05_improper_output_handling,
+    # NHI (Non-Human Identity) rules
+    GateRuleType.NHI_IDENTITY_REGISTERED: _eval_nhi_identity_registered,
+    GateRuleType.NHI_SECRETS_IN_VAULT: _eval_nhi_secrets_in_vault,
+    GateRuleType.NHI_CREDENTIAL_ROTATION_POLICY: _eval_nhi_credential_rotation_policy,
+    GateRuleType.NHI_LEAST_PRIVILEGE_VERIFIED: _eval_nhi_least_privilege_verified,
+    GateRuleType.NHI_TOKEN_EXPIRY_CONFIGURED: _eval_nhi_token_expiry_configured,
+    # Agent operational governance
+    GateRuleType.AGENT_CAPABILITY_SCOPE_DOCUMENTED: _eval_agent_capability_scope_documented,
+    GateRuleType.AGENT_KILL_SWITCH_IMPLEMENTED: _eval_agent_kill_switch_implemented,
+    GateRuleType.AGENT_BLAST_RADIUS_ASSESSED: _eval_agent_blast_radius_assessed,
+    GateRuleType.AGENT_COMMUNICATION_SECURED: _eval_agent_communication_secured,
+    # Supply chain integrity
+    GateRuleType.SBOM_GENERATED: _eval_sbom_generated,
 }

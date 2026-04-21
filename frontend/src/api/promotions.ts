@@ -180,6 +180,25 @@ export const GATE_RULE_TYPES: {
   { value: "mass_risk_acceptable", label: "MASS Risk Acceptable", group: "AI", hasThreshold: true, aiOnly: true, hasParams: false },
   { value: "comprehensive_mass_scan", label: "Comprehensive MASS Scan", group: "AI", hasThreshold: false, aiOnly: true, hasParams: false },
   { value: "rai_eval_completed", label: "RAI Evaluation Completed", group: "AI", hasThreshold: false, aiOnly: true, hasParams: false },
+  // OWASP LLM Top 10 (v2025) — discrete per-control rules
+  { value: "owasp_llm06_excessive_agency", label: "LLM06 — Excessive Agency", group: "OWASP LLM", hasThreshold: false, aiOnly: true, hasParams: false },
+  { value: "owasp_llm07_system_prompt_leakage", label: "LLM07 — System Prompt Leakage", group: "OWASP LLM", hasThreshold: false, aiOnly: true, hasParams: false },
+  { value: "owasp_llm08_vector_weaknesses", label: "LLM08 — Vector & Embedding Weaknesses", group: "OWASP LLM", hasThreshold: false, aiOnly: true, hasParams: false },
+  { value: "owasp_llm10_unbounded_consumption", label: "LLM10 — Unbounded Consumption", group: "OWASP LLM", hasThreshold: false, aiOnly: true, hasParams: false },
+  { value: "owasp_llm05_improper_output_handling", label: "LLM05 — Improper Output Handling", group: "OWASP LLM", hasThreshold: false, aiOnly: true, hasParams: false },
+  // NHI — Non-Human Identity governance for agents
+  { value: "nhi_identity_registered", label: "NHI — Workload Identity Registered", group: "NHI", hasThreshold: false, aiOnly: true, hasParams: false },
+  { value: "nhi_secrets_in_vault", label: "NHI — Secrets in Vault", group: "NHI", hasThreshold: false, aiOnly: true, hasParams: false },
+  { value: "nhi_credential_rotation_policy", label: "NHI — Credential Rotation Policy", group: "NHI", hasThreshold: false, aiOnly: true, hasParams: false },
+  { value: "nhi_least_privilege_verified", label: "NHI — Least Privilege Verified", group: "NHI", hasThreshold: false, aiOnly: true, hasParams: false },
+  { value: "nhi_token_expiry_configured", label: "NHI — Token Expiry Configured", group: "NHI", hasThreshold: false, aiOnly: true, hasParams: false },
+  // Agent governance — operational safety for autonomous agents
+  { value: "agent_capability_scope_documented", label: "Agent — Capability Scope Documented", group: "Agent Governance", hasThreshold: false, aiOnly: true, hasParams: false },
+  { value: "agent_kill_switch_implemented", label: "Agent — Kill Switch Implemented", group: "Agent Governance", hasThreshold: false, aiOnly: true, hasParams: false },
+  { value: "agent_blast_radius_assessed", label: "Agent — Blast Radius Assessed", group: "Agent Governance", hasThreshold: false, aiOnly: true, hasParams: false },
+  { value: "agent_communication_secured", label: "Agent — Communication Channel Secured", group: "Agent Governance", hasThreshold: false, aiOnly: true, hasParams: false },
+  // Supply chain integrity
+  { value: "sbom_generated", label: "SBOM Generated", group: "Supply Chain", hasThreshold: false, aiOnly: false, hasParams: false },
   { value: "model_card_documented", label: "Model Card Documented", group: "AI", hasThreshold: false, aiOnly: true, hasParams: false },
   { value: "required_analyzers_completed", label: "Required Analyzers Completed", group: "AI", hasThreshold: false, aiOnly: true, hasParams: false },
   { value: "compliance_score_threshold", label: "Compliance Score Threshold", group: "AI", hasThreshold: true, aiOnly: true, hasParams: false },
