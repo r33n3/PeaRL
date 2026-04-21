@@ -1,6 +1,6 @@
 """MCP tool definitions mapping to PeaRL API operations.
 
-55 tools total. All tool names use the pearl_ prefix so agents can
+56 tools total. All tool names use the pearl_ prefix so agents can
 unambiguously distinguish PeaRL tools when multiple MCP servers are loaded.
 """
 
@@ -943,6 +943,24 @@ TOOL_DEFINITIONS = [
                     "maxItems": 100,
                     "description": "Optional list of specific virtual key aliases to check. If omitted, checks all aliases configured on the project's LiteLLM integration endpoint.",
                 },
+            },
+            "required": ["project_id"],
+        },
+    },
+
+    # ─── AIUC-1 Compliance ──────────────────────────
+    {
+        "name": "pearl_get_aiuc_compliance",
+        "description": (
+            "Get the AIUC-1 responsible AI compliance status for a project. "
+            "Returns score (% of mandatory controls satisfied), the list of outstanding controls, "
+            "and a specific action hint for each — e.g. which framework attestation or evidence submission satisfies it. "
+            "Use this to understand what work remains before the AIUC-1 compliance gate can pass."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "Project ID"},
             },
             "required": ["project_id"],
         },

@@ -160,6 +160,8 @@ class MCPServer:
             "pearl_check_litellm_compliance": self._check_litellm_compliance,
             # Factory run summary
             "pearl_get_run_summary": self._get_run_summary,
+            # AIUC-1 compliance
+            "pearl_get_aiuc_compliance": self._get_aiuc_compliance,
         }
         return routes.get(tool_name)
 
@@ -599,3 +601,9 @@ class MCPServer:
         pid = args["project_id"]
         body = {k: v for k, v in args.items() if k != "project_id"}
         return await self._request("POST", f"/projects/{pid}/register-agent-stage", body)
+
+    async def _get_aiuc_compliance(self, args: dict) -> dict:
+        project_id = args.get("project_id")
+        if not project_id:
+            return {"error": "project_id is required"}
+        return await self._request("GET", f"/projects/{project_id}/promotions/aiuc-compliance")

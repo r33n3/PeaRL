@@ -20,7 +20,7 @@ from pearl.repositories.promotion_repo import (
 )
 from pearl.repositories.fairness_repo import AuditEventRepository
 from pearl.services.id_generator import generate_id
-from pearl.services.promotion.gate_evaluator import evaluate_promotion
+from pearl.services.promotion.gate_evaluator import evaluate_promotion, _build_eval_context
 from pearl.api.routes.stream import publish_event
 
 router = APIRouter(tags=["Promotions"])
@@ -108,6 +108,21 @@ async def evaluate_promotion_readiness(
     result["commit_sha"] = body.commit_sha
     result["version_tag"] = body.version_tag
     result["branch"] = body.branch
+    # AIUC-1 compliance summary — build context separately to extract AIUC fields
+    try:
+        from pearl.repositories.project_repo import ProjectRepository
+        proj = await ProjectRepository(db).get(project_id)
+        if proj:
+            aiuc_ctx = await _build_eval_context(project_id, proj, db)
+            result["aiuc_compliance"] = {
+                "score_pct": aiuc_ctx.aiuc_score_pct,
+                "satisfied_count": aiuc_ctx.aiuc_satisfied_count,
+                "mandatory_count": aiuc_ctx.aiuc_mandatory_count,
+                "outstanding": aiuc_ctx.aiuc_outstanding,
+                "hints": aiuc_ctx.aiuc_hints,
+            }
+    except Exception:
+        pass  # non-fatal — omit aiuc_compliance from response on error
     # Publish real-time event so connected clients update without polling
     if request:
         redis = getattr(request.app.state, "redis", None)
@@ -152,6 +167,31 @@ async def get_promotion_readiness(
         "commit_sha": evaluation.commit_sha,
         "version_tag": evaluation.version_tag,
         "branch": evaluation.branch,
+    }
+
+
+@router.get("/projects/{project_id}/promotions/aiuc-compliance")
+async def get_aiuc_compliance(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return AIUC-1 compliance status for a project without full gate evaluation."""
+    from pearl.services.promotion.aiuc_mapping import AIUC1_MANDATORY_PILOT
+    from pearl.repositories.project_repo import ProjectRepository
+
+    proj = await ProjectRepository(db).get(project_id)
+    if not proj:
+        raise NotFoundError("Project", project_id)
+
+    ctx = await _build_eval_context(project_id, proj, db)
+    return {
+        "project_id": project_id,
+        "score_pct": ctx.aiuc_score_pct,
+        "satisfied_count": ctx.aiuc_satisfied_count,
+        "mandatory_count": ctx.aiuc_mandatory_count,
+        "outstanding": ctx.aiuc_outstanding,
+        "hints": ctx.aiuc_hints,
+        "mandatory_controls": AIUC1_MANDATORY_PILOT,
     }
 
 
