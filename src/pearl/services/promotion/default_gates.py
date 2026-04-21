@@ -19,83 +19,35 @@ def _rule(rule_type: str, description: str, ai_only: bool = False, threshold: fl
     return r
 
 
-# ─── sandbox → dev (11 rules) ─────────────────────────────────
-# Code security (Snyk) + code quality (SonarQube) required from the very first gate.
-# AI scan required from first gate for AI-enabled projects.
+# ─── pilot → dev ──────────────────────────────────────────────
+# Experimental → active development. Governance, baseline, and AI scan checks.
 
-SANDBOX_TO_DEV = {
-    "gate_id": "gate_sandbox_to_dev",
-    "source_environment": "sandbox",
+PILOT_TO_DEV = {
+    "gate_id": "gate_5730ef26ca8c46e9",
+    "source_environment": "pilot",
     "target_environment": "dev",
     "rules": [
-        # Governance
         _rule(GateRuleType.PROJECT_REGISTERED, "Project must be registered in PeaRL"),
-        _rule(GateRuleType.CLAUDE_MD_GOVERNANCE_PRESENT, "PeaRL governance block must be present and confirmed in CLAUDE.md"),
-        _rule(GateRuleType.ORG_BASELINE_ATTACHED, "Organization security baseline must be attached"),
-        _rule(GateRuleType.APP_SPEC_DEFINED, "Application specification must be defined"),
-        # Code security
-        _rule(GateRuleType.NO_HARDCODED_SECRETS, "No hardcoded secrets in codebase"),
-        _rule(GateRuleType.SNYK_OPEN_HIGH_CRITICAL, "Snyk SCA: no open HIGH/CRITICAL vulnerabilities"),
-        # Code quality
-        _rule(GateRuleType.SONARQUBE_QUALITY_GATE, "SonarQube quality gate must be configured (WARN or OK acceptable)"),
-        # Testing
-        _rule(GateRuleType.UNIT_TESTS_EXIST, "Unit tests must exist"),
-        # AI-specific (tighten at higher gates)
-        _rule(GateRuleType.AI_SCAN_COMPLETED, "PeaRL or MASS AI security scan must be completed for AI projects", ai_only=True),
-        _rule(GateRuleType.FAIRNESS_CASE_DEFINED, "Fairness case must be defined for AI projects", ai_only=True),
-        _rule(GateRuleType.MODEL_CARD_DOCUMENTED, "Model card must be documented for AI projects", ai_only=True),
-    ],
-}
-
-# ─── dev → preprod (merged from dev→pilot + pilot→preprod) ───────
-
-DEV_TO_PREPROD = {
-    "gate_id": "gate_dev_to_preprod",
-    "source_environment": "dev",
-    "target_environment": "preprod",
-    "rules": [
-        # Core rules
-        _rule(GateRuleType.PROJECT_REGISTERED, "Project must be registered in PeaRL"),
+        _rule(GateRuleType.CLAUDE_MD_GOVERNANCE_PRESENT, "PeaRL governance block must be present in CLAUDE.md"),
         _rule(GateRuleType.ORG_BASELINE_ATTACHED, "Organization security baseline must be attached"),
         _rule(GateRuleType.APP_SPEC_DEFINED, "Application specification must be defined"),
         _rule(GateRuleType.NO_HARDCODED_SECRETS, "No hardcoded secrets in codebase"),
         _rule(GateRuleType.UNIT_TESTS_EXIST, "Unit tests must exist"),
-        _rule(GateRuleType.SECURITY_BASELINE_TESTS, "Security baseline tests must pass"),
-        _rule(GateRuleType.CRITICAL_FINDINGS_ZERO, "Zero critical-severity findings"),
-        _rule(GateRuleType.DATA_CLASSIFICATIONS_DOCUMENTED, "Data classifications must be documented"),
-        _rule(GateRuleType.IAM_ROLES_DEFINED, "IAM roles and permissions must be defined"),
-        _rule(GateRuleType.HIGH_FINDINGS_ZERO, "Zero high-severity findings"),
-        _rule(GateRuleType.NETWORK_BOUNDARIES_DECLARED, "Network boundaries declared"),
-        _rule(GateRuleType.INTEGRATION_TEST_COVERAGE, "Integration test coverage >= 60%", threshold=60),
-        _rule(GateRuleType.SECURITY_REVIEW_APPROVAL, "Security review approval required"),
-        # AI-specific
+        _rule(GateRuleType.AI_SCAN_COMPLETED, "AI security scan must be completed", ai_only=True),
         _rule(GateRuleType.FAIRNESS_CASE_DEFINED, "Fairness case must be defined", ai_only=True),
-        _rule(GateRuleType.AI_SCAN_COMPLETED, "PeaRL AI security scan must be completed", ai_only=True),
-        _rule(GateRuleType.NO_PROMPT_INJECTION, "Zero prompt injection findings", ai_only=True),
-        _rule(GateRuleType.REQUIRED_ANALYZERS_COMPLETED, "Required AI analyzers must have run", ai_only=True),
-        _rule(GateRuleType.FAIRNESS_REQUIREMENTS_MET, "Fairness requirements must be met", ai_only=True),
-        _rule(GateRuleType.GUARDRAILS_VERIFIED, "Guardrails verified (0 findings)", ai_only=True),
-        _rule(GateRuleType.NO_PII_LEAKAGE, "Zero PII leakage findings", ai_only=True),
-        _rule(GateRuleType.FAIRNESS_ATTESTATION_SIGNED, "Fairness attestation signed", ai_only=True),
-        _rule(GateRuleType.FAIRNESS_HARD_BLOCKS_CLEAR, "No fairness hard blocks", ai_only=True),
-        _rule(GateRuleType.RAI_EVAL_COMPLETED, "RAI evaluation completed", ai_only=True),
-        _rule(GateRuleType.COMPLIANCE_SCORE_THRESHOLD, "Compliance score must be 100% (exception required for any shortfall)", ai_only=True, threshold=100.0),
-        _rule(GateRuleType.SECURITY_REVIEW_CLEAR, "All /security-review findings addressed"),
-        _rule(GateRuleType.GUARDRAIL_COVERAGE, "Guardrail coverage adequate", ai_only=True),
-        _rule(GateRuleType.SONARQUBE_QUALITY_GATE, "SonarQube quality gate must pass (OK or WARN)"),
-        _rule(GateRuleType.SNYK_OPEN_HIGH_CRITICAL, "Snyk SCA scan must have no open HIGH/CRITICAL vulnerabilities"),
+        _rule(GateRuleType.MODEL_CARD_DOCUMENTED, "Model card must be documented", ai_only=True),
     ],
 }
 
-# ─── preprod → prod (25 rules) ────────────────────────────────
+# ─── dev → prod ────────────────────────────────────────────────
+# Full governance gate before production. Human approval required.
 
-PREPROD_TO_PROD = {
-    "gate_id": "gate_preprod_to_prod",
-    "source_environment": "preprod",
+DEV_TO_PROD = {
+    "gate_id": "gate_ce6c49cb2a3d48bf",
+    "source_environment": "dev",
     "target_environment": "prod",
     "rules": [
-        # Core rules
-        _rule(GateRuleType.PROJECT_REGISTERED, "Project must be registered"),
+        _rule(GateRuleType.PROJECT_REGISTERED, "Project must be registered in PeaRL"),
         _rule(GateRuleType.ORG_BASELINE_ATTACHED, "Org baseline must be attached"),
         _rule(GateRuleType.APP_SPEC_DEFINED, "App spec must be defined"),
         _rule(GateRuleType.NO_HARDCODED_SECRETS, "No hardcoded secrets"),
@@ -106,46 +58,36 @@ PREPROD_TO_PROD = {
         _rule(GateRuleType.DATA_CLASSIFICATIONS_DOCUMENTED, "Data classifications documented"),
         _rule(GateRuleType.IAM_ROLES_DEFINED, "IAM roles defined"),
         _rule(GateRuleType.NETWORK_BOUNDARIES_DECLARED, "Network boundaries declared"),
-        _rule(GateRuleType.SECURITY_REVIEW_APPROVAL, "Security review approval"),
-        # New for preprod → prod
+        _rule(GateRuleType.SECURITY_REVIEW_APPROVAL, "Security review approval required"),
         _rule(GateRuleType.UNIT_TEST_COVERAGE, "Unit test coverage >= 80%", threshold=80),
         _rule(GateRuleType.ALL_CONTROLS_VERIFIED, "All security controls verified"),
         _rule(GateRuleType.EXEC_SPONSOR_APPROVAL, "Executive sponsor approval required"),
         _rule(GateRuleType.RESIDUAL_RISK_REPORT, "Residual risk report generated"),
         _rule(GateRuleType.READ_ONLY_AUTONOMY, "Production autonomy mode verified"),
-        # AI-specific
-        _rule(GateRuleType.AI_SCAN_COMPLETED, "PeaRL AI security scan completed", ai_only=True),
+        _rule(GateRuleType.AI_SCAN_COMPLETED, "AI security scan completed", ai_only=True),
         _rule(GateRuleType.OWASP_LLM_TOP10_CLEAR, "OWASP LLM Top 10 clear", ai_only=True),
         _rule(GateRuleType.AI_RISK_ACCEPTABLE, "AI scan risk below threshold", ai_only=True, threshold=7.0),
         _rule(GateRuleType.COMPREHENSIVE_AI_SCAN, "Comprehensive AI scan with verdicts", ai_only=True),
-        _rule(GateRuleType.FAIRNESS_DRIFT_ACCEPTABLE, "Fairness drift within limits", ai_only=True, threshold=0.1),
-        _rule(GateRuleType.FAIRNESS_EXCEPTIONS_CONTROLLED, "Fairness exceptions have controls", ai_only=True),
-        _rule(GateRuleType.FAIRNESS_CONTEXT_RECEIPT_VALID, "Agent fairness context receipt on file", ai_only=True),
-        _rule(GateRuleType.FAIRNESS_POLICY_DEPLOYED, "Fairness policy fully deployed", ai_only=True),
-        _rule(GateRuleType.CEDAR_POLICY_DEPLOYED, "Cedar policy deployed to AgentCore", ai_only=True),
-        _rule(GateRuleType.COMPLIANCE_SCORE_THRESHOLD, "Compliance score must be 100% for production (exception required for any shortfall)", ai_only=True, threshold=100.0),
-        _rule(GateRuleType.REQUIRED_ANALYZERS_COMPLETED, "All required AI analyzers completed", ai_only=True),
-        _rule(GateRuleType.SECURITY_REVIEW_CLEAR, "All /security-review findings addressed"),
-        _rule(GateRuleType.GUARDRAIL_COVERAGE, "Guardrail coverage complete for production", ai_only=True),
+        _rule(GateRuleType.LITELLM_COMPLIANCE, "LiteLLM proxy must be configured and compliant", ai_only=True),
+        _rule(GateRuleType.FACTORY_RUN_SUMMARY_PRESENT, "Factory run summary present with no anomaly flags", ai_only=True),
         _rule(GateRuleType.SONARQUBE_QUALITY_GATE, "SonarQube quality gate must pass (OK)"),
-        _rule(GateRuleType.SNYK_OPEN_HIGH_CRITICAL, "Snyk SCA scan must have no open HIGH/CRITICAL vulnerabilities"),
+        _rule(GateRuleType.SNYK_OPEN_HIGH_CRITICAL, "Snyk SCA: no open HIGH/CRITICAL vulnerabilities"),
     ],
 }
 
 
-DEFAULT_GATES = [SANDBOX_TO_DEV, DEV_TO_PREPROD, PREPROD_TO_PROD]
+DEFAULT_GATES = [PILOT_TO_DEV, DEV_TO_PROD]
 
-# Default promotion pipeline matching the 3-gate chain above
+# Default promotion pipeline: pilot → dev → prod
 DEFAULT_PIPELINE = {
     "pipeline_id": "pipe_default",
     "name": "Default Chain",
-    "description": "Standard 4-stage promotion chain: sandbox → dev → preprod → prod",
+    "description": "Standard 3-stage promotion chain: pilot → dev → prod",
     "is_default": True,
     "stages": [
-        {"key": "sandbox", "label": "Sandbox", "description": "Initial sandbox environment", "order": 0},
+        {"key": "pilot", "label": "Pilot", "description": "Non-guardrailed experimental environment", "order": 0},
         {"key": "dev", "label": "Dev", "description": "Active development environment", "order": 1},
-        {"key": "preprod", "label": "Preprod", "description": "Pre-production staging environment", "order": 2},
-        {"key": "prod", "label": "Prod", "description": "Live production environment", "order": 3},
+        {"key": "prod", "label": "Prod", "description": "Live production environment", "order": 2},
     ],
 }
 
@@ -160,6 +102,13 @@ async def seed_default_gates(session) -> int:
 
     gate_repo = PromotionGateRepository(session)
     created = 0
+
+    # Remove legacy gates that no longer match the pipeline
+    _legacy_gate_ids = ["gate_sandbox_to_dev", "gate_dev_to_preprod", "gate_preprod_to_prod"]
+    for legacy_id in _legacy_gate_ids:
+        legacy = await gate_repo.get(legacy_id)
+        if legacy:
+            await session.delete(legacy)
 
     for gate_def in DEFAULT_GATES:
         existing = await gate_repo.get(gate_def["gate_id"])
@@ -176,15 +125,16 @@ async def seed_default_gates(session) -> int:
             # Always sync rules so new rule types added to code land in the DB
             existing.rules = gate_def["rules"]
 
-    # Seed the default pipeline
+    # Seed the default pipeline — only if no default exists yet (don't override user config)
     pipeline_repo = PromotionPipelineRepository(session)
     existing_pipeline = await pipeline_repo.get("pipe_default")
     if not existing_pipeline:
+        current_default = await pipeline_repo.get_default()
         await pipeline_repo.create(
             pipeline_id=DEFAULT_PIPELINE["pipeline_id"],
             name=DEFAULT_PIPELINE["name"],
             description=DEFAULT_PIPELINE["description"],
-            is_default=DEFAULT_PIPELINE["is_default"],
+            is_default=current_default is None,  # only default if nothing else is
             stages=DEFAULT_PIPELINE["stages"],
             project_id=None,
         )
@@ -242,50 +192,3 @@ async def seed_demo_data(session) -> None:
         )
         session.add(demo_baseline)
 
-    # Seed Demo-BU1 (inherits org — no custom baseline row)
-    bu1 = (await session.execute(
-        select(BusinessUnitRow).where(BusinessUnitRow.bu_id == "bu_demo_1")
-    )).scalar_one_or_none()
-    if not bu1:
-        session.add(BusinessUnitRow(
-            bu_id="bu_demo_1",
-            org_id="org_default",
-            name="Demo-BU1",
-            description="Primary business unit — inherits DEMO org baseline",
-            framework_selections=["aiuc1"],
-            additional_guardrails={},
-        ))
-
-    # Seed Demo-BU2 (custom baseline with stricter security domain)
-    bu2 = (await session.execute(
-        select(BusinessUnitRow).where(BusinessUnitRow.bu_id == "bu_demo_2")
-    )).scalar_one_or_none()
-    if not bu2:
-        session.add(BusinessUnitRow(
-            bu_id="bu_demo_2",
-            org_id="org_default",
-            name="Demo-BU2",
-            description="Subsidiary business unit — custom security baseline",
-            framework_selections=["aiuc1", "owasp_llm"],
-            additional_guardrails={},
-        ))
-
-    # Seed Demo-BU2 custom baseline (all security controls enabled)
-    existing_bu2_baseline = (await session.execute(
-        select(OrgBaselineRow).where(OrgBaselineRow.baseline_id == "orgb_demo_bu2")
-    )).scalar_one_or_none()
-    if not existing_bu2_baseline:
-        import copy
-        bu2_defaults = copy.deepcopy(ESSENTIAL_BASELINE["defaults"])
-        # Tighten security domain — enable all B controls
-        if "security" in bu2_defaults:
-            bu2_defaults["security"] = {k: True for k in bu2_defaults["security"]}
-        session.add(OrgBaselineRow(
-            baseline_id="orgb_demo_bu2",
-            project_id=None,
-            bu_id="bu_demo_2",
-            org_id="org_default",
-            org_name="DEMO",
-            defaults=bu2_defaults,
-            schema_version="1.1",
-        ))

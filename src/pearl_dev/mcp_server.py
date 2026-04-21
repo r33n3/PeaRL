@@ -334,7 +334,7 @@ class PearlDevMCPServer:
                 "status": "not_evaluated",
                 "message": (
                     "No cached promotion readiness found. "
-                    "Call the evaluatePromotionReadiness MCP tool to fetch current gate status from the PeaRL API."
+                    "Call the pearl_evaluate_promotion MCP tool to fetch current gate status from the PeaRL API."
                 ),
             }
 

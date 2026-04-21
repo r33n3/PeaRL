@@ -19,6 +19,26 @@ from httpx import ASGITransport, AsyncClient
 
 logger = logging.getLogger(__name__)
 
+def _service_token() -> str:
+    """Generate a valid service JWT for MCP auth in tests."""
+    import jwt as pyjwt
+    from datetime import datetime, timedelta, timezone
+    from pearl.config import settings
+
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": "litellm-mcp-client",
+        "roles": ["service_account"],
+        "scopes": ["mcp"],
+        "iss": settings.jwt_issuer,
+        "aud": settings.jwt_audience,
+        "iat": now,
+        "exp": now + timedelta(hours=1),
+        "type": "access",
+    }
+    return pyjwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
 _MCP_HEADERS = {
     "Content-Type": "application/json",
     "Accept": "application/json, text/event-stream",
@@ -83,7 +103,7 @@ async def test_mcp_initialize():
         async with AsyncClient(
             transport=ASGITransport(app=mcp_asgi),
             base_url="http://test",
-            headers=_MCP_HEADERS,
+            headers={**_MCP_HEADERS, "Authorization": f"Bearer {_service_token()}"},
         ) as ac:
             r = await ac.post(
                 "/",
@@ -118,7 +138,7 @@ async def test_mcp_list_tools():
         async with AsyncClient(
             transport=ASGITransport(app=mcp_asgi),
             base_url="http://test",
-            headers=_MCP_HEADERS,
+            headers={**_MCP_HEADERS, "Authorization": f"Bearer {_service_token()}"},
         ) as ac:
             r = await ac.post(
                 "/",
@@ -145,7 +165,7 @@ async def test_mcp_call_unknown_tool():
         async with AsyncClient(
             transport=ASGITransport(app=mcp_asgi),
             base_url="http://test",
-            headers=_MCP_HEADERS,
+            headers={**_MCP_HEADERS, "Authorization": f"Bearer {_service_token()}"},
         ) as ac:
             r = await ac.post(
                 "/",
@@ -168,18 +188,19 @@ async def test_mcp_call_unknown_tool():
 
 
 @pytest.mark.asyncio
-async def test_mcp_path_not_auth_blocked(app):
-    """GET /mcp is reachable without a Bearer token (auth middleware bypasses /mcp).
+async def test_mcp_path_requires_auth(app):
+    """GET /mcp without a Bearer token returns 401 (auth is enforced on /mcp).
 
     Uses the full PeaRL test app so that the AuthMiddleware is exercised.
-    The /mcp path is mounted as a sub-app; auth middleware skips /mcp/* paths.
+    The MCP ASGI handler enforces Bearer token auth — unauthenticated requests
+    must be rejected with 401.
     """
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test",
+        follow_redirects=True,
     ) as ac:
-        r = await ac.get("/mcp")
-    # 200, 404, or 405 (method not allowed) — anything except 401/403
-    assert r.status_code not in (401, 403), (
-        f"Auth blocked /mcp: {r.status_code} {r.text}"
+        r = await ac.get("/mcp/")
+    assert r.status_code == 401, (
+        f"Expected 401 for unauthenticated /mcp/, got {r.status_code}: {r.text}"
     )

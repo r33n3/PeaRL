@@ -77,6 +77,19 @@ class PromotionEvaluationRepository(BaseRepository):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_latest_by_project_and_target(self, project_id: str, target_environment: str) -> PromotionEvaluationRow | None:
+        stmt = (
+            select(PromotionEvaluationRow)
+            .where(
+                PromotionEvaluationRow.project_id == project_id,
+                PromotionEvaluationRow.target_environment == target_environment,
+            )
+            .order_by(PromotionEvaluationRow.created_at.desc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
 
 class PromotionHistoryRepository(BaseRepository):
     def __init__(self, session: AsyncSession):

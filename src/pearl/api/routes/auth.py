@@ -354,6 +354,42 @@ async def list_api_keys(request: Request, db: AsyncSession = Depends(get_db)):
     return [ApiKeyResponse.model_validate(k) for k in keys]
 
 
+@router.post("/auth/service-token")
+async def issue_service_token(request: Request):
+    """Issue a long-lived service JWT for machine-to-machine callers (e.g. LiteLLM MCP).
+
+    Admin only. Returns a Bearer token with role=service_account and scope=mcp.
+    Expires in 30 days — rotate before expiry.
+    """
+    import jwt as pyjwt
+
+    current = getattr(request.state, "user", {})
+    if "admin" not in current.get("roles", []):
+        raise AuthorizationError("Admin role required")
+
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": "litellm-mcp-client",
+        "roles": ["service_account"],
+        "scopes": ["mcp"],
+        "iss": settings.jwt_issuer,
+        "aud": settings.jwt_audience,
+        "iat": now,
+        "exp": now + timedelta(days=30),
+        "type": "access",
+    }
+    token = pyjwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "expires_in": 30 * 24 * 3600,
+        "sub": "litellm-mcp-client",
+        "roles": ["service_account"],
+        "scopes": ["mcp"],
+        "note": "Add as Authorization: Bearer <token> in LiteLLM MCP server static headers. Rotate before expiry.",
+    }
+
+
 @router.delete("/users/me/api-keys/{key_id}", status_code=204)
 async def revoke_api_key(
     key_id: str,

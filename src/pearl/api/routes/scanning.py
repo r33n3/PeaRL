@@ -91,11 +91,14 @@ async def trigger_scan(
 @router.get("/projects/{project_id}/scans/latest", status_code=200)
 async def get_latest_scan(
     project_id: str,
+    environment: str | None = None,
+    status: str | None = None,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Get the latest scan results for a project.
 
     Returns the most recent finding batch from pearl_scan sources.
+    Optionally filter by environment and/or status (open, resolved, all).
     """
     from pearl.repositories.finding_repo import FindingRepository
     from sqlalchemy import select, desc
@@ -120,12 +123,19 @@ async def get_latest_scan(
             "scans": [],
         }
 
-    # Get findings from this batch
+    # Get findings from this batch, applying optional filters
     findings_stmt = (
         select(FindingRow)
         .where(FindingRow.batch_id == batch.batch_id)
         .where(FindingRow.project_id == project_id)
     )
+    if environment:
+        findings_stmt = findings_stmt.where(FindingRow.environment == environment)
+    if status and status != "all":
+        findings_stmt = findings_stmt.where(FindingRow.status == status)
+    elif not status:
+        # Default: only open findings
+        findings_stmt = findings_stmt.where(FindingRow.status == "open")
     findings_result = await db.execute(findings_stmt)
     findings = list(findings_result.scalars().all())
 

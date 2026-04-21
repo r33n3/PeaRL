@@ -53,8 +53,9 @@ export function envClass(env: Environment | string): string {
     dev: "env-dev",
     preprod: "env-preprod",
     prod: "env-prod",
+    pilot: "env-pilot",
   };
-  return map[env] ?? "env-sandbox";
+  return map[env] ?? "env-pilot";
 }
 
 export function ageColor(iso: string | null): string {

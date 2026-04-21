@@ -13,7 +13,7 @@ import re
 
 from pydantic import BaseModel as PydanticBaseModel
 
-from pearl.dependencies import get_db, get_trace_id
+from pearl.dependencies import get_db, get_trace_id, require_role
 from pearl.errors.exceptions import AuthorizationError, ConflictError, NotFoundError, ValidationError
 from pearl.models.common import TraceabilityRef
 from pearl.models.enums import BusinessCriticality, ExternalExposure
@@ -80,7 +80,7 @@ async def register_project(
     await env_repo.create(
         profile_id=generate_id("envprof_"),
         project_id=project_id,
-        environment="sandbox",
+        environment="pilot",
         delivery_stage="bootstrap",
         risk_level="low",
         autonomy_mode="assistive",
@@ -175,7 +175,7 @@ async def bootstrap_project(
         await env_repo.create(
             profile_id=generate_id("envprof_"),
             project_id=project_id,
-            environment="sandbox",
+            environment="pilot",
             delivery_stage="bootstrap",
             risk_level="low",
             autonomy_mode="assistive",
@@ -260,7 +260,7 @@ protected_branches:
 
     pearl_dev_toml = f"""[pearl-dev]
 project_id = "{project_id}"
-environment = "sandbox"
+environment = "dev"
 api_url = "{api_url}"
 package_path = ".pearl/compiled-context-package.json"
 audit_path = ".pearl/audit.jsonl"
@@ -443,7 +443,7 @@ async def create_project(
     await env_repo.create(
         profile_id=generate_id("envprof_"),
         project_id=project.project_id,
-        environment="sandbox",
+        environment="pilot",
         delivery_stage="bootstrap",
         risk_level="low",
         autonomy_mode="assistive",
@@ -478,7 +478,7 @@ async def get_project(
             created_at=row.created_at,
             updated_at=row.updated_at,
         ).model_dump(mode="json", exclude_none=True),
-        "current_environment": row.current_environment or "sandbox",
+        "current_environment": row.current_environment or "pilot",
         # ── Governance container fields ──
         "intake_card_id": row.intake_card_id,
         "goal_id": row.goal_id,
@@ -931,4 +931,76 @@ async def get_project_governance_state(
         "pending_approvals": pending_list,
         "pending_approvals_count": len(pending_list),
         "gate_status": gate_status,
+    }
+
+
+@router.post("/projects/{project_id}/register-agent-stage", status_code=200)
+async def register_agent_for_stage(
+    project_id: str,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    _current_user: dict = Depends(require_role("operator", "service_account", "admin")),
+) -> dict:
+    """Bind an agent identity to a project+environment. Updates agent_members and optionally sets env profile autonomy mode."""
+    from pearl.db.models.environment_profile import EnvironmentProfileRow
+
+    proj_repo = ProjectRepository(db)
+    project = await proj_repo.get(project_id)
+    if not project:
+        raise NotFoundError("Project", project_id)
+
+    agent_id = body.get("agent_id")
+    role = body.get("role")
+    environment = body.get("environment")
+    autonomy_mode = body.get("autonomy_mode")
+
+    if not agent_id or not role or not environment:
+        raise ValidationError("agent_id, role, and environment are required")
+
+    # Update agent_members on the project
+    members = dict(project.agent_members or {})
+    if role == "coordinator":
+        members["coordinator"] = agent_id
+    elif role == "worker":
+        workers = list(members.get("workers") or [])
+        if agent_id not in workers:
+            workers.append(agent_id)
+        members["workers"] = workers
+    elif role == "evaluator":
+        evaluators = list(members.get("evaluators") or [])
+        if agent_id not in evaluators:
+            evaluators.append(agent_id)
+        members["evaluators"] = evaluators
+
+    await proj_repo.update(project, agent_members=members)
+
+    # Optionally update environment profile autonomy mode
+    env_repo = EnvironmentProfileRepository(db)
+    profiles = await env_repo.list_by_field("project_id", project_id)
+    env_profile = next((p for p in profiles if p.environment == environment), None)
+
+    if env_profile and autonomy_mode:
+        env_profile.autonomy_mode = autonomy_mode
+    elif not env_profile:
+        # Create a minimal env profile for this environment
+        env_profile = EnvironmentProfileRow(
+            profile_id=generate_id("envprof_"),
+            project_id=project_id,
+            environment=environment,
+            delivery_stage="bootstrap",
+            risk_level="low",
+            autonomy_mode=autonomy_mode or "assistive",
+        )
+        db.add(env_profile)
+
+    await db.commit()
+
+    return {
+        "project_id": project_id,
+        "environment": environment,
+        "agent_id": agent_id,
+        "role": role,
+        "agent_members": members,
+        "autonomy_mode": env_profile.autonomy_mode if env_profile else autonomy_mode,
+        "registered": True,
     }

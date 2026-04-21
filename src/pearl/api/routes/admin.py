@@ -175,12 +175,10 @@ async def _delete_all_project_data(session: AsyncSession) -> int:
     # 5. notifications, scan_targets
     for table in ("notifications", "scan_targets"):
         await session.execute(text(f"DELETE FROM {_checked_table(table)}"))
-    # 6. promotion tables
+    # 6. promotion history and evaluations only — pipelines and gates are system config, not project data
     for table in (
-        "promotion_pipelines",
         "promotion_evaluations",
         "promotion_history",
-        "promotion_gates",
     ):
         await session.execute(text(f"DELETE FROM {_checked_table(table)}"))
     # 7. reports, remediation_specs, exception_records, task_packets
@@ -196,7 +194,7 @@ async def _delete_all_project_data(session: AsyncSession) -> int:
         await session.execute(text(f"DELETE FROM {_checked_table(table)}"))
     # 10. projects
     await session.execute(text("DELETE FROM projects"))
-    return 19
+    return 17
 
 
 @router.delete("/admin/projects/{project_id}", dependencies=[RequireAdmin])

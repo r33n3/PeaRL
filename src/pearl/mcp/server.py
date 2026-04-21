@@ -146,6 +146,8 @@ class MCPServer:
             # Remediation bridge
             "pearl_claim_task_packet": self._claim_task_packet,
             "pearl_complete_task_packet": self._complete_task_packet,
+            # Agent stage registration
+            "pearl_register_agent_for_stage": self._register_agent_for_stage,
             # Agent allowance profiles
             "pearl_allowance_check": self._allowance_check,
             # MASS 2.0
@@ -303,15 +305,24 @@ class MCPServer:
 
     async def _evaluate_promotion(self, args: dict) -> dict:
         pid = args["project_id"]
-        return await self._request("POST", f"/projects/{pid}/promotions/evaluate")
+        body = {}
+        if args.get("target_environment"):
+            body["target_environment"] = args["target_environment"]
+        return await self._request("POST", f"/projects/{pid}/promotions/evaluate", body or None)
 
     async def _get_promotion_readiness(self, args: dict) -> dict:
         pid = args["project_id"]
-        return await self._request("GET", f"/projects/{pid}/promotions/readiness")
+        params = {}
+        if args.get("target_environment"):
+            params["target_environment"] = args["target_environment"]
+        return await self._request("GET", f"/projects/{pid}/promotions/readiness", params=params or None)
 
     async def _request_promotion(self, args: dict) -> dict:
         pid = args["project_id"]
-        return await self._request("POST", f"/projects/{pid}/promotions/request")
+        body = {}
+        if args.get("target_environment"):
+            body["target_environment"] = args["target_environment"]
+        return await self._request("POST", f"/projects/{pid}/promotions/request", body or None)
 
     async def _get_promotion_history(self, args: dict) -> dict:
         pid = args["project_id"]
@@ -372,7 +383,12 @@ class MCPServer:
 
     async def _get_scan_results(self, args: dict) -> dict:
         pid = args["project_id"]
-        return await self._request("GET", f"/projects/{pid}/scans/latest")
+        params = {}
+        if args.get("environment"):
+            params["environment"] = args["environment"]
+        if args.get("status"):
+            params["status"] = args["status"]
+        return await self._request("GET", f"/projects/{pid}/scans/latest", params=params or None)
 
     async def _assess_compliance(self, args: dict) -> dict:
         pid = args["project_id"]
@@ -578,3 +594,8 @@ class MCPServer:
         if not frun_id:
             return {"error": "frun_id is required"}
         return await self._request("GET", f"/workloads/run-summaries/{frun_id}")
+
+    async def _register_agent_for_stage(self, args: dict) -> dict:
+        pid = args["project_id"]
+        body = {k: v for k, v in args.items() if k != "project_id"}
+        return await self._request("POST", f"/projects/{pid}/register-agent-stage", body)

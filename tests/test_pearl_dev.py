@@ -847,12 +847,12 @@ class TestMCPEntryPoints:
         assert server._mcp is not None
 
     def test_pearl_api_mcp_server_lists_28_tools(self):
-        """pearl-api MCP server should expose 54 tools."""
+        """pearl-api MCP server should expose 55 tools."""
         from pearl.mcp.stdio_server import PearlAPIMCPStdioServer
 
         server = PearlAPIMCPStdioServer()
         tools = server._mcp.list_tools()
-        assert len(tools) == 54
+        assert len(tools) == 55
 
     def test_pearl_api_mcp_stdio_main_importable(self):
         """pearl.mcp.stdio_server has main() entry point."""

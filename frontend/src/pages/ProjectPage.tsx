@@ -14,10 +14,9 @@ import { TimelinePanel } from "@/components/shared/TimelinePanel";
 import { GuardrailsTab } from "@/components/pipeline/GuardrailsTab";
 import { SetupTab } from "@/components/pipeline/SetupTab";
 import { Bug, ArrowUpCircle, FileText, Shield, DollarSign, Cpu, CheckCircle, Package, AlertTriangle, XCircle, Clock, ShieldCheck, Tag } from "lucide-react";
-import type { ApprovalStatus, Environment } from "@/lib/types";
+import type { ApprovalStatus } from "@/lib/types";
 import { formatTimestamp } from "@/lib/utils";
-
-const ENV_ORDER: Environment[] = ["sandbox", "dev", "preprod", "prod"];
+import { useDefaultPipeline } from "@/api/pipelines";
 
 function fmtDays(d: number | null | undefined): string {
   if (d == null) return "—";
@@ -38,13 +37,21 @@ export function ProjectPage() {
   const { data: exceptions = [] } = useProjectExceptions(projectId);
   const decideExceptionMut = useDecideException();
   const revokeExceptionMut = useRevokeException();
+  const { data: pipeline } = useDefaultPipeline();
 
   if (isLoading || !data) {
     return <p className="text-bone-muted font-mono text-sm">Loading project record...</p>;
   }
 
   const overview = data as Record<string, any>;
-  const currentEnv = overview.environment ?? "sandbox";
+  const pipelineFirstStage = pipeline
+    ? [...pipeline.stages].sort((a, b) => a.order - b.order)[0]?.key
+    : undefined;
+  const currentEnv = overview.environment ?? pipelineFirstStage ?? "dev";
+  const pipelineStages = pipeline
+    ? [...pipeline.stages].sort((a, b) => a.order - b.order)
+    : [];
+  const currentStageIdx = pipelineStages.findIndex((s) => s.key === currentEnv);
 
   return (
     <div>
@@ -59,25 +66,22 @@ export function ProjectPage() {
 
       {/* Promotion pipeline */}
       <div className="flex items-center gap-2 mb-6">
-        {ENV_ORDER.map((env, i) => (
-          <div key={env} className="flex items-center gap-2">
+        {pipelineStages.map((stage, i) => (
+          <div key={stage.key} className="flex items-center gap-2">
             <div
               className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-mono uppercase border ${
-                env === currentEnv
+                stage.key === currentEnv
                   ? "bg-cold-teal/20 text-cold-teal border-cold-teal"
-                  : ENV_ORDER.indexOf(env) < ENV_ORDER.indexOf(currentEnv as Environment)
+                  : i < currentStageIdx
                     ? "bg-wet-stone text-bone-muted border-bone-dim"
                     : "border-slate-border text-bone-dim border-dashed"
               }`}
+              title={stage.label}
             >
-              {env.slice(0, 2)}
+              {stage.key.slice(0, 2)}
             </div>
-            {i < ENV_ORDER.length - 1 && (
-              <div className={`w-8 h-px ${
-                ENV_ORDER.indexOf(env) < ENV_ORDER.indexOf(currentEnv as Environment)
-                  ? "bg-bone-dim"
-                  : "bg-slate-border"
-              }`} />
+            {i < pipelineStages.length - 1 && (
+              <div className={`w-8 h-px ${i < currentStageIdx ? "bg-bone-dim" : "bg-slate-border"}`} />
             )}
           </div>
         ))}

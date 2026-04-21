@@ -13,6 +13,7 @@ from pearl.db.models.exception import ExceptionRecordRow as ExceptionRow
 from pearl.db.models.finding import FindingRow
 from pearl.db.models.governance_telemetry import ClientAuditEventRow, ClientCostEntryRow
 from pearl.db.models.org_baseline import OrgBaselineRow
+from pearl.db.models.org_env_config import OrgEnvironmentConfigRow
 from pearl.db.models.project import ProjectRow
 from pearl.db.models.promotion import PromotionEvaluationRow, PromotionHistoryRow
 from pearl.dependencies import get_db
@@ -63,7 +64,7 @@ async def dashboard_projects(db: AsyncSession = Depends(get_db)) -> list[dict]:
         summaries.append({
             "project_id": p.project_id,
             "name": p.name,
-            "environment": p.current_environment or env_profiles.get(p.project_id) or "sandbox",
+            "environment": p.current_environment or env_profiles.get(p.project_id) or "pilot",
             "pending_approvals": pending_count,
             "findings_by_severity": findings_by_severity,
             "total_open_findings": sum(findings_by_severity.values()),
@@ -154,7 +155,7 @@ async def dashboard_project_overview(
     return {
         "project_id": project_id,
         "name": project.name,
-        "environment": project.current_environment or (env_profile.environment if env_profile else "sandbox"),
+        "environment": project.current_environment or (env_profile.environment if env_profile else "pilot"),
         "findings_by_severity": findings_by_severity,
         "total_open_findings": sum(findings_by_severity.values()),
         "behavioral_drift_trend_count": drift_trend_count,
@@ -270,11 +271,24 @@ async def dashboard_project_governance(
         ).order_by(PromotionHistoryRow.promoted_at.asc())
     )).scalars().all())
 
+    # Resolve pipeline stage order from org config
+    _env_chain: list[str] = []
+    if project.org_id:
+        _org_cfg = (await db.execute(
+            select(OrgEnvironmentConfigRow).where(OrgEnvironmentConfigRow.org_id == project.org_id)
+        )).scalar_one_or_none()
+        if _org_cfg and _org_cfg.stages:
+            _stages_sorted = sorted(_org_cfg.stages, key=lambda s: s.get("order", 0))
+            _env_chain = [s["name"] for s in _stages_sorted if s.get("name")]
+    if not _env_chain:
+        _env_chain = ["pilot", "dev", "preprod", "prod"]
+    _first_env = _env_chain[0]
+
     # Build per-environment entry/exit times
     env_entry: dict[str, datetime] = {}
     env_exit: dict[str, datetime | None] = {}
     if project.created_at:
-        env_entry["sandbox"] = project.created_at
+        env_entry[_first_env] = project.created_at
     for h in history_rows:
         if h.promoted_at:
             env_exit[h.source_environment] = h.promoted_at
@@ -284,10 +298,10 @@ async def dashboard_project_governance(
     env_profile_row = (await db.execute(
         select(EnvironmentProfileRow).where(EnvironmentProfileRow.project_id == project_id)
     )).scalar_one_or_none()
-    current_env = env_profile_row.environment if env_profile_row else "sandbox"
+    current_env = env_profile_row.environment if env_profile_row else _first_env
     env_exit.setdefault(current_env, None)
 
-    env_chain = ["sandbox", "dev", "preprod", "prod"]
+    env_chain = _env_chain
     time_per_environment = []
     for env in env_chain:
         if env not in env_entry:

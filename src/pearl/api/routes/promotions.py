@@ -35,6 +35,8 @@ class EvaluatePromotionBody(BaseModel):
 
 
 class RequestPromotionBody(BaseModel):
+    source_environment: str | None = None
+    target_environment: str | None = None
     commit_sha: str | None = None
     version_tag: str | None = None
     branch: str | None = None
@@ -124,10 +126,14 @@ async def evaluate_promotion_readiness(
 @router.get("/projects/{project_id}/promotions/readiness", status_code=200)
 async def get_promotion_readiness(
     project_id: str,
+    target_environment: str | None = None,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     repo = PromotionEvaluationRepository(db)
-    evaluation = await repo.get_latest_by_project(project_id)
+    if target_environment:
+        evaluation = await repo.get_latest_by_project_and_target(project_id, target_environment)
+    else:
+        evaluation = await repo.get_latest_by_project(project_id)
     if not evaluation:
         return {"status": "not_evaluated", "message": "No promotion evaluation found. Run evaluate first."}
     return {
@@ -172,11 +178,16 @@ async def request_promotion(
     if not _proj:
         raise ValidationError(f"Project '{project_id}' not found")
     _current = _proj.current_environment or "sandbox"
+    _requested_target = body.target_environment if body else None
     _expected_target = await _next_env(_current, db)
     if _expected_target is None:
         raise ValidationError(
             f"Project '{project_id}' is already at the final environment ('{_current}'). "
             "No further promotion is possible."
+        )
+    if _requested_target and _requested_target != _expected_target:
+        raise ValidationError(
+            f"Cannot promote to '{_requested_target}': project is at '{_current}', next valid target is '{_expected_target}'."
         )
     # ─────────────────────────────────────────────────────────────────────────
 
@@ -187,6 +198,7 @@ async def request_promotion(
         project_id=project_id,
         trace_id=trace_id,
         session=db,
+        target_environment=_requested_target or _expected_target,
     )
     # Store version fields on the evaluation row
     eval_repo = PromotionEvaluationRepository(db)

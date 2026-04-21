@@ -94,10 +94,17 @@ async def delete_business_unit(
     bu_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> None:
+    from sqlalchemy import delete as sa_delete
+    from pearl.db.models.org_baseline import OrgBaselineRow
+    from pearl.db.models.framework_requirement import FrameworkRequirementRow
+
     repo = BusinessUnitRepository(db)
     bu = await repo.get(bu_id)
     if not bu:
         raise NotFoundError("BusinessUnit", bu_id)
+    # Remove dependent rows that reference this BU before deleting
+    await db.execute(sa_delete(OrgBaselineRow).where(OrgBaselineRow.bu_id == bu_id))
+    await db.execute(sa_delete(FrameworkRequirementRow).where(FrameworkRequirementRow.bu_id == bu_id))
     await repo.delete(bu_id)
     await db.commit()
 

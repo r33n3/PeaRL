@@ -22,6 +22,8 @@ services:
       PEARL_LOCAL_REVIEWER_MODE: "1"
       PEARL_MASS_URL: "http://host.docker.internal:80"
       PEARL_MASS_API_KEY: ""
+      PEARL_LITELLM_API_URL: "http://host.docker.internal:4000"
+      PEARL_LITELLM_API_KEY: "sk-litellm-local-testing"
     depends_on:
       postgres:
         condition: service_healthy
@@ -38,7 +40,7 @@ services:
       POSTGRES_PASSWORD: pearl
       POSTGRES_DB: pearl
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./deploy/postgres/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro

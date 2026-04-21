@@ -59,7 +59,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         schema_prefix = settings.effective_expose_openapi and (
             path.startswith("/docs") or path.startswith("/redoc")
         )
-        if path in _PUBLIC_PATHS or schema_prefix or path.startswith("/mcp"):
+        if path in _PUBLIC_PATHS or schema_prefix:
             request.state.user = {"sub": "anonymous", "roles": [], "scopes": ["*"]}
             return await call_next(request)
 

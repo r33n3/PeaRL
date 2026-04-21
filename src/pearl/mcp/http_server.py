@@ -52,30 +52,52 @@ def build_mcp_asgi_app(api_base_url: str, api_key: str | None = None):
         json_response=True,
     )
 
-    class _MCPApp:
-        """Minimal ASGI wrapper that owns the session manager lifecycle."""
+    async def _asgi_handler(scope, receive, send):
+        if scope["type"] == "lifespan":
+            async with session_manager.run():
+                await receive()  # lifespan.startup
+                await send({"type": "lifespan.startup.complete"})
+                await receive()  # lifespan.shutdown
+                await send({"type": "lifespan.shutdown.complete"})
+            return
+        if scope["type"] == "http":
+            # Prefer user resolved by AuthMiddleware (set on scope["state"])
+            state = scope.get("state")
+            user = getattr(state, "user", None) if state is not None else None
 
-        async def __call__(self, scope, receive, send):
-            if scope["type"] == "lifespan":
-                # Forward lifespan events through our context manager
-                await _MCPApp._lifespan_handler(scope, receive, send)
-            else:
-                await session_manager.handle_request(scope, receive, send)
+            # Fallback: validate Bearer token directly (for standalone / test usage)
+            if user is None:
+                headers = dict(scope.get("headers", []))
+                auth = headers.get(b"authorization", b"").decode()
+                if auth.startswith("Bearer "):
+                    from pearl.api.middleware.auth import _decode_jwt
+                    try:
+                        payload = _decode_jwt(auth[7:])
+                        user = {"sub": payload.get("sub", ""), "roles": payload.get("roles", []), "scopes": payload.get("scopes", [])}
+                    except ValueError:
+                        user = {}
+                else:
+                    user = {}
 
-        @staticmethod
-        async def _lifespan_handler(scope, receive, send):
-            msg = await receive()
-            if msg["type"] == "lifespan.startup":
-                try:
-                    async with session_manager.run():
-                        await send({"type": "lifespan.startup.complete"})
-                        await receive()  # wait for shutdown signal
-                    await send({"type": "lifespan.shutdown.complete"})
-                except Exception as exc:
-                    await send({"type": "lifespan.startup.failed", "message": str(exc)})
-                    raise
-            else:
-                await send({"type": "lifespan.startup.failed", "message": f"Unexpected lifespan message: {msg['type']}"})
-                raise RuntimeError(f"MCP ASGI lifespan received unexpected message type: {msg['type']}")
+            roles = user.get("roles", [])
+            scopes = user.get("scopes", [])
+            sub = user.get("sub", "anonymous")
+            authorized = (
+                sub not in ("anonymous", "")
+                and (
+                    "mcp" in scopes
+                    or "*" in scopes
+                    or "service_account" in roles
+                    or "admin" in roles
+                    or "operator" in roles
+                )
+            )
+            if not authorized:
+                body = json.dumps({"error": "Unauthorized", "detail": "Valid Bearer token required for MCP access"}).encode()
+                await send({"type": "http.response.start", "status": 401, "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]})
+                await send({"type": "http.response.body", "body": body})
+                return
+        await session_manager.handle_request(scope, receive, send)
 
-    return _MCPApp()
+    _asgi_handler.session_manager = session_manager  # type: ignore[attr-defined]
+    return _asgi_handler

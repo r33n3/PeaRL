@@ -1,10 +1,9 @@
 import { Shield } from "lucide-react";
 import type { GateData } from "@/api/promotions";
-import type { Environment } from "@/lib/types";
 
 interface Props {
-  sourceEnv: Environment;
-  targetEnv: Environment;
+  sourceEnv: string;
+  targetEnv: string;
   gates: GateData[];
 }
 

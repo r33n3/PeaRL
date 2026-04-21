@@ -115,7 +115,10 @@ async def lifespan(app: FastAPI):
     scheduler_task = asyncio.create_task(run_scheduler(app))
 
     logger.info("PeaRL API started (db=%s)", "sqlite" if "sqlite" in db_url else "postgresql")
-    yield
+
+    # Run the MCP session manager for the lifetime of the app
+    async with app.state.mcp_session_manager.run():
+        yield
 
     # Shutdown
     scheduler_task.cancel()
@@ -187,6 +190,7 @@ def create_app() -> FastAPI:
         api_key=None,
     )
     app.mount("/mcp", app=mcp_asgi)
+    app.state.mcp_session_manager = mcp_asgi.session_manager
 
     return app
 

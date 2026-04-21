@@ -1,5 +1,5 @@
 // Environment chain
-export type Environment = "sandbox" | "dev" | "preprod" | "prod";
+export type Environment = string;
 
 // Severity levels
 export type Severity = "critical" | "high" | "moderate" | "low" | "info";

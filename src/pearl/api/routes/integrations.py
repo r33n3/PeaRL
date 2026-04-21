@@ -441,6 +441,39 @@ async def pull_from_integration(
         since=row.last_sync_at,
     )
 
+    # Persist findings to the findings table
+    from datetime import datetime as _dt
+    from pearl.repositories.finding_repo import FindingRepository
+    finding_repo = FindingRepository(db)
+    accepted = 0
+    for finding in result.get("batch", {}).get("findings", []):
+        try:
+            raw_detected = finding.get("detected_at")
+            detected_at = _dt.fromisoformat(raw_detected) if isinstance(raw_detected, str) else raw_detected
+            await finding_repo.create(
+                finding_id=finding["finding_id"],
+                project_id=finding["project_id"],
+                environment=finding.get("environment", "dev"),
+                category=finding.get("category", "security"),
+                severity=finding.get("severity", "moderate"),
+                title=finding.get("title", ""),
+                source=finding.get("source", {}),
+                full_data=finding,
+                normalized=True,
+                detected_at=detected_at,
+                batch_id=result["batch"]["source_batch"]["batch_id"],
+                cvss_score=finding.get("cvss_score"),
+                cwe_ids=finding.get("cwe_ids"),
+                cve_id=finding.get("cve_id"),
+                status=finding.get("status", "open"),
+                fix_available=finding.get("fix_available"),
+                score=finding.get("score"),
+                compliance_refs=finding.get("compliance_refs"),
+            )
+            accepted += 1
+        except Exception:
+            logger.warning("Failed to persist pulled finding", exc_info=True)
+
     # Update last sync status
     now = datetime.now(timezone.utc)
     await repo.update(row, last_sync_at=now, last_sync_status="success")
@@ -453,7 +486,7 @@ async def pull_from_integration(
         project_id=project_id,
         direction="pull",
         status="success",
-        records_processed=result.get("findings_count", 0),
+        records_processed=accepted,
     )
 
     await db.commit()
@@ -461,6 +494,6 @@ async def pull_from_integration(
     return {
         "endpoint_id": endpoint_id,
         "endpoint_name": row.name,
-        "findings_pulled": result.get("findings_count", 0),
+        "findings_pulled": accepted,
         "synced_at": now.isoformat(),
     }

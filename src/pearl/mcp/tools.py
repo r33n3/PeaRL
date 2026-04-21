@@ -1,6 +1,6 @@
 """MCP tool definitions mapping to PeaRL API operations.
 
-52 tools total. All tool names use the pearl_ prefix so agents can
+55 tools total. All tool names use the pearl_ prefix so agents can
 unambiguously distinguish PeaRL tools when multiple MCP servers are loaded.
 """
 
@@ -200,7 +200,7 @@ TOOL_DEFINITIONS = [
                 "project_id": {"type": "string"},
                 "task_type": {"type": "string", "enum": ["feature", "fix", "remediation", "refactor", "config", "policy"]},
                 "task_summary": {"type": "string", "maxLength": 512},
-                "environment": {"type": "string", "enum": ["sandbox", "dev", "pilot", "preprod", "prod"]},
+                "environment": {"type": "string", "enum": ["pilot", "dev", "prod"]},
             },
             "required": ["project_id", "task_type", "task_summary", "environment"],
         },
@@ -236,7 +236,7 @@ TOOL_DEFINITIONS = [
             "properties": {
                 "project_id": {"type": "string"},
                 "finding_refs": {"type": "array", "maxItems": 100, "items": {"type": "string"}},
-                "environment": {"type": "string", "enum": ["sandbox", "dev", "pilot", "preprod", "prod"]},
+                "environment": {"type": "string", "enum": ["pilot", "dev", "prod"]},
             },
             "required": ["project_id", "finding_refs", "environment"],
         },
@@ -371,7 +371,10 @@ TOOL_DEFINITIONS = [
         "description": "Get the latest promotion evaluation for a project. Shows current gate progress, passing/blocking rules, and what needs to be fixed.",
         "inputSchema": {
             "type": "object",
-            "properties": {"project_id": {"type": "string"}},
+            "properties": {
+                "project_id": {"type": "string"},
+                "target_environment": {"type": "string", "description": "Filter readiness for a specific target environment (optional)."},
+            },
             "required": ["project_id"],
         },
     },
@@ -385,7 +388,10 @@ TOOL_DEFINITIONS = [
         ),
         "inputSchema": {
             "type": "object",
-            "properties": {"project_id": {"type": "string"}},
+            "properties": {
+                "project_id": {"type": "string"},
+                "target_environment": {"type": "string", "description": "Target environment to promote to (optional — defaults to next in pipeline chain)."},
+            },
             "required": ["project_id"],
         },
     },
@@ -565,7 +571,7 @@ TOOL_DEFINITIONS = [
                 "project_id": {"type": "string"},
                 "target_path": {"type": "string", "description": "Path to directory or file to scan"},
                 "analyzers": {"type": "array", "maxItems": 100, "items": {"type": "string", "enum": ["context", "mcp", "workflow", "attack_surface", "rag", "model_file"]}, "description": "Optional: specific analyzers to run (default: all)"},
-                "environment": {"type": "string", "enum": ["sandbox", "dev", "pilot", "preprod", "prod"], "default": "dev"},
+                "environment": {"type": "string", "enum": ["pilot", "dev", "prod"], "default": "dev"},
             },
             "required": ["project_id", "target_path"],
         },
@@ -575,7 +581,11 @@ TOOL_DEFINITIONS = [
         "description": "Get the latest scan results for a project. Shows findings by severity, compliance scores, and guardrail recommendations.",
         "inputSchema": {
             "type": "object",
-            "properties": {"project_id": {"type": "string"}},
+            "properties": {
+                "project_id": {"type": "string"},
+                "environment": {"type": "string", "description": "Filter findings by environment (optional — e.g. 'pilot', 'dev', 'prod')."},
+                "status": {"type": "string", "enum": ["open", "resolved", "all"], "description": "Filter by finding status (default: open)."},
+            },
             "required": ["project_id"],
         },
     },
@@ -740,6 +750,29 @@ TOOL_DEFINITIONS = [
                 },
             },
             "required": ["packet_id", "status"],
+        },
+    },
+
+    # ─── Agent Stage Registration ─────────────────────
+    {
+        "name": "pearl_register_agent_for_stage",
+        "description": (
+            "Register an agent or agent team for a specific environment stage on a project. "
+            "Sets the agent's role (coordinator, worker, or evaluator) in the project's agent_members, "
+            "and optionally configures the environment profile autonomy mode. "
+            "Call this when a coordinator begins operating in a new environment — "
+            "it binds the team identity to the project before any gate evaluation or task execution."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "PeaRL project ID"},
+                "environment": {"type": "string", "description": "Environment stage the agent is operating in (e.g. 'pilot', 'dev', 'prod')"},
+                "agent_id": {"type": "string", "description": "Unique identifier for this agent instance (e.g. 'saga-coordinator-v2')"},
+                "role": {"type": "string", "enum": ["coordinator", "worker", "evaluator"], "description": "Role of this agent in the team"},
+                "autonomy_mode": {"type": "string", "enum": ["assistive", "supervised", "autonomous"], "description": "Autonomy mode to set on the environment profile (optional — leave unset to keep existing)"},
+            },
+            "required": ["project_id", "environment", "agent_id", "role"],
         },
     },
 

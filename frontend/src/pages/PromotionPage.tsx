@@ -12,9 +12,8 @@ import { AgentRemediationCard } from "@/components/shared/AgentRemediationCard";
 import { formatTimestamp } from "@/lib/utils";
 import { Link } from "react-router-dom";
 import { ArrowRight, CheckCircle, XCircle, MinusCircle, AlertTriangle, ArrowUpCircle, Clock, X, Cpu } from "lucide-react";
-import type { Environment, GateRuleResult, AgentTaskPacket } from "@/lib/types";
-
-const ENV_ORDER: Environment[] = ["sandbox", "dev", "preprod", "prod"];
+import type { GateRuleResult, AgentTaskPacket } from "@/lib/types";
+import { useDefaultPipeline } from "@/api/pipelines";
 
 const RULE_ICONS: Record<GateRuleResult, { icon: typeof CheckCircle; color: string }> = {
   pass: { icon: CheckCircle, color: "text-cold-teal" },
@@ -45,9 +44,12 @@ export function PromotionPage() {
   const [contestType, setContestType] = useState<"false_positive" | "risk_acceptance" | "needs_more_time">("false_positive");
   const [rationale, setRationale] = useState("");
 
+  const { data: pipeline } = useDefaultPipeline();
   const overviewData = overview as Record<string, any> | undefined;
   const currentEnv = overviewData?.environment ?? "dev";
   const readinessData = readiness as Record<string, any> | undefined;
+  const pipelineStages = pipeline ? [...pipeline.stages].sort((a, b) => a.order - b.order) : [];
+  const currentStageIdx = pipelineStages.findIndex((s) => s.key === currentEnv);
   const ruleResults = (readinessData?.rule_results ?? []) as Array<{
     rule_id: string;
     rule_type: string;
@@ -109,25 +111,21 @@ export function PromotionPage() {
       {/* Pipeline visualization */}
       <VaultCard className="mb-6">
         <div className="flex items-center justify-center gap-1 py-4">
-          {ENV_ORDER.map((env, i) => (
-            <div key={env} className="flex items-center gap-1">
+          {pipelineStages.map((stage, i) => (
+            <div key={stage.key} className="flex items-center gap-1">
               <div
                 className={`flex flex-col items-center gap-1 px-4 py-2 rounded-lg border transition-all ${
-                  env === currentEnv
+                  stage.key === currentEnv
                     ? "bg-cold-teal/15 border-cold-teal text-cold-teal shadow-teal-glow"
-                    : ENV_ORDER.indexOf(env) < ENV_ORDER.indexOf(currentEnv as Environment)
+                    : i < currentStageIdx
                       ? "bg-wet-stone border-bone-dim text-bone-muted"
                       : "border-slate-border border-dashed text-bone-dim"
                 }`}
               >
-                <span className="text-xs font-heading font-bold uppercase">{env}</span>
+                <span className="text-xs font-heading font-bold uppercase">{stage.label}</span>
               </div>
-              {i < ENV_ORDER.length - 1 && (
-                <ArrowRight size={14} className={
-                  ENV_ORDER.indexOf(env) < ENV_ORDER.indexOf(currentEnv as Environment)
-                    ? "text-bone-dim"
-                    : "text-slate-border"
-                } />
+              {i < pipelineStages.length - 1 && (
+                <ArrowRight size={14} className={i < currentStageIdx ? "text-bone-dim" : "text-slate-border"} />
               )}
             </div>
           ))}

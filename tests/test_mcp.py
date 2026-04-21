@@ -7,8 +7,8 @@ from pearl.mcp.tools import TOOL_DEFINITIONS
 
 
 def test_tool_definitions_count():
-    """All 54 API operations have tool definitions."""
-    assert len(TOOL_DEFINITIONS) == 54
+    """All 55 API operations have tool definitions."""
+    assert len(TOOL_DEFINITIONS) == 55
 
 
 def test_tool_definitions_structure():
@@ -30,7 +30,7 @@ def test_mcp_server_list_tools():
     """MCPServer.list_tools returns all definitions."""
     server = MCPServer()
     tools = server.list_tools()
-    assert len(tools) == 54
+    assert len(tools) == 55
 
 
 def test_mcp_server_routes_all_tools():
@@ -158,6 +158,8 @@ def test_required_tool_names():
         # Remediation bridge
         "pearl_claim_task_packet",
         "pearl_complete_task_packet",
+        # Agent stage registration
+        "pearl_register_agent_for_stage",
         # Agent allowance profiles
         "pearl_allowance_check",
         # MASS 2.0

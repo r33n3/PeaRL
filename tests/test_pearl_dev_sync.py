@@ -233,7 +233,7 @@ def test_governance_md_has_all_sections(sync_project):
     assert "## 9. Fairness Requirements" in governance_md
     assert "## 10. Registered Scan Targets" in governance_md
     assert "pearl_check_promotion" in governance_md
-    assert "evaluatePromotionReadiness" in governance_md
+    assert "pearl_evaluate_promotion" in governance_md
 
 
 def test_promotion_blocking_rules_in_governance_md(sync_project):

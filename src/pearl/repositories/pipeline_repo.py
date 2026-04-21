@@ -16,9 +16,14 @@ class PromotionPipelineRepository(BaseRepository):
 
     async def get_default(self) -> PromotionPipelineRow | None:
         """Return the current org-level default pipeline."""
-        stmt = select(PromotionPipelineRow).where(
-            PromotionPipelineRow.is_default.is_(True),
-            PromotionPipelineRow.project_id.is_(None),
+        stmt = (
+            select(PromotionPipelineRow)
+            .where(
+                PromotionPipelineRow.is_default.is_(True),
+                PromotionPipelineRow.project_id.is_(None),
+            )
+            .order_by(PromotionPipelineRow.updated_at.desc())
+            .limit(1)
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
