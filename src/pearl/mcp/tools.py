@@ -456,7 +456,7 @@ TOOL_DEFINITIONS = [
                 "environment": {"type": "string", "enum": ["sandbox", "dev", "pilot", "preprod", "prod"]},
                 "evidence_type": {
                     "type": "string",
-                    "enum": ["attestation", "ci_eval_report", "runtime_sample", "bias_benchmark", "red_team_report", "guardrail_test", "fairness_audit", "model_card", "manual_review", "sbom", "provenance"],
+                    "enum": ["attestation", "ci_eval_report", "test_results", "runtime_sample", "bias_benchmark", "red_team_report", "guardrail_test", "fairness_audit", "model_card", "manual_review", "sbom", "provenance", "artifact_signed"],
                     "description": "Use 'attestation' for framework control validation (AIUC-1, OWASP LLM, etc.)"
                 },
                 "evidence_data": {
