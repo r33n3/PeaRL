@@ -98,3 +98,14 @@ def test_compute_aiuc_compliance_score_100():
     result = compute_aiuc_compliance(ctx, ["B005.1", "C005.1"])
     assert result["score_pct"] == 100.0
     assert result["outstanding"] == []
+
+
+def test_eval_context_has_aiuc_fields():
+    """_EvalContext has the AIUC fields after construction."""
+    from pearl.services.promotion.gate_evaluator import _EvalContext
+    ctx = _EvalContext()
+    assert hasattr(ctx, "aiuc_satisfied_count")
+    assert hasattr(ctx, "aiuc_mandatory_count")
+    assert hasattr(ctx, "aiuc_outstanding")
+    assert ctx.aiuc_outstanding == []
+    assert ctx.aiuc_satisfied_count == 0

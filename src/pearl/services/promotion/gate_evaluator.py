@@ -318,6 +318,12 @@ class _EvalContext:
         # Factory run summary context
         self.has_factory_run_summary: bool = False
         self.factory_run_anomaly_count: int = 0
+        # AIUC-1 compliance (derived from framework evidence + finding blocks)
+        self.aiuc_satisfied_count: int = 0
+        self.aiuc_mandatory_count: int = 0
+        self.aiuc_outstanding: list[str] = []
+        self.aiuc_hints: dict[str, str] = {}
+        self.aiuc_score_pct: float = 0.0
 
 
 async def _build_eval_context(
@@ -405,6 +411,21 @@ async def _build_eval_context(
     ctx.has_signed_attestation = any(
         e.attestation_status == "signed" for e in ctx.evidence_packages
     )
+
+    # AIUC-1 compliance score (derived from framework evidence + open finding blocks)
+    try:
+        from pearl.services.promotion.aiuc_mapping import (
+            AIUC1_MANDATORY_PILOT,
+            compute_aiuc_compliance,
+        )
+        aiuc_result = compute_aiuc_compliance(ctx, AIUC1_MANDATORY_PILOT)
+        ctx.aiuc_satisfied_count = aiuc_result["satisfied_count"]
+        ctx.aiuc_mandatory_count = aiuc_result["mandatory_count"]
+        ctx.aiuc_outstanding = aiuc_result["outstanding"]
+        ctx.aiuc_hints = aiuc_result["hints"]
+        ctx.aiuc_score_pct = aiuc_result["score_pct"]
+    except Exception:
+        pass  # non-fatal — gate falls back to 0%
 
     fex_repo = FairnessExceptionRepository(session)
     ctx.fairness_exceptions = await fex_repo.get_active_by_project(project_id)
@@ -1270,6 +1291,27 @@ def _eval_factory_run_summary_present(rule, ctx):
     return True, "Factory run summary present with no anomaly flags", None
 
 
+def _eval_aiuc_compliance_score(rule, ctx):
+    threshold = (rule.parameters or {}).get("threshold", 100.0)
+    if ctx.aiuc_score_pct >= threshold:
+        return (
+            True,
+            f"AIUC-1 compliance: {ctx.aiuc_satisfied_count}/{ctx.aiuc_mandatory_count} mandatory controls satisfied ({ctx.aiuc_score_pct}%)",
+            {"score_pct": ctx.aiuc_score_pct, "outstanding": []},
+        )
+    outstanding_lines = [
+        f"{ctrl}: {ctx.aiuc_hints.get(ctrl, 'attest aiuc1/' + ctrl)}"
+        for ctrl in ctx.aiuc_outstanding[:5]
+    ]
+    remainder = len(ctx.aiuc_outstanding) - 5
+    suffix = f" (+{remainder} more)" if remainder > 0 else ""
+    return (
+        False,
+        f"AIUC-1 compliance: {ctx.aiuc_satisfied_count}/{ctx.aiuc_mandatory_count} mandatory controls satisfied ({ctx.aiuc_score_pct}%). Outstanding: {'; '.join(outstanding_lines)}{suffix}",
+        {"score_pct": ctx.aiuc_score_pct, "outstanding": ctx.aiuc_outstanding, "hints": ctx.aiuc_hints},
+    )
+
+
 # ── OWASP LLM Top 10 discrete rules ──────────────────────────────────────────
 
 def _eval_owasp_llm06_excessive_agency(rule, ctx):
@@ -1908,4 +1950,6 @@ RULE_EVALUATORS = {
     GateRuleType.AGENT_COMMUNICATION_SECURED: _eval_agent_communication_secured,
     # Supply chain integrity
     GateRuleType.SBOM_GENERATED: _eval_sbom_generated,
+    # AIUC-1 responsible AI compliance
+    GateRuleType.AIUC_COMPLIANCE_SCORE: _eval_aiuc_compliance_score,
 }

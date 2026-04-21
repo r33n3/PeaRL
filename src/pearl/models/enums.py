@@ -279,6 +279,7 @@ class GateRuleType(StrEnum):
     LITELLM_COMPLIANCE = "litellm_compliance"
     # Factory Run Summary gate
     FACTORY_RUN_SUMMARY_PRESENT = "factory_run_summary_present"
+    AIUC_COMPLIANCE_SCORE = "aiuc_compliance_score"
     # OWASP LLM Top 10 — per-control discrete rules (v2025)
     OWASP_LLM06_EXCESSIVE_AGENCY = "owasp_llm06_excessive_agency"
     OWASP_LLM07_SYSTEM_PROMPT_LEAKAGE = "owasp_llm07_system_prompt_leakage"

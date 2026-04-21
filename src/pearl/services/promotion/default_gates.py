@@ -35,6 +35,7 @@ PILOT_TO_DEV = {
         _rule(GateRuleType.AI_SCAN_COMPLETED, "AI security scan must be completed", ai_only=True),
         _rule(GateRuleType.FAIRNESS_CASE_DEFINED, "Fairness case must be defined", ai_only=True),
         _rule(GateRuleType.MODEL_CARD_DOCUMENTED, "Model card must be documented", ai_only=True),
+        _rule(GateRuleType.AIUC_COMPLIANCE_SCORE, "AIUC-1 responsible AI compliance — all mandatory controls satisfied", ai_only=True),
     ],
 }
 

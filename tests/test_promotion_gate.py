@@ -194,7 +194,7 @@ async def test_default_gate_rule_counts(client):
     """Default gates have the correct number of rules."""
     r = await client.get("/api/v1/promotions/gates")
     gates = {g["gate_id"]: g for g in r.json()}
-    assert gates["gate_5730ef26ca8c46e9"]["rule_count"] == 8   # pilot → dev
+    assert gates["gate_5730ef26ca8c46e9"]["rule_count"] == 9   # pilot → dev
     assert gates["gate_ce6c49cb2a3d48bf"]["rule_count"] == 25  # dev → prod
 
 
