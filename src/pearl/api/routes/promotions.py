@@ -167,17 +167,15 @@ async def request_promotion(
     body = body or RequestPromotionBody()
 
     # ── Sequential gate enforcement ──────────────────────────────────────────
-    # A project must progress through gates in order: sandbox→dev→preprod→prod.
-    # We load the project's actual current_environment and determine the correct
-    # next gate.  Any attempt to skip a gate (e.g. sandbox directly requesting
-    # preprod→prod) is rejected here before an evaluation or approval record
-    # is ever created.
+    # Pipeline: pilot → dev → prod. Load the project's current_environment and
+    # determine the correct next gate. Gate skipping is rejected before any
+    # evaluation or approval record is created.
     from pearl.repositories.project_repo import ProjectRepository as _ProjRepo
     from pearl.services.promotion.gate_evaluator import next_environment as _next_env
     _proj = await _ProjRepo(db).get(project_id)
     if not _proj:
         raise ValidationError(f"Project '{project_id}' not found")
-    _current = _proj.current_environment or "sandbox"
+    _current = _proj.current_environment or "pilot"
     _requested_target = body.target_environment if body else None
     _expected_target = await _next_env(_current, db)
     if _expected_target is None:
@@ -808,7 +806,7 @@ async def reset_to_sandbox(
     db: AsyncSession = Depends(get_db),
     trace_id: str = Depends(get_trace_id),
 ) -> dict:
-    """Reset a project back to sandbox, clearing all promotion history and evaluations.
+    """Reset a project back to pilot, clearing all promotion history and evaluations.
 
     Admin-only. Use this to start the promotion pipeline from scratch — useful after
     significant architectural changes or when re-validating with new gate tools.
@@ -829,7 +827,7 @@ async def reset_to_sandbox(
     if not project:
         raise NotFoundError("Project", project_id)
 
-    reason = body.get("reason", "Manual reset to sandbox")
+    reason = body.get("reason", "Manual reset to pilot")
     promoted_by = getattr(getattr(request, "state", None), "user", {}).get("sub", "system") if request else "system"
     now = datetime.now(timezone.utc)
 
@@ -840,12 +838,12 @@ async def reset_to_sandbox(
         history_id=history_id,
         project_id=project_id,
         source_environment=project.current_environment or "unknown",
-        target_environment="sandbox",
+        target_environment="pilot",
         evaluation_id="reset",
         promoted_by=promoted_by,
         promoted_at=now,
         details={
-            "type": "reset_to_sandbox",
+            "type": "reset_to_pilot",
             "reason": reason,
             "trace_id": trace_id,
             "previous_environment": project.current_environment,
@@ -865,13 +863,12 @@ async def reset_to_sandbox(
             .where(PromotionHistoryRow.history_id != history_id)
         )
 
-    # Set current environment to sandbox on both the project row and env_profile
-    # so that all environment reads (project.current_environment and env_profile.environment)
-    # agree after a reset.
-    await proj_repo.update(project, current_environment="sandbox")
+    # Set current environment to pilot on both the project row and env_profile
+    # so that all environment reads agree after a reset.
+    await proj_repo.update(project, current_environment="pilot")
     env_profile = await EnvironmentProfileRepository(db).get_by_project(project_id)
     if env_profile:
-        env_profile.environment = "sandbox"
+        env_profile.environment = "pilot"
     await db.commit()
 
     # Emit SSE event
@@ -879,18 +876,18 @@ async def reset_to_sandbox(
         _redis = getattr(request.app.state, "redis", None)
         await publish_event(_redis, "project_reset", {
             "project_id": project_id,
-            "target_environment": "sandbox",
+            "target_environment": "pilot",
             "triggered_by": promoted_by,
         })
 
     return {
         "project_id": project_id,
-        "type": "reset_to_sandbox",
-        "current_environment": "sandbox",
+        "type": "reset_to_pilot",
+        "current_environment": "pilot",
         "reason": reason,
         "history_cleared": clear_history,
         "reset_at": now.isoformat(),
-        "next_step": f"POST /api/v1/projects/{project_id}/promotions/evaluate to begin elevation from sandbox → dev",
+        "next_step": f"POST /api/v1/projects/{project_id}/promotions/evaluate to begin elevation from pilot → dev",
     }
 
 
