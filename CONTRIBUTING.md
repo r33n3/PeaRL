@@ -3,8 +3,8 @@
 ## Development Setup
 
 ```bash
-git clone https://github.com/your-org/pearl
-cd pearl
+git clone https://github.com/r33n3/PeaRL
+cd PeaRL
 pip install -e ".[dev]"
 docker compose up -d postgres redis minio
 ```
@@ -12,7 +12,7 @@ docker compose up -d postgres redis minio
 Run the API in local mode (SQLite, no external services needed for most work):
 
 ```bash
-PEARL_LOCAL=1 uvicorn pearl.main:app --reload --port 8081
+PEARL_LOCAL=1 uvicorn pearl.main:app --reload --port 8080
 ```
 
 Run tests:

@@ -34,7 +34,7 @@ See [`docs/dark-factory-governance.md`](docs/dark-factory-governance.md) for the
   AI Agents                    PeaRL (governance plane)              Data
   (Claude Code,                ┌──────────────────────────────┐
    deepagents,   ─── LiteLLM ─▶│  FastAPI + SQLAlchemy async   │──▶  PostgreSQL
-   custom runners)  MCP proxy  │  55 MCP governance tools      │──▶  Redis
+   custom runners)  MCP proxy  │  MCP governance tools         │──▶  Redis
                                │  JWT / API key auth (RBAC)    │──▶  MinIO / S3
   Human Reviewers ────────────▶│  Allowance profiles (3-layer) │
   (final authority)            │  Promotion gates              │
@@ -56,7 +56,7 @@ See [`docs/dark-factory-governance.md`](docs/dark-factory-governance.md) for the
 
 - **API** (`src/pearl/`) — FastAPI service with JWT/API key auth, RBAC, reviewer-gated governance endpoints
 - **Workers** — deterministic background jobs only. No model calls.
-- **MCP Server** — 55 PeaRL governance tools exposed via LiteLLM proxy (tool prefix: `PeaRL-pearl_*`)
+- **MCP Server** — PeaRL governance tools exposed via LiteLLM proxy (tool prefix: `PeaRL-pearl_*`)
 - **Frontend** (`frontend/`) — React + TypeScript dashboard
 - **Allowance Profiles** — 3-layer pre-tool enforcement: baseline, environment tier, task packet
 - **Promotion Gates** — evidence-based gate rules with trust accumulation and behavioral drift detection
@@ -129,7 +129,7 @@ The bootstrap admin account is seeded on first startup with all four roles: `adm
 
 ## MCP Integration
 
-Agents connect to PeaRL via a LiteLLM MCP proxy. All 55 governance tools are exposed under the prefix `PeaRL-pearl_*`.
+Agents connect to PeaRL via a LiteLLM MCP proxy. Governance tools are exposed under the prefix `PeaRL-pearl_*`.
 
 Example tool names: `PeaRL-pearl_allowance_check`, `PeaRL-pearl_request_approval`, `PeaRL-pearl_evaluate_promotion`, `PeaRL-pearl_register_agent_for_stage`.
 

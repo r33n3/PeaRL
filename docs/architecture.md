@@ -205,7 +205,7 @@ Agents receive 403 on `/decide` — this is the intended control. Routing around
 
 ### Transport and Naming
 
-PeaRL exposes **55 tools** via MCP at `POST /api/v1/mcp`. The MCP server is in `src/pearl_dev/unified_mcp.py`; tool schemas are in `src/pearl/mcp/tools.py`.
+PeaRL exposes MCP governance tools via `POST /api/v1/mcp`. The MCP server is in `src/pearl_dev/unified_mcp.py`; tool schemas are in `src/pearl/mcp/tools.py`.
 
 All tool names carry the `pearl_` prefix so agents can unambiguously distinguish PeaRL tools when multiple MCP servers are loaded.
 
@@ -428,7 +428,7 @@ Kubernetes manifests are in `deploy/k8s/` (deployment, service, ingress, HPA, co
 | `src/pearl/workers/registry.py` | Job type → worker class mapping |
 | `src/pearl/workers/scheduler.py` | Periodic scan scheduler (Redis distributed lock, 60s) |
 | `src/pearl/api/routes/stream.py` | SSE real-time events |
-| `src/pearl/mcp/tools.py` | MCP tool schema definitions (55 tools) |
+| `src/pearl/mcp/tools.py` | MCP tool schema definitions |
 | `src/pearl_dev/unified_mcp.py` | MCP server — handles `/api/v1/mcp` |
 | `src/pearl/security/anomaly_detector.py` | Post-response AGP-01–05 behavioral anomaly detection |
 | `src/pearl/db/migrations/versions/` | Alembic migration files (001–011) |
