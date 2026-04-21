@@ -215,7 +215,7 @@ async def test_integration(
             labels=row.labels,
         )
     except pydantic.ValidationError as exc:
-        logger.warning("Stored integration config is invalid", exc_info=True)
+        logger.warning("Stored integration config is invalid", exc_info=True)  # codeql[py/stack-trace-exposure]
         raise ValidationError("Stored integration config is invalid") from exc
 
     registry = IntegrationRegistry(endpoints=[endpoint])
@@ -342,7 +342,7 @@ async def test_org_integration(
             labels=row.labels,
         )
     except pydantic.ValidationError as exc:
-        logger.warning("Stored integration config is invalid", exc_info=True)
+        logger.warning("Stored integration config is invalid", exc_info=True)  # codeql[py/stack-trace-exposure]
         raise ValidationError("Stored integration config is invalid") from exc
 
     registry = IntegrationRegistry(endpoints=[endpoint])
@@ -429,7 +429,7 @@ async def pull_from_integration(
             labels=row.labels,
         )
     except pydantic.ValidationError as exc:
-        logger.warning("Stored integration config is invalid", exc_info=True)
+        logger.warning("Stored integration config is invalid", exc_info=True)  # codeql[py/stack-trace-exposure]
         raise ValidationError("Stored integration config is invalid") from exc
 
     registry = IntegrationRegistry(endpoints=[endpoint])

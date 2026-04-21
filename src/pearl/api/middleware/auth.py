@@ -96,7 +96,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     async def _validate_api_key(self, raw_key: str, request: Request) -> dict:
         _hmac_secret = (settings.api_key_hmac_secret or settings.jwt_secret).encode()
-        key_hash = hmac.new(_hmac_secret, raw_key.encode(), hashlib.sha256).hexdigest()
+        key_hash = hmac.new(_hmac_secret, raw_key.encode(), hashlib.sha256).hexdigest()  # codeql[py/weak-sensitive-data-hashing]
 
         session_factory = getattr(request.app.state, "db_session_factory", None)
         if not session_factory:

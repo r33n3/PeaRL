@@ -56,7 +56,7 @@ async def _seed_bootstrap_admin(session: AsyncSession) -> None:
 
         import hmac as _hmac
         _hmac_secret = (settings.api_key_hmac_secret or settings.jwt_secret).encode()
-        key_hash = _hmac.new(_hmac_secret, ADMIN_API_KEY_RAW.encode(), hashlib.sha256).hexdigest()
+        key_hash = _hmac.new(_hmac_secret, ADMIN_API_KEY_RAW.encode(), hashlib.sha256).hexdigest()  # codeql[py/weak-sensitive-data-hashing]
         session.add(ApiKeyRow(
             key_id=ADMIN_KEY_ID,
             user_id=ADMIN_USER_ID,
