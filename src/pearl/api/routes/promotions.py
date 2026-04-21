@@ -175,7 +175,11 @@ async def request_promotion(
     _proj = await _ProjRepo(db).get(project_id)
     if not _proj:
         raise ValidationError(f"Project '{project_id}' not found")
-    _current = _proj.current_environment or "pilot"
+    _current = _proj.current_environment
+    if not _current:
+        from pearl.repositories.environment_profile_repo import EnvironmentProfileRepository as _EnvProfileRepo
+        _ep = await _EnvProfileRepo(db).get_by_project(project_id)
+        _current = _ep.environment if _ep else "pilot"
     _requested_target = body.target_environment if body else None
     _expected_target = await _next_env(_current, db)
     if _expected_target is None:

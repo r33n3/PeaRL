@@ -89,7 +89,7 @@ async def evaluate_promotion(
         if not current_env:
             env_repo = EnvironmentProfileRepository(session)
             env_profile = await env_repo.get_by_project(project_id)
-            current_env = env_profile.environment if env_profile else "sandbox"
+            current_env = env_profile.environment if env_profile else "pilot"
 
     # Determine target
     if not target_environment:

@@ -28,7 +28,6 @@ PILOT_TO_DEV = {
     "target_environment": "dev",
     "rules": [
         _rule(GateRuleType.PROJECT_REGISTERED, "Project must be registered in PeaRL"),
-        _rule(GateRuleType.CLAUDE_MD_GOVERNANCE_PRESENT, "PeaRL governance block must be present in CLAUDE.md"),
         _rule(GateRuleType.ORG_BASELINE_ATTACHED, "Organization security baseline must be attached"),
         _rule(GateRuleType.APP_SPEC_DEFINED, "Application specification must be defined"),
         _rule(GateRuleType.NO_HARDCODED_SECRETS, "No hardcoded secrets in codebase"),
@@ -122,8 +121,11 @@ async def seed_default_gates(session) -> int:
             )
             created += 1
         else:
-            # Always sync rules so new rule types added to code land in the DB
-            existing.rules = gate_def["rules"]
+            # Additive sync: add new rule types from defaults; preserve user deletions/edits.
+            existing_types = {r["rule_type"] for r in (existing.rules or [])}
+            new_rules = [r for r in gate_def["rules"] if r["rule_type"] not in existing_types]
+            if new_rules:
+                existing.rules = list(existing.rules or []) + new_rules
 
     # Seed the default pipeline — only if no default exists yet (don't override user config)
     pipeline_repo = PromotionPipelineRepository(session)

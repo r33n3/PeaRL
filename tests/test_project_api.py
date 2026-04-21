@@ -113,7 +113,7 @@ async def test_upsert_environment_profile(client):
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["profile_id"] == "envp_preprod_supervised_high"
+    assert body["profile_id"] == "envp_pilot_supervised_minimal"
     assert body["autonomy_mode"] == "supervised_autonomous"
 
 

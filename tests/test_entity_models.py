@@ -59,10 +59,10 @@ class TestEnvironmentProfileModel:
         from pearl.models.environment_profile import EnvironmentProfile
         data = load_example("project/environment-profile.request.json")
         model = EnvironmentProfile.model_validate(data)
-        assert model.profile_id == "envp_preprod_supervised_high"
-        assert model.environment == "preprod"
+        assert model.profile_id == "envp_pilot_supervised_minimal"
+        assert model.environment == "pilot"
         assert model.autonomy_mode == "supervised_autonomous"
-        assert model.approval_level == "high"
+        assert model.approval_level == "minimal"
 
 
 class TestCompiledContextPackageModel:

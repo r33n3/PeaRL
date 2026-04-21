@@ -128,7 +128,7 @@ async def test_agent_brief_current_stage_default(client):
     pid = await _create_project(client, "proj_brief_stage_default")
     r = await client.get(f"/api/v1/projects/{pid}/promotions/agent-brief")
     data = r.json()
-    assert data["current_stage"] == "sandbox"
+    assert data["current_stage"] == "pilot"
 
 
 @pytest.mark.asyncio

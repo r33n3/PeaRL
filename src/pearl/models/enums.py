@@ -5,6 +5,7 @@ from enum import StrEnum
 
 class Environment(StrEnum):
     SANDBOX = "sandbox"
+    PILOT = "pilot"
     DEV = "dev"
     PREPROD = "preprod"
     PROD = "prod"

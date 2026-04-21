@@ -88,6 +88,8 @@ async def _setup_full_project(client, project_id: str, ai_enabled: bool = False)
     await client.post(f"/api/v1/projects/{project_id}/app-spec", json=spec)
 
     profile = load_example("project/environment-profile.request.json")
+    profile["environment"] = "pilot"
+    profile["delivery_stage"] = "pilot"
     await client.post(f"/api/v1/projects/{project_id}/environment-profile", json=profile)
 
     return project_id
@@ -153,6 +155,8 @@ async def test_failed_rule_creates_task_packet(client, db_session):
     await client.post(f"/api/v1/projects/{pid}/app-spec", json=spec)
 
     profile = load_example("project/environment-profile.request.json")
+    profile["environment"] = "pilot"
+    profile["delivery_stage"] = "pilot"
     await client.post(f"/api/v1/projects/{pid}/environment-profile", json=profile)
 
     r = await client.post(f"/api/v1/projects/{pid}/promotions/evaluate")
@@ -184,6 +188,8 @@ async def test_second_evaluation_no_duplicate_task_packets(client, db_session):
     await client.post(f"/api/v1/projects/{pid}/app-spec", json=spec)
 
     profile = load_example("project/environment-profile.request.json")
+    profile["environment"] = "pilot"
+    profile["delivery_stage"] = "pilot"
     await client.post(f"/api/v1/projects/{pid}/environment-profile", json=profile)
 
     # First evaluation

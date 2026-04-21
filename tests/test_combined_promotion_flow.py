@@ -37,6 +37,8 @@ async def test_full_promotion_lifecycle(client):
     await client.post(f"/api/v1/projects/{pid}/app-spec", json=spec)
 
     profile = load_example("project/environment-profile.request.json")
+    profile["environment"] = "pilot"
+    profile["delivery_stage"] = "pilot"
     await client.post(f"/api/v1/projects/{pid}/environment-profile", json=profile)
 
     # 3. Compile context
@@ -150,6 +152,8 @@ async def test_promotion_with_findings_blocks(client):
     await client.post(f"/api/v1/projects/{pid}/app-spec", json=spec)
 
     profile = load_example("project/environment-profile.request.json")
+    profile["environment"] = "dev"
+    profile["delivery_stage"] = "hardening"
     await client.post(f"/api/v1/projects/{pid}/environment-profile", json=profile)
 
     compile_req = load_example("compile/compile-context.request.json")
@@ -193,6 +197,8 @@ async def test_release_readiness_enhanced(client):
     await client.post(f"/api/v1/projects/{pid}/app-spec", json=spec)
 
     profile = load_example("project/environment-profile.request.json")
+    profile["environment"] = "pilot"
+    profile["delivery_stage"] = "pilot"
     await client.post(f"/api/v1/projects/{pid}/environment-profile", json=profile)
 
     compile_req = load_example("compile/compile-context.request.json")

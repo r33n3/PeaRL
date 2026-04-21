@@ -28,6 +28,8 @@ async def _setup_project(client, project_id="proj_gate_test", ai_enabled=True):
     await client.post(f"/api/v1/projects/{project_id}/app-spec", json=spec)
 
     profile = load_example("project/environment-profile.request.json")
+    profile["environment"] = "pilot"
+    profile["delivery_stage"] = "pilot"
     await client.post(f"/api/v1/projects/{project_id}/environment-profile", json=profile)
 
     compile_req = load_example("compile/compile-context.request.json")
@@ -77,6 +79,8 @@ async def test_missing_baseline_fails_rule(client):
     await client.post("/api/v1/projects/proj_no_baseline/app-spec", json=spec)
 
     profile = load_example("project/environment-profile.request.json")
+    profile["environment"] = "pilot"
+    profile["delivery_stage"] = "pilot"
     await client.post("/api/v1/projects/proj_no_baseline/environment-profile", json=profile)
 
     r = await client.post("/api/v1/projects/proj_no_baseline/promotions/evaluate")
@@ -179,11 +183,10 @@ async def test_list_default_gates(client):
     r = await client.get("/api/v1/promotions/gates")
     assert r.status_code == 200
     gates = r.json()
-    assert len(gates) == 3
+    assert len(gates) == 2
     gate_ids = {g["gate_id"] for g in gates}
-    assert "gate_sandbox_to_dev" in gate_ids
-    assert "gate_dev_to_preprod" in gate_ids
-    assert "gate_preprod_to_prod" in gate_ids
+    assert "gate_5730ef26ca8c46e9" in gate_ids  # pilot → dev
+    assert "gate_ce6c49cb2a3d48bf" in gate_ids  # dev → prod
 
 
 @pytest.mark.asyncio
@@ -191,9 +194,8 @@ async def test_default_gate_rule_counts(client):
     """Default gates have the correct number of rules."""
     r = await client.get("/api/v1/promotions/gates")
     gates = {g["gate_id"]: g for g in r.json()}
-    assert gates["gate_sandbox_to_dev"]["rule_count"] == 11
-    assert gates["gate_dev_to_preprod"]["rule_count"] == 28
-    assert gates["gate_preprod_to_prod"]["rule_count"] == 32
+    assert gates["gate_5730ef26ca8c46e9"]["rule_count"] == 8   # pilot → dev
+    assert gates["gate_ce6c49cb2a3d48bf"]["rule_count"] == 25  # dev → prod
 
 
 # ---------------------------------------------------------------------------
