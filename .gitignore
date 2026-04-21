@@ -68,6 +68,13 @@ sprint-progress.md
 decisions.md
 launch-worktrees.sh
 
+# Internal AI assistant planning/spec artifacts
+docs/superpowers/
+AGENTS.md
+ROADMAP.md
+SPEC-DARK-FACTORY.md
+CLAUDE-security-hardening.md
+
 # Local dev / machine-specific docs
 local_network.md
 

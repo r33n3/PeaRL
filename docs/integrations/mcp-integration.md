@@ -1,48 +1,53 @@
-# LiteLLM MCP Adapter Integration
+# PeaRL MCP Integration
 
-PeaRL exposes 55 governance tools via the Model Context Protocol (MCP). Agent teams do not call PeaRL's REST API directly. Instead, LiteLLM acts as the enforcement and audit layer between agent code and PeaRL — centralizing auth, spend controls, and access scoping so that individual agent teams never hold raw PeaRL credentials.
-
----
-
-## Why This Model
-
-- **Single credential boundary.** Agent teams hold LiteLLM virtual keys, not PeaRL API keys. Revoking a virtual key immediately kills all PeaRL tool access for that team without touching PeaRL's own key store.
-- **Spend and rate-limit enforcement.** LiteLLM enforces per-team token budgets before requests reach PeaRL.
-- **Audit trail.** LiteLLM logs every tool invocation (team, timestamp, arguments) independently of PeaRL's own audit log, giving a second attestation point.
-- **Tool discovery.** Agents enumerate tools through LiteLLM's `/mcp/tools/list` endpoint — PeaRL's internal endpoint is not exposed to the agent network.
+PeaRL is a standard MCP server. Any MCP-capable client — Claude Code, Cursor, Windsurf, custom agent runtimes, or a LiteLLM proxy — can connect to it directly using HTTP+SSE transport. No intermediary is required.
 
 ---
 
-## Architecture
+## Connecting Directly
 
-```
-Agent code
-    |
-    | POST /mcp/tools/call  (LiteLLM virtual key)
-    v
-LiteLLM proxy  (localhost:4000)
-    |  .mcp.json resolves "PeaRL" server
-    |  X-API-Key forwarded to PeaRL
-    v
-PeaRL MCP endpoint  (http://pearl-api:8080/api/v1/mcp)
-    |  HTTP + SSE transport
-    v
-PeaRL API  (FastAPI)
-    |
-    v
-PostgreSQL
+PeaRL's MCP endpoint runs at `/api/v1/mcp` on the API server.
+
+**Claude Code or any MCP client — `.mcp.json`:**
+```json
+{
+  "mcpServers": {
+    "PeaRL": {
+      "url": "http://localhost:8080/api/v1/mcp",
+      "transport": "http",
+      "headers": {
+        "X-API-Key": "<your-pearl-api-key>"
+      }
+    }
+  }
+}
 ```
 
-LiteLLM reads `.mcp.json` from the working directory and registers PeaRL as a named MCP server. Agents never need to know the PeaRL endpoint URL.
+Tools are available immediately. The server name you choose (`PeaRL` above) determines the tool prefix your client uses (e.g., `PeaRL-pearl_evaluate_promotion`).
 
 ---
 
-## Setup
+## Auth
 
-### 1. LiteLLM `.mcp.json`
+All requests require an `X-API-Key` header. API keys are created via `POST /api/v1/users/me/api-keys` or via the dashboard.
 
-Place this file in the LiteLLM working directory. LiteLLM auto-resolves it on startup.
+| Role | Can do |
+|------|--------|
+| `viewer` | Read-only: projects, findings, evaluations |
+| `operator` | Submit findings, register workloads, request approvals |
+| `service_account` | All operator actions; intended for agent runtime keys |
+| `reviewer` | Decide approvals and exceptions (human-only endpoints) |
+| `admin` | Full access including rollback and user management |
 
+Agents should use `service_account` keys. Reviewer endpoints (`/approvals/{id}/decide`, `/exceptions/{id}/decide`) return 403 for any non-reviewer key — this is intentional governance behavior, not a misconfiguration.
+
+---
+
+## Using LiteLLM as a Proxy (Optional)
+
+LiteLLM can sit between agents and PeaRL when you need per-team spend controls, virtual key management, or a centralized audit trail independent of PeaRL's own logs.
+
+**LiteLLM `.mcp.json`:**
 ```json
 {
   "mcpServers": {
@@ -54,38 +59,22 @@ Place this file in the LiteLLM working directory. LiteLLM auto-resolves it on st
 }
 ```
 
-LiteLLM will pass the agent team's virtual key to PeaRL as `X-API-Key` on every forwarded request. No additional auth wiring is required in agent code.
+Agents call LiteLLM at `POST localhost:4000/mcp/tools/call` with tool name `PeaRL-pearl_*`. LiteLLM forwards to PeaRL with the service account key. Agent teams hold LiteLLM virtual keys only — revoking a virtual key immediately blocks all PeaRL access for that team.
 
-### 2. Provision a PeaRL API Key for LiteLLM
+This pattern is useful for multi-team deployments with per-team spend enforcement and independent audit. It is not required for single-team or direct-client use.
 
-LiteLLM needs a PeaRL service account key with sufficient scope to forward requests on behalf of agent teams. Create it via the PeaRL API (admin credentials required):
+### Setup
+
+Provision a PeaRL service account key for LiteLLM to use when forwarding requests:
 
 ```bash
-curl -X POST http://pearl-api:8080/api/v1/api-keys \
-  -H "Authorization: Bearer <admin-token>" \
+curl -X POST http://pearl-api:8080/api/v1/users/me/api-keys \
+  -H "X-API-Key: <admin-key>" \
   -H "Content-Type: application/json" \
-  -d '{
-    "name": "litellm-proxy",
-    "roles": ["service_account"],
-    "scopes": ["mcp:*"]
-  }'
+  -d '{"name": "litellm-proxy", "roles": ["service_account"]}'
 ```
 
-Set the returned key as `PEARL_API_KEY` in LiteLLM's environment.
-
-### 3. Provision LiteLLM Virtual Keys for Agent Teams
-
-Each agent team gets a LiteLLM virtual key. Scope restrictions here are enforced before the request reaches PeaRL.
-
-```bash
-# Example: provision a key for the WTK agent team
-litellm --create-virtual-key \
-  --alias "wtk-agents" \
-  --max-budget 10.00 \
-  --allowed-mcp-tools "PeaRL-pearl_evaluate_promotion,PeaRL-pearl_register_agent_for_stage,PeaRL-pearl_list_gates,PeaRL-pearl_get_task_packet,PeaRL-pearl_request_approval"
-```
-
-Agents use the virtual key as a Bearer token against LiteLLM — they never see the underlying PeaRL key.
+Set the returned key as `PEARL_API_KEY` in LiteLLM's environment. Each agent team then gets a LiteLLM virtual key with scoped tool access — they never hold a PeaRL key directly.
 
 ---
 
@@ -145,7 +134,7 @@ PeaRL owns the pipeline definition. Agents must not maintain a local list of sta
 {
   "name": "PeaRL-pearl_evaluate_promotion",
   "arguments": {
-    "project_id": "proj_wtk"
+    "project_id": "proj_myapp001"
   }
 }
 ```
@@ -154,7 +143,7 @@ PeaRL owns the pipeline definition. Agents must not maintain a local list of sta
 
 ```json
 {
-  "project_id": "proj_wtk",
+  "project_id": "proj_myapp001",
   "source_environment": "pilot",
   "target_environment": "dev",
   "status": "blocked",
@@ -182,8 +171,8 @@ Before participating in a factory run, an agent registers itself for the relevan
 {
   "name": "PeaRL-pearl_register_agent_for_stage",
   "arguments": {
-    "project_id": "proj_wtk",
-    "agent_id": "agent_wtk_builder_01",
+    "project_id": "proj_myapp001",
+    "agent_id": "agent_coordinator_01",
     "stage": "pilot",
     "capabilities": ["build", "test", "lint"]
   }
@@ -195,8 +184,8 @@ Before participating in a factory run, an agent registers itself for the relevan
 ```json
 {
   "registration_id": "reg_xyz789",
-  "agent_id": "agent_wtk_builder_01",
-  "project_id": "proj_wtk",
+  "agent_id": "agent_coordinator_01",
+  "project_id": "proj_myapp001",
   "stage": "pilot",
   "status": "active",
   "registered_at": "2026-04-21T10:00:00Z"
@@ -213,7 +202,7 @@ List all gates for a project to understand what conditions must pass before prom
 {
   "name": "PeaRL-pearl_list_gates",
   "arguments": {
-    "project_id": "proj_wtk"
+    "project_id": "proj_myapp001"
   }
 }
 ```
@@ -251,7 +240,7 @@ To request human approval for a blocked gate:
 {
   "name": "PeaRL-pearl_request_approval",
   "arguments": {
-    "project_id": "proj_wtk",
+    "project_id": "proj_myapp001",
     "request_type": "deployment_gate",
     "environment": "pilot",
     "request_data": {
@@ -274,7 +263,7 @@ Submit a factory run report at the end of a session to record outcomes, findings
 {
   "name": "PeaRL-pearl_submit_frun_report",
   "arguments": {
-    "project_id": "proj_wtk",
+    "project_id": "proj_myapp001",
     "frun_id": "frun_2026042101",
     "session_id": "sess_wtk_builder_01_abc",
     "stage": "pilot",
@@ -293,7 +282,7 @@ Submit a factory run report at the end of a session to record outcomes, findings
 ```json
 {
   "report_id": "rpt_pqr901",
-  "project_id": "proj_wtk",
+  "project_id": "proj_myapp001",
   "frun_id": "frun_2026042101",
   "status": "accepted",
   "created_at": "2026-04-21T10:02:22Z"
@@ -310,7 +299,7 @@ Every LiteLLM virtual key maps to a set of allowed PeaRL tools. Revoking the key
 
 ```bash
 # Revoke a team's access
-litellm --delete-virtual-key --alias "wtk-agents"
+litellm --delete-virtual-key --alias "my-agent-team"
 ```
 
 All subsequent tool calls from that team return `401 Unauthorized` from LiteLLM before reaching PeaRL.

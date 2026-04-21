@@ -135,7 +135,7 @@ Example tool names: `PeaRL-pearl_allowance_check`, `PeaRL-pearl_request_approval
 
 To wire an agent manually, point its MCP config at the LiteLLM proxy that has PeaRL registered as a tool server. The proxy handles authentication and tool routing.
 
-See [`docs/integrations/litellm-mcp-adapter.md`](docs/integrations/litellm-mcp-adapter.md) for configuration details, tool listing, and example payloads.
+See [`docs/integrations/mcp-integration.md`](docs/integrations/mcp-integration.md) for configuration details, tool listing, and example payloads.
 
 ---
 
@@ -152,7 +152,7 @@ Agents register for a stage, receive a task packet, execute within their allowan
 | [`docs/architecture.md`](docs/architecture.md) | Full system architecture and data flows |
 | [`docs/agent-lifecycle.md`](docs/agent-lifecycle.md) | Agent lifecycle, phases, and gate transitions |
 | [`docs/dark-factory-governance.md`](docs/dark-factory-governance.md) | Dark factory architecture and governance model |
-| [`docs/integrations/litellm-mcp-adapter.md`](docs/integrations/litellm-mcp-adapter.md) | LiteLLM MCP adapter configuration and tool reference |
+| [`docs/integrations/mcp-integration.md`](docs/integrations/mcp-integration.md) | MCP integration — direct and LiteLLM proxy patterns |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Development workflow and conventions |
 | [`CLAUDE.md`](CLAUDE.md) | AI agent constraints enforced by the platform |
 
