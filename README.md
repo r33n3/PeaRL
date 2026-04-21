@@ -1,78 +1,95 @@
-# PeaRL — Model-Free Governance Platform for the Secure Agent Dark Factory
+# PeaRL — Policy-Enforced Autonomous Risk Layer
 
-**v1.1.0** | The deterministic, human-in-the-loop control plane for AI agent promotion, autonomy elevation, and deployment governance.
-
-PeaRL is the governance authority of the Secure Agent Dark Factory. It enforces promotion gates, approval workflows, allowance profiles, and audit controls over AI agents — without making model calls. Trust adjudication belongs to MASS 2.0. Final authority belongs to human reviewers. PeaRL owns everything in between.
+**v1.1.0** | Model-free governance control plane for AI agent deployments.
 
 ---
 
-## What PeaRL Does
+## What PeaRL Is
 
-```
-Secure Agent Dark Factory
-─────────────────────────────────────────────────────────────────────
+PeaRL is a deterministic, model-free control plane that enforces governance over AI agent teams. It manages promotion gates, approval workflows, allowance profiles, workload registration, and audit controls — without making model calls. Every gate evaluation, trust verdict lookup, and allowance check is deterministic computation. This is a design property, not a limitation: it makes PeaRL auditable in a way that a model-based control plane cannot be.
 
-  AI Agents            PeaRL (governance plane)       MASS 2.0
-  (Claude Code,   ──▶  ┌──────────────────────────┐   (trust plane)
-   deepagents,         │  Allowance profiles        │
-   custom runners)     │  Execution phase tracking  │ ──▶ Trust review
-                       │  Promotion gates           │     requests
-  Human Reviewers ──▶  │  Approval workflows        │ ◀── Trust verdicts
-  (final authority)    │  Workload registry         │
-                       │  Behavioral drift signals  │
-                       │  Server-authoritative audit│
-                       └──────────────────────────┘
-                              model-free · deterministic · auditable
-```
+Final authority on all governance decisions belongs to human reviewers. Agents that attempt to approve or decide their own requests receive a 403. Gates route decisions to humans — routing around a gate is never the correct response.
 
-**PeaRL never makes model calls.** Every gate check, approval decision, and promotion evaluation is deterministic. This is the design — it makes PeaRL auditable in a way that a model-based control plane cannot be.
+PeaRL supports two deployment tracks that reflect where the industry is today and where it is going.
+
+---
+
+## Two Deployment Tracks
+
+### Secure Agent Factories (today)
+
+Agent teams operate under human governance at defined checkpoints. Agents call PeaRL via LiteLLM MCP tools, execute tasks within their allowance profiles, and trigger gate evaluations at stage transitions. Human reviewers approve or reject gate decisions. This is the current production model.
+
+### Secure Dark Agent Factories (aspirational)
+
+Fully autonomous lights-out factories where no human is present in the loop for routine operations. PeaRL provides the kill switches, governance bounds, allowance profiles, and behavioral drift detection that make such a factory possible. Agents still receive 403 on decide endpoints. Kill switches and rollback authority remain with humans. This track is a design target, not a current deployment mode.
+
+See [`docs/dark-factory-governance.md`](docs/dark-factory-governance.md) for the dark factory architecture and governance model.
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────┐    ┌──────────────────────┐    ┌──────────────┐
-│  AI Agents      │───▶│  PeaRL API (FastAPI)  │───▶│  PostgreSQL  │
-│  (MCP / SDK)    │    │  50 MCP tools         │    │  + Redis     │
-└─────────────────┘    │  JWT / API key auth   │    └──────────────┘
-                       │  RBAC + reviewer gates│
-┌─────────────────┐    │  Allowance profiles   │    ┌──────────────┐
-│  Dashboard      │───▶│  Promotion gates      │───▶│  MinIO / S3  │
-│  (React)        │    │  Trust verdict store  │    │  (reports)   │
-└─────────────────┘    └──────────┬────────────┘    └──────────────┘
-                                  │
-                       ┌──────────▼────────────┐
-                       │  Background Workers    │
-                       │  (model-free only)     │
-                       └───────────────────────┘
+  AI Agents                    PeaRL (governance plane)              Data
+  (Claude Code,                ┌──────────────────────────────┐
+   deepagents,   ─── LiteLLM ─▶│  FastAPI + SQLAlchemy async   │──▶  PostgreSQL
+   custom runners)  MCP proxy  │  55 MCP governance tools      │──▶  Redis
+                               │  JWT / API key auth (RBAC)    │──▶  MinIO / S3
+  Human Reviewers ────────────▶│  Allowance profiles (3-layer) │
+  (final authority)            │  Promotion gates              │
+                               │  Workload registry            │      MASS 2.0
+                               │  Behavioral drift signals     │──▶  (trust plane)
+  Dashboard                    │  Factory run summaries        │◀──  (verdicts)
+  (React + TypeScript) ───────▶│  Server-authoritative audit   │
+                               └──────────────────────────────┘
+                                  model-free · deterministic · auditable
+
+  Background Workers (model-free only)
+  ┌────────────────────────────────────────────────────────┐
+  │  compile_context · scan_source · normalize_findings    │
+  │  generate_remediation_spec · report · mass_scan        │
+  └────────────────────────────────────────────────────────┘
 ```
 
 **Key components:**
+
 - **API** (`src/pearl/`) — FastAPI service with JWT/API key auth, RBAC, reviewer-gated governance endpoints
-- **Workers** — deterministic background jobs: compile context, scan, normalize findings, remediation spec, report. No model calls.
-- **MCP Server** — 50 PeaRL governance tools for Claude Code and other AI agents
-- **Frontend** (`frontend/`) — React + TypeScript dashboard (14 pages)
-- **Allowance Profiles** — 3-layer pre-tool enforcement (baseline → environment tier → task packet)
+- **Workers** — deterministic background jobs only. No model calls.
+- **MCP Server** — 55 PeaRL governance tools exposed via LiteLLM proxy (tool prefix: `PeaRL-pearl_*`)
+- **Frontend** (`frontend/`) — React + TypeScript dashboard
+- **Allowance Profiles** — 3-layer pre-tool enforcement: baseline, environment tier, task packet
 - **Promotion Gates** — evidence-based gate rules with trust accumulation and behavioral drift detection
-- **Trust Verdict Store** — MASS 2.0 trust review artifacts, queryable by project/environment/freshness
+- **Workload Registry** — active agent instance tracking via SPIRE SVID
+- **Factory Run Summaries** — aggregated per-run telemetry materialized at workload deregister
+- **Trust Verdict Store** — MASS 2.0 artifacts, queryable by project, environment, and freshness
 - **Audit Trail** — server-authoritative HMAC-signed records, immutable
+
+---
+
+## What PeaRL Does
+
+- Enforces promotion gates between pipeline stages (`pilot → dev → prod`) with configurable gate rules
+- Runs pre-tool allowance checks against 3-layer agent profiles in under 50ms
+- Tracks active agent workloads (register, heartbeat, deregister) and materializes factory run summaries
+- Ingests MASS 2.0 trust verdicts and gates promotions on verdict freshness and acceptability
+- Accumulates trust scores across promotion gate evaluations
+- Routes gate decisions to human reviewers via approval workflow; agents receive 403 on decide endpoints
+- Enforces OWASP LLM Top 10, NHI (5 rules), Agent Governance (4 rules), and Supply Chain gate rules
+- Provides a server-authoritative, HMAC-signed audit trail with no update or delete endpoints
+- Streams real-time governance events via SSE
+- Exposes all governance operations as MCP tools via LiteLLM proxy
 
 ---
 
 ## Quickstart
 
-### Prerequisites
-- Docker Desktop with WSL 2 integration enabled (Settings → Resources → WSL Integration)
-- Python 3.12+ and Node 20+ only needed for [local dev mode](#local-dev-mode-no-docker)
-
----
-
-### Option A — Full stack (Docker Compose, recommended)
+**Prerequisites:** Docker Desktop with WSL 2 integration enabled.
 
 ```bash
-git clone https://github.com/your-org/pearl
-cd pearl
+git clone https://github.com/r33n3/PeaRL
+cd PeaRL
+cp .env.example .env
 docker compose up --build
 ```
 
@@ -80,219 +97,84 @@ docker compose up --build
 |---|---|
 | Dashboard | http://localhost:5177 |
 | API | http://localhost:8080/api/v1 |
+| Health | http://localhost:8080/api/v1/health/ready |
 | MinIO console | http://localhost:9001 |
 
 **Bootstrap credentials**
-- Login: `admin@pearl.dev` / `PeaRL-admin-2026`
-- API key: `pearl-KYQXqnybaMaul7PoKJLsT4PZpZSFj0FIaVE2IPrQJNk`
 
-The bootstrap admin user is seeded automatically on first startup. The admin account has all four roles: `admin`, `reviewer`, `operator`, `viewer`.
-
-> **Note:** The Postgres volume starts empty. Create your first project via the dashboard or the [Your First Project](#your-first-project) flow below.
-
----
-
-### Option B — Local dev mode (no Docker)
-
-Uses SQLite in-memory — no external services needed.
-
-```bash
-pip install -e ".[dev]"
-
-# Terminal 1: API
-PEARL_LOCAL=1 uvicorn pearl.main:app --reload --port 8081
-
-# Terminal 2: Frontend
-cd frontend && npm install && npm run dev
-```
-
-Open http://localhost:5173. Auth is bypassed (operator role). Use `PEARL_LOCAL_REVIEWER=1` to add reviewer role (human reviewers only — do not set on an agent's behalf).
-
----
-
-## Your First Project
-
-### 1. Register the project
-
-Via the dashboard or curl:
-
-```bash
-curl -s -X POST http://localhost:8080/api/v1/projects \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: pearl-KYQXqnybaMaul7PoKJLsT4PZpZSFj0FIaVE2IPrQJNk" \
-  -d '{
-    "project_id": "proj_myapp001",
-    "name": "My First Project",
-    "owner_team": "Engineering",
-    "business_criticality": "high",
-    "external_exposure": "public",
-    "ai_enabled": true,
-    "schema_version": "1.1"
-  }'
-```
-
-### 2. Download the launcher (Windows + WSL)
-
-```bash
-curl -s http://localhost:8080/api/v1/onboarding/setup | python3 -c \
-  "import sys,json; print(json.load(sys.stdin)['bat_file'])" \
-  > "Claude Code.bat"
-```
-
-Save `Claude Code.bat` somewhere convenient. On each run it:
-1. Opens a folder browser — select your project folder
-2. Writes `.mcp.json` into that folder (wires PeaRL MCP into Claude Code)
-3. If `.pearl.yaml` exists, silently auto-registers the project with PeaRL
-4. If no `.pearl.yaml` yet, prompts first-session registration via MCP
-5. Launches `claude` in that folder
-
-### 3. Get the project config files
-
-```bash
-PROJECT=proj_myapp001
-API=http://localhost:8080/api/v1
-KEY="pearl-KYQXqnybaMaul7PoKJLsT4PZpZSFj0FIaVE2IPrQJNk"
-
-curl -s "$API/projects/$PROJECT/pearl.yaml" -H "X-API-Key: $KEY" > .pearl.yaml
-curl -s "$API/projects/$PROJECT/mcp.json"  -H "X-API-Key: $KEY" > .mcp.json
-```
-
-- `.pearl.yaml` — project identity + branch→environment mapping (commit this)
-- `.mcp.json` — MCP server config pointing Claude Code at PeaRL (gitignore or commit per team)
-
-### 4. Open the project in Claude Code
-
-Double-click `Claude Code.bat`, select your project folder. All 50 PeaRL MCP tools are available.
-
-Key tools from the first prompt:
-- `pearl_allowance_check` — pre-tool enforcement against agent allowance profile
-- `pearl_get_project` — load project context and governance rules
-- `pearl_submit_findings` — report security/compliance findings
-- `pearl_request_approval` — gate a decision through a human reviewer
-- `pearl_evaluate_promotion` — check if code is ready to promote to the next environment
-
-### 5. Monitor on the dashboard
-
-- **Projects** — gate status, promotion history, trust verdicts
-- **Clearances** — pending approval requests from agents
-- **Workloads** — live agent sessions registered via SPIRE SVID
-- **Administration → Project Data** — delete projects during testing (admin only)
-
----
-
-## Configuration
-
-All settings use the `PEARL_` prefix. Copy `.env.example` to `.env`:
-
-```bash
-cp .env.example .env
-chmod 400 .env
-```
-
-| Variable | Default | Description |
-|---|---|---|
-| `PEARL_LOCAL` | `0` | `1` → SQLite, operator-only role, no migrations needed |
-| `PEARL_LOCAL_REVIEWER` | `0` | `1` → adds reviewer role in local mode (human reviewers only) |
-| `PEARL_DATABASE_URL` | postgres://... | PostgreSQL connection string |
-| `PEARL_JWT_SECRET` | dev-secret | JWT signing secret (change in prod) |
-| `PEARL_JWT_ALGORITHM` | `HS256` | `RS256` for production |
-| `PEARL_CORS_ALLOWED_ORIGINS` | localhost origins | Comma-separated allowed origins |
-| `PEARL_REDIS_URL` | redis://localhost:6379 | Redis connection |
-| `PEARL_PORT` | `8081` | API server port |
-| `PEARL_AUDIT_HMAC_KEY` | dev-hmac-key | HMAC key for audit record signing (change in prod) |
-| `PEARL_API_KEY_HMAC_SECRET` | — | HMAC secret for API key hashing (falls back to JWT secret if unset) |
-
----
-
-## API Endpoints
-
-All endpoints at `/api/v1`. Docs at http://localhost:8081/docs (local mode only).
-
-### Infrastructure
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/health/live` | Liveness probe |
-| `GET` | `/health/ready` | Readiness probe (DB + Redis) |
-| `GET` | `/metrics` | Prometheus metrics |
-| `GET` | `/onboarding/setup` | Claude Code launcher + setup |
-
-### Auth
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/auth/login` | Email + password → JWT |
-| `POST` | `/auth/refresh` | Refresh token → new access token |
-| `POST` | `/auth/logout` | Invalidate refresh token |
-| `POST` | `/users` | Create user (admin only) |
-| `GET` | `/users/me` | Current user profile |
-| `POST` | `/users/me/api-keys` | Create API key |
-
-**Canonical roles:**
-
-| Role | Intent |
+| | |
 |---|---|
-| `viewer` | Read-only access |
-| `operator` | Submit work, ingest findings |
-| `service_account` | Machine callers (scanners, CI) via API key |
-| `reviewer` | Approve/reject gates and exceptions — human only |
-| `admin` | User management, baseline config, bulk operations |
+| Admin email | `admin@pearl.dev` |
+| Admin password | `PeaRL-admin-2026` |
+| Admin API key | `pearl-KYQXqnybaMaul7PoKJLsT4PZpZSFj0FIaVE2IPrQJNk` |
+| Demo project | `proj_myapp001` |
 
-### Projects & Governance
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/projects` | Register project |
-| `GET` | `/projects/{id}/pearl.yaml` | Project governance config |
-| `GET` | `/projects/{id}/mcp.json` | Pre-configured `.mcp.json` |
-| `POST` | `/projects/{id}/compile` | Compile context package |
-| `POST` | `/projects/{id}/task-packets` | Generate task packet |
-| `POST` | `/task-packets/{id}/claim` | Agent claims packet |
-| `POST` | `/task-packets/{id}/complete` | Agent reports outcome |
-| `PATCH` | `/task-packets/{id}/phase` | Advance execution phase |
-| `POST` | `/projects/{id}/promotions/evaluate` | Evaluate promotion readiness |
-| `POST` | `/projects/{id}/promotions/request` | Request promotion |
-| `POST` | `/projects/{id}/promotions/rollback` | Rollback (admin) |
-| `POST` | `/approvals/{id}/decide` | Approve/reject (reviewer required) |
-| `POST` | `/exceptions/{id}/decide` | Approve/reject exception (reviewer required) |
+The bootstrap admin account is seeded on first startup with all four roles: `admin`, `reviewer`, `operator`, `viewer`.
 
-### Allowance Profiles
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/allowance-profiles` | Create profile |
-| `GET` | `/allowance-profiles/{id}` | Get profile |
-| `POST` | `/allowance-profiles/{id}/check` | Pre-tool enforcement check (<50ms) |
-| `GET` | `/task-packets/{id}/allowance` | Resolved 3-layer profile for task |
+---
 
-### Workloads
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/workloads/register` | Register SPIRE SVID → task packet |
-| `POST` | `/workloads/{svid}/heartbeat` | Agent heartbeat |
-| `DELETE` | `/workloads/{svid}` | Deregister on exit |
-| `GET` | `/workloads` | Active workload list |
+## Key Concepts
 
-### Trust Verdicts
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/projects/{id}/trust-review/request` | Request MASS trust review |
-| `POST` | `/projects/{id}/trust-review/ingest` | Ingest MASS trust verdict |
-| `GET` | `/projects/{id}/trust-review/latest` | Latest verdict for project/environment |
+**Promotion Gate** — a configurable evaluation checkpoint between pipeline stages. A gate collects evidence (findings, trust verdicts, test results), evaluates configured rules, and either passes, blocks, or routes to a human reviewer. Gate decisions are deterministic and logged.
 
-### Telemetry
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/projects/{id}/audit-events` | Ingest agent audit events (batch, max 500) |
-| `POST` | `/projects/{id}/cost-entries` | Ingest agent cost ledger entries (batch, max 500) |
+**Agent Allowance Profile** — a 3-layer policy (baseline, environment tier, task packet) that constrains what an agent may do before any tool call executes. Enforced by `pearl_allowance_check`. Layers compose: a task packet extension cannot exceed the environment tier ceiling.
 
-### Real-time
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/stream/events` | SSE stream for real-time governance events |
+**Workload Registry** — a live registry of active agent instances, each identified by a SPIRE SVID bound to a task packet. Agents register on start, send heartbeats, and deregister on exit.
+
+**Factory Run Summary** — aggregated telemetry for a completed agent run: cost, tool calls, findings, gate outcomes. Materialized when the workload deregisters. Queryable per project, stage, and time range.
+
+**Trust Accumulation** — each successful promotion gate evaluation increments a trust score for the project-stage pair. The score is factored into subsequent gate evaluations as evidence of sustained compliance.
+
+---
+
+## MCP Integration
+
+Agents connect to PeaRL via a LiteLLM MCP proxy. All 55 governance tools are exposed under the prefix `PeaRL-pearl_*`.
+
+Example tool names: `PeaRL-pearl_allowance_check`, `PeaRL-pearl_request_approval`, `PeaRL-pearl_evaluate_promotion`, `PeaRL-pearl_register_agent_for_stage`.
+
+To wire an agent manually, point its MCP config at the LiteLLM proxy that has PeaRL registered as a tool server. The proxy handles authentication and tool routing.
+
+See [`docs/integrations/litellm-mcp-adapter.md`](docs/integrations/litellm-mcp-adapter.md) for configuration details, tool listing, and example payloads.
+
+---
+
+## Agent Lifecycle
+
+Agents register for a stage, receive a task packet, execute within their allowance profile, report findings, and trigger gate evaluation at completion. See [`docs/agent-lifecycle.md`](docs/agent-lifecycle.md) for the full lifecycle, state machine, and phase transition rules.
+
+---
+
+## Documentation
+
+| Document | Description |
+|---|---|
+| [`docs/architecture.md`](docs/architecture.md) | Full system architecture and data flows |
+| [`docs/agent-lifecycle.md`](docs/agent-lifecycle.md) | Agent lifecycle, phases, and gate transitions |
+| [`docs/dark-factory-governance.md`](docs/dark-factory-governance.md) | Dark factory architecture and governance model |
+| [`docs/integrations/litellm-mcp-adapter.md`](docs/integrations/litellm-mcp-adapter.md) | LiteLLM MCP adapter configuration and tool reference |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Development workflow and conventions |
+| [`CLAUDE.md`](CLAUDE.md) | AI agent constraints enforced by the platform |
+
+---
+
+## Hard Constraints
+
+These are enforced in code, not just documented here.
+
+- **PeaRL never makes model calls.** Workers perform deterministic computation only. Adding a model call to a worker violates the core architectural constraint.
+- **No self-approval.** Agents receive 403 on all `decide` and `createException` endpoints. This is correct behavior, not an error state.
+- **Gates route to humans.** When a gate blocks an action, the correct response is to call `pearl_request_approval`, inform the user, and stop. Routing around a gate is never correct.
+- **`PEARL_LOCAL=1` is a test harness flag.** It grants operator role and disables auth. Agents must never set or assume this flag in staging or production.
+- **Audit records are immutable.** There are no update or delete endpoints on audit records.
+- **Trust adjudication belongs to MASS 2.0.** PeaRL stores and presents verdicts; it does not generate them.
 
 ---
 
 ## Running Tests
 
 ```bash
-# All tests (local mode — SQLite, no external services)
+# All tests (SQLite in-memory, no external services required)
 PEARL_LOCAL=1 pytest tests/ -q
 
 # With coverage
@@ -301,105 +183,6 @@ PEARL_LOCAL=1 pytest tests/ --cov=src/pearl --cov-report=term-missing
 # Lint
 ruff check src/ tests/
 ```
-
----
-
-## MCP Integration
-
-PeaRL exposes **50 tools** via MCP. The [Your First Project](#your-first-project) flow handles `.mcp.json` generation automatically.
-
-To wire manually:
-
-```json
-{
-  "mcpServers": {
-    "pearl": {
-      "command": "python3",
-      "args": ["-m", "pearl_dev.unified_mcp", "--directory", ".", "--api-url", "http://localhost:8080/api/v1"],
-      "env": {"PYTHONPATH": "/path/to/PeaRL/src"}
-    }
-  }
-}
-```
-
----
-
-## Governance Model
-
-### Hard constraints (enforced in code, not just docs)
-
-- **Model-free workers** — no LLM calls inside PeaRL. Deterministic computation only.
-- **Reviewer role required** for all approval and exception decisions — agents receive 403, this is correct behavior
-- **No self-approval path** — the agent that creates a request cannot decide it
-- **PEARL_LOCAL=1 is a test harness** — grants operator role only; never set by agents in staging or production
-- **Audit trail is immutable** — no update/delete endpoints on audit records
-- **Trust adjudication belongs to MASS 2.0** — PeaRL stores and presents verdicts; it does not generate them
-
-### Promotion path
-
-```
-dev → pilot → preprod → prod
-```
-
-Each transition is gate-evaluated. `preprod → prod` requires a fresh MASS trust verdict. Auto-pass is blocked when a trust review is required but absent, stale, or unacceptable.
-
-### Allowance profile layers
-
-1. **Baseline** — per agent type: blocked commands, blocked paths, pre-approved actions, model restrictions, budget cap
-2. **Environment tier** — permissive / standard / strict / locked
-3. **Task packet** — per-sprint extensions: allowed paths, pre-approved commands
-
-`pearl_allowance_check` enforces all three layers deterministically before every tool call.
-
----
-
-## Attack Chain Defences
-
-PeaRL was tested against autonomous agents attempting to self-approve governance exceptions via a 7-level attack chain:
-
-- **L1** — MCP tool abuse: service account cannot self-approve (403 enforced)
-- **L2** — Token escalation: refresh token replay after logout blocked
-- **L3** — API auth bypass: middleware blocks all unauthenticated requests
-- **L4** — Governance bypass: exception creation without reviewer approval blocked (403)
-- **L5** — Audit spoofing: forged audit records detectable via HMAC mismatch
-
-See [`docs/security_research/`](docs/security_research/) for full research and hardening guide.
-
----
-
-## Production Deployment
-
-### Docker Compose
-
-```bash
-docker compose -f docker-compose.yaml -f deploy/docker-compose.prod.yaml up -d
-```
-
-### Kubernetes
-
-```bash
-kubectl apply -f deploy/k8s/configmap.yaml
-kubectl apply -f deploy/k8s/secret.yaml    # Edit with real values first
-kubectl apply -f deploy/k8s/deployment.yaml
-kubectl apply -f deploy/k8s/service.yaml
-kubectl apply -f deploy/k8s/ingress.yaml
-kubectl apply -f deploy/k8s/hpa.yaml
-```
-
-See [`deploy/nginx/pearl.conf`](deploy/nginx/pearl.conf) for Nginx TLS + SSE configuration.
-
----
-
-## Documentation
-
-| Doc | Description |
-|---|---|
-| [`docs/architecture.md`](docs/architecture.md) | Full system architecture and data flows |
-| [`docs/adr/`](docs/adr/) | Architecture decision records |
-| [`docs/security_research/`](docs/security_research/) | Attack chain research and hardening guide |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Development workflow |
-| [`CLAUDE.md`](CLAUDE.md) | AI agent constraints enforced by the platform |
-| [`SPEC.md`](SPEC.md) | Feature status and acceptance criteria |
 
 ---
 

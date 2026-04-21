@@ -1,291 +1,346 @@
 # PeaRL Architecture
 
-## System Overview
+## 1. System Overview
 
-PeaRL is a policy-enforced governance layer between AI coding agents and production environments. It enforces security gates, approval workflows, fairness requirements, and compliance checks before any AI-driven change reaches users.
+PeaRL (Policy-enforced Autonomous Risk Layer) is a model-free governance platform that sits between AI agent teams and production environments. It enforces security gates, approval workflows, capability allowances, and compliance checks before any AI-driven change is promoted — deterministically, without LLM calls.
 
-Core responsibilities:
-1. **Onboard and configure** projects, org baselines, and application specs via MCP or API
-2. **Ingest and normalize** findings from scanners (Snyk, Semgrep, Trivy) and security reviews
-3. **Compile context** packages for agent consumption — with signed receipts to track what each agent was shown
-4. **Generate and track** remediation task packets claimed and completed by agents
-5. **Gate promotions** through configurable rule evaluators (findings, approvals, fairness, evidence, compliance)
-6. **Orchestrate human review** for approvals and exceptions with role-enforced decide endpoints
-7. **Emit and stream** governance telemetry, audit events, and cost ledger data in real time
-8. **Enforce security** against autonomous agent bypass attempts at the API, MCP, and file layers
+PeaRL governs two delivery tracks:
 
----
+- **Secure Agent Factories** — human-in-the-loop AI development teams using Claude Code or similar agents. PeaRL gates their output through configurable promotion pipelines.
+- **Secure Dark Agent Factories** — fully autonomous agent runs (no persistent human in the loop). PeaRL enforces pre-agreed allowance profiles, SPIRE workload identities, and factory run telemetry. See [`docs/dark-factory-governance.md`](./dark-factory-governance.md) for the full pattern catalogue.
 
-## Component Diagram
+### Hard Constraints
 
-```
-External Systems            PeaRL Core                        Data Stores
-────────────────            ──────────────────────────────    ────────────
-
-                            ┌──────────────────────────────┐
-AI Agents (MCP)  ──────────▶│   FastAPI REST API            │──▶  PostgreSQL
-                            │   /api/v1 (33 route files)    │       (primary)
-Claude / Codex   ──────────▶│   Auth: JWT Bearer / API Key  │
-                            │   RBAC: operator/reviewer/    │──▶  Redis
-CI/CD systems    ──────────▶│         admin/service_account │       (job queue)
-                            │   Middleware: Auth, RateLimit, │       (SSE pub/sub)
-Dashboard (React)──────────▶│             TraceID           │       (scheduler lock)
-                            └──────────────┬───────────────┘
-                                           │
-                            ┌──────────────▼───────────────┐
-Scanners                    │   Background Workers          │──▶  MinIO / S3
-  Snyk / Semgrep ──────────▶│   compile_context             │       (reports)
-  Trivy          ──────────▶│   scan_source                 │
-                            │   normalize_findings           │
-                            │   generate_remediation_spec    │
-                            │   report                       │
-                            └──────────────┬───────────────┘
-                                           │
-                            ┌──────────────▼───────────────┐
-                            │   Scheduler                   │
-                            │   (60s poll, Redis lock)      │
-                            │   Enqueues periodic scans     │
-                            └──────────────────────────────┘
-```
+- **Workers are model-free.** All background workers perform deterministic computation only — data transformation, scoring, routing. No LLM calls, no embeddings, no model API calls inside worker code. Model-based analysis belongs to MASS 2.0 (external).
+- **Gates route decisions to humans.** When a gate blocks an action, the correct response is `pearl_request_approval`, not routing around the gate.
+- **No self-approval.** `decideApproval` and `createException` require the `reviewer` role. Agents receive 403. This is correct behavior, not a failure state.
+- **PEARL_LOCAL=1 is a test harness flag.** Agents must never set or assume it.
 
 ---
 
-## API Surface
+## 2. Component Diagram
 
-**Base path:** `/api/v1` — 33 route files, ~130 endpoints
+```
+External Callers              PeaRL Core                         Data Stores
+────────────────              ──────────────────────────────     ────────────
 
-### Route Groups
+                              ┌─────────────────────────────┐
+AI Agents                     │   FastAPI REST API           │──▶  PostgreSQL
+  └─▶ LiteLLM Proxy ─────────▶│   /api/v1                    │       (primary store)
+        (port 4000)           │   Auth: JWT Bearer           │
+        tool prefix:          │         X-API-Key header      │──▶  Redis
+        PeaRL-pearl_*         │   RBAC: viewer / operator /  │       (job queue)
+                              │         admin / reviewer /   │       (SSE pub/sub)
+Dashboard (React) ───────────▶│         service_account      │       (scheduler lock)
+  (port 5177 host /           │   Middleware: Auth, RateLimit,│
+   5173 container)            │              TraceID          │──▶  MinIO / S3
+                              └──────────────┬──────────────┘       (report artifacts)
+CI/CD / API clients ─────────▶              │
+                              ┌──────────────▼──────────────┐
+                              │   Background Workers         │
+                              │   (Redis job queue)          │
+                              │   compile_context            │
+                              │   scan_source                │
+                              │   mass_scan                  │
+                              │   sonar_scan                 │
+                              │   normalize_findings          │
+                              │   generate_remediation_spec  │
+                              │   report                     │
+                              └──────────────┬──────────────┘
+                                             │
+                         ┌───────────────────▼──────────────┐
+                         │  External Integrations            │
+                         │  MASS 2.0 (AI security scanner)   │
+                         │  SonarQube (quality gate)         │
+                         │  Snyk / Semgrep / Trivy           │
+                         └──────────────────────────────────┘
+```
 
-| Area | Files | Key Endpoints |
+---
+
+## 3. Data Model
+
+### Project / Agent Identity
+
+| Table | Key Fields | Notes |
 |---|---|---|
-| **Auth & Users** | `auth.py` | `POST /auth/login`, `/auth/refresh`, `/auth/logout`, `GET /auth/jwks.json`, `POST /users`, `GET /users/me`, `POST /users/me/api-keys` |
-| **Projects** | `projects.py`, `project_inputs.py` | CRUD `/projects`, `GET /projects/{id}/pearl.yaml`, `GET /projects/{id}/mcp.json` |
-| **Onboarding** | `onboarding.py` | `GET /onboarding/setup` — returns pre-built Claude Code batch file + setup guide |
-| **Context** | `context.py`, `compile.py` | `POST /projects/{id}/compile`, `GET /projects/{id}/compiled-package`, `POST /compiled-packages/{id}/receipt` |
-| **Findings** | `findings.py`, `audit.py` | Ingest, list, triage, bulk-status (reviewer-gated for `false_positive`) |
-| **Governance** | `approvals.py`, `exceptions.py` | `POST /approvals/{id}/decide` (reviewer only), `POST /exceptions/{id}/decide` (reviewer only), exception review workflow |
-| **Promotions** | `promotions.py` | `POST /projects/{id}/promotions/evaluate`, `/request`, `/rollback` (admin) |
-| **Remediation** | `remediation.py`, `task_packets.py`, `agent.py` | Generate, claim, complete task packets; agent interaction endpoints |
-| **Scanning** | `scanning.py`, `scan_targets.py` | Register/manage scan targets, trigger scans, retrieve results |
-| **Compliance** | `compliance.py`, `fairness.py`, `guardrails.py`, `requirements.py` | Fairness cases, evidence packages, guardrail evaluation, framework requirements |
-| **Telemetry** | `governance_telemetry.py` | `POST /projects/{id}/audit-events` (batch, max 500), `POST /projects/{id}/cost-entries` (batch, max 500) |
-| **Config** | `org_env_config.py` | Org-level environment configuration, policy overrides |
-| **Reporting** | `reports.py` | Generate and retrieve compliance/risk reports |
-| **Analytics** | `dashboard.py`, `timeline.py`, `business_units.py`, `pipelines.py` | Dashboard summaries, audit timelines, business unit management, pipeline status |
-| **Infrastructure** | `health.py`, `stream.py`, `jobs.py`, `integrations.py`, `slack_interactions.py` | Health/readiness probes, SSE events, job status, third-party integrations |
+| `OrgRow` | `org_id` | Top-level tenancy boundary |
+| `BusinessUnitRow` | `bu_id`, `org_id` | Subdivision within org |
+| `UserRow` | `user_id`, `org_id`, `roles` | Human or service user |
+| `ApiKeyRow` | `key_id`, `user_id`, `expires_at` | SHA-256 hash stored, not plaintext |
+| `ProjectRow` | `project_id`, `org_id`, `bu_id` | One per agent team. Carries `agent_members` (JSON), `goal_id`, `current_environment`, `ai_enabled`, `risk_classification`, `intake_card_id`, `litellm_key_refs`, `memory_policy_refs`, `qualification_packet_id` |
+| `OrgBaselineRow` | `baseline_id`, `project_id` | Org-wide security defaults attached to a project |
+| `AppSpecRow` | `spec_id`, `project_id` | Components, trust boundaries, data classifications, RAI settings |
+| `EnvironmentProfileRow` | `profile_id`, `project_id`, `environment` | Per-project per-environment: `autonomy_mode` (assistive / supervised_autonomous / delegated_autonomous / read_only) |
+| `AllowanceProfileRow` | `profile_id`, `agent_type` | Versioned capability profile: `blocked_commands`, `blocked_paths`, `pre_approved_actions`, `model_restrictions`, `budget_cap_usd`, `env_tier_overrides`. Version incremented on every update |
+| `AllowanceProfileVersionRow` | `version_id`, `profile_id`, `profile_version` | Snapshot of profile at each version for audit |
 
-### Health Endpoints
+### Workload / Execution
 
-| Endpoint | Purpose |
-|---|---|
-| `GET /health/live` | K8s liveness — always 200 |
-| `GET /health/ready` | K8s readiness — checks DB (SELECT 1) + Redis (PING); 503 if either fails |
-| `GET /server-config` | Returns `reviewer_mode`, `local_mode` flags; used by dashboard to show governance banners |
-| `GET /metrics` | Prometheus metrics via prometheus-fastapi-instrumentator |
+| Table | Key Fields | Notes |
+|---|---|---|
+| `WorkloadRow` | `workload_id`, `svid`, `task_packet_id` | Maps active SPIRE SVIDs to task packets and allowance profiles. Tracks `agent_id`, `last_seen_at`, `status` |
+| `TaskPacketRow` | `task_packet_id`, `project_id` | Unit of work. `execution_phase`: planning / coding / testing / review / complete / failed. `phase_history` JSON. Carries `allowed_paths`, `pre_approved_commands`, `allowance_profile_id`, `allowance_profile_version`, `trace_id` |
+| `FactoryRunSummaryRow` | `frun_id` (= session_id), `project_id` | Aggregated run telemetry per factory session. Fields: `total_cost_usd`, `models_used`, `tools_called`, `anomaly_flags`, `outcome` (achieved / failed / abandoned), `duration_ms`, `svid`, `goal_id`, `promoted` |
+| `RemediationSpecRow` | `spec_id`, `project_id` | Generated remediation specification linked to findings |
+| `CompiledPackageRow` | `package_id`, `project_id` | Pre-compiled context snapshot with artifact hashes and policy snapshot |
+| `JobRow` | `job_id`, `job_type`, `status` | Tracks async worker jobs. Status: queued / running / succeeded / failed / partial |
+
+### Gate / Promotion
+
+| Table | Key Fields | Notes |
+|---|---|---|
+| `PromotionGateRow` | `gate_id`, `source_environment`, `target_environment` | Gate definition: `rules` (JSON), `approval_mode`, `auto_pass` (bool), `pass_count`, `auto_pass_threshold` |
+| `PromotionEvaluationRow` | `evaluation_id`, `project_id`, `gate_id` | Evaluation result: `rule_results` (JSON), `passed_count`, `failed_count`, `blockers`, `status`, `trace_id`, `commit_sha` |
+| `PromotionHistoryRow` | `history_id`, `project_id` | Successful promotion record: `source_environment`, `target_environment`, `promoted_by`, `promoted_at`, `evaluation_id` |
+| `PromotionPipelineRow` | `pipeline_id` | Ordered stage list for org or project. `stages` JSON: `[{key, label, order}]` |
+| `PolicyVersionRow` | `version_id`, `project_id` | Policy change audit trail |
+| `ApprovalRow` | `approval_id`, `project_id` | Approval request + decision. `status`: pending / approved / rejected / expired / needs_info |
+| `ExceptionRow` | `exception_id`, `project_id` | Policy exception. `status`: pending / active / expired / revoked / rejected |
+
+### Findings / Compliance
+
+| Table | Key Fields | Notes |
+|---|---|---|
+| `FindingRow` | `finding_id`, `project_id` | Security finding. `severity`, `status` (open / resolved / false_positive / accepted / suppressed), `category` (security / responsible_ai / governance / architecture_drift) |
+| `FairnessCaseRow` | `case_id`, `project_id` | RAI risk tier, fairness criticality |
+| `EvidencePackageRow` | `evidence_id`, `project_id` | Evidence attestation: `evidence_type`, `attestation_status`, `expires_at` |
+| `OrgEnvConfigRow` | `config_id`, `project_id` | Per-environment policy overrides |
+| `ScanTargetRow` | `target_id`, `project_id` | Registered scan targets for periodic scanning |
+| `ScannerPolicyRow` | `policy_id` | Scanner-identified policy store |
+| `CedarDeploymentRow` | `deployment_id`, `project_id` | Cedar policy deployment records |
+| `AuditEventRow` | `event_id`, `project_id` | HMAC-signed immutable audit record |
+
+### Telemetry / Audit
+
+| Table | Key Fields | Notes |
+|---|---|---|
+| `ClientAuditEventRow` | `event_id`, `project_id` | Agent-pushed audit events: `action`, `decision`, `tool_name`, `reason`, `signature` (HMAC) |
+| `ClientCostEntryRow` | `entry_id`, `project_id` | Per-LLM-call cost: `session_id`, `model`, `cost_usd`, `tools_called`, `num_turns`, `duration_ms` |
 
 ---
 
-## MCP Integration
+## 4. Promotion Pipeline
 
-PeaRL exposes **39 tools** via MCP for AI agent integration. The server is in `src/pearl_dev/unified_mcp.py`; tool definitions are in `src/pearl/mcp/tools.py`.
+### Pipeline Stages
+
+The default pipeline is stored in `PromotionPipelineRow` as an ordered stage list. The three primary stages are:
+
+```
+pilot  →  dev  →  prod
+```
+
+Each transition has a `PromotionGateRow` defining the rules that must pass. The evaluator resolves the next stage dynamically from the pipeline record using `next_environment()`.
+
+### Gate Evaluation Flow
+
+```
+POST /projects/{id}/promotions/evaluate
+  │
+  ▼
+evaluate_promotion()  [src/pearl/services/promotion/gate_evaluator.py]
+  │
+  ├── Load ProjectRow → determine current_environment
+  ├── Load PromotionGateRow for (source → target) transition
+  ├── _build_eval_context()
+  │     Loads: findings, approvals, fairness cases, evidence packages,
+  │            compiled packages, org baseline, scan results, MASS verdicts
+  │
+  ├── For each GateRuleDefinition in gate.rules:
+  │     RULE_EVALUATORS[rule_type](context) → RuleEvaluationResult (pass/fail/skip/warn/exception)
+  │
+  ├── Persist PromotionEvaluationRow
+  │
+  └── Return PromotionEvaluation
+        status: passed | failed | partial | not_evaluated
+        passed_count, failed_count, blockers
+```
+
+### Trust Accumulation
+
+`PromotionGateRow` carries trust accumulation fields:
+- `pass_count` — incremented each time the gate passes cleanly
+- `auto_pass_threshold` — number of consecutive passes required before auto-pass unlocks
+- `auto_pass` — when true, gates that have earned trust may be skipped on re-evaluation
+
+Auto-pass behavior in gate re-evaluation:
+- `auto_pass=False` (manual mode): a re-evaluation failure is a hard block. Must raise, never silently pass.
+- `auto_pass=True` (auto-elevation mode): a re-evaluation failure logs a warning and continues.
+
+### Human Approval at Gates
+
+When a gate evaluation fails, agents must call `pearl_request_approval`. The approval workflow:
+
+```
+POST /approvals (create)
+  → ApprovalRow status=pending
+
+POST /approvals/{id}/decide (reviewer role required)
+  → ApprovalRow status=approved|rejected
+  → SSE event published
+  → Gate re-evaluated if approved
+```
+
+Agents receive 403 on `/decide` — this is the intended control. Routing around this is never correct.
+
+---
+
+## 5. Gate Rule Categories
+
+| Category | Rules | Description |
+|---|---|---|
+| **Base Security** | `PROJECT_REGISTERED`, `ORG_BASELINE_ATTACHED`, `APP_SPEC_DEFINED`, `NO_HARDCODED_SECRETS`, `UNIT_TESTS_EXIST`, `UNIT_TEST_COVERAGE`, `INTEGRATION_TEST_COVERAGE`, `SECURITY_BASELINE_TESTS`, `CRITICAL_FINDINGS_ZERO`, `HIGH_FINDINGS_ZERO`, `DATA_CLASSIFICATIONS_DOCUMENTED`, `IAM_ROLES_DEFINED`, `NETWORK_BOUNDARIES_DECLARED`, `ALL_CONTROLS_VERIFIED`, `SECURITY_REVIEW_APPROVAL`, `EXEC_SPONSOR_APPROVAL`, `RESIDUAL_RISK_REPORT`, `READ_ONLY_AUTONOMY`, `SCAN_TARGET_REGISTERED` | Traditional project security hygiene gates |
+| **AI-Specific** | `AI_SCAN_COMPLETED`, `NO_PROMPT_INJECTION`, `GUARDRAILS_VERIFIED`, `NO_PII_LEAKAGE`, `OWASP_LLM_TOP10_CLEAR`, `AI_RISK_ACCEPTABLE`, `COMPREHENSIVE_AI_SCAN`, `LITELLM_COMPLIANCE`, `FACTORY_RUN_SUMMARY_PRESENT`, `MODEL_CARD_DOCUMENTED`, `RAI_EVAL_COMPLETED` | AI deployment readiness. `LITELLM_COMPLIANCE` verifies gateway configuration; `FACTORY_RUN_SUMMARY_PRESENT` requires at least one `FactoryRunSummaryRow` for the project before promotion |
+| **OWASP LLM Top 10** | `OWASP_LLM05_IMPROPER_OUTPUT_HANDLING`, `OWASP_LLM06_EXCESSIVE_AGENCY`, `OWASP_LLM07_SYSTEM_PROMPT_LEAKAGE`, `OWASP_LLM08_VECTOR_WEAKNESSES`, `OWASP_LLM10_UNBOUNDED_CONSUMPTION` | Per-control discrete rules from OWASP LLM Top 10 v2025 |
+| **NHI (Non-Human Identity)** | `NHI_IDENTITY_REGISTERED`, `NHI_SECRETS_IN_VAULT`, `NHI_CREDENTIAL_ROTATION_POLICY`, `NHI_LEAST_PRIVILEGE_VERIFIED`, `NHI_TOKEN_EXPIRY_CONFIGURED` | Agent credential governance — SPIRE SVID registration, vault storage, rotation policy, expiry |
+| **Agent Governance** | `AGENT_CAPABILITY_SCOPE_DOCUMENTED`, `AGENT_KILL_SWITCH_IMPLEMENTED`, `AGENT_BLAST_RADIUS_ASSESSED`, `AGENT_COMMUNICATION_SECURED` | Operational controls for autonomous agents |
+| **Supply Chain** | `SBOM_GENERATED`, `SNYK_OPEN_HIGH_CRITICAL`, `SONARQUBE_QUALITY_GATE` | Software supply chain and third-party dependency gates |
+| **Fairness** | `FAIRNESS_CASE_DEFINED`, `FAIRNESS_REQUIREMENTS_MET`, `FAIRNESS_EVIDENCE_CURRENT`, `FAIRNESS_ATTESTATION_SIGNED`, `FAIRNESS_HARD_BLOCKS_CLEAR`, `FAIRNESS_DRIFT_ACCEPTABLE`, `FAIRNESS_CONTEXT_RECEIPT_VALID`, `FAIRNESS_EXCEPTIONS_CONTROLLED`, `FAIRNESS_POLICY_DEPLOYED`, `CEDAR_POLICY_DEPLOYED` | FEU-sourced responsible AI requirements |
+| **Framework Controls** | `FRAMEWORK_CONTROL_REQUIRED`, `AIUC1_CONTROL_REQUIRED` | Unified framework gate covering AIUC-1, OWASP LLM/Web, MITRE ATLAS, SLSA, NIST RMF/SSDF |
+| **Governance** | `CLAUDE_MD_GOVERNANCE_PRESENT`, `COMPLIANCE_SCORE_THRESHOLD`, `REQUIRED_ANALYZERS_COMPLETED`, `GUARDRAIL_COVERAGE`, `SECURITY_REVIEW_CLEAR` | Governance process attestation |
+
+---
+
+## 6. MCP Integration
+
+### Transport and Naming
+
+PeaRL exposes **55 tools** via MCP at `POST /api/v1/mcp`. The MCP server is in `src/pearl_dev/unified_mcp.py`; tool schemas are in `src/pearl/mcp/tools.py`.
+
+All tool names carry the `pearl_` prefix so agents can unambiguously distinguish PeaRL tools when multiple MCP servers are loaded.
+
+In LiteLLM, tools appear as `PeaRL-pearl_*` (server name prefix + tool name).
+
+### Agent Integration Flow
+
+```
+Agent (Claude Code)
+  └─▶ LiteLLM Proxy (localhost:4000)
+        X-API-Key: sk-litellm-local-testing
+        │
+        └─▶ PeaRL API (/api/v1/mcp)
+              X-API-Key: pearl-KYQXqnybaMaul7PoKJLsT4PZpZSFj0FIaVE2IPrQJNk
+              │
+              └─▶ PostgreSQL / Redis / Workers
+```
+
+LiteLLM forwards the PeaRL API key via `X-API-Key` header. PeaRL validates it against `ApiKeyRow` using a SHA-256 hash lookup.
 
 ### Tool Catalogue
 
 | Category | Tools |
 |---|---|
-| **Project Management** | `createProject`, `getProject`, `updateProject`, `getProjectSummary` |
-| **Project Configuration** | `upsertOrgBaseline`, `upsertApplicationSpec`, `upsertEnvironmentProfile` |
-| **Context** | `compileContext`, `getCompiledPackage`, `submitContextReceipt` |
-| **Findings & Remediation** | `ingestFindings`, `generateRemediationSpec`, `generateTaskPacket`, `claimTaskPacket`, `completeTaskPacket` |
-| **Governance** | `createApprovalRequest`, `decideApproval`, `createException`, `requestPromotion`, `evaluatePromotionReadiness`, `getPromotionReadiness`, `getPromotionHistory` |
-| **Compliance & Fairness** | `createFairnessCase`, `submitEvidence`, `assessCompliance`, `listGuardrails`, `getGuardrail`, `getRecommendedGuardrails`, `getRecommendedBaseline`, `applyRecommendedBaseline`, `listPolicyTemplates`, `getPolicyTemplate`, `ingestSecurityReview` |
-| **Scanning** | `registerScanTarget`, `listScanTargets`, `updateScanTarget`, `runScan`, `getScanResults` |
-| **Monitoring & Jobs** | `ingestMonitoringSignal`, `getJobStatus` |
-| **Reports** | `generateReport` |
+| **Project Management** | `pearl_register_project`, `pearl_create_project`, `pearl_get_project`, `pearl_update_project`, `pearl_get_project_summary`, `pearl_list_projects` |
+| **Project Configuration** | `pearl_upsert_org_baseline`, `pearl_upsert_application_spec`, `pearl_upsert_environment_profile` |
+| **Context** | `pearl_compile_context`, `pearl_get_compiled_package`, `pearl_submit_context_receipt` |
+| **Findings & Remediation** | `pearl_ingest_findings`, `pearl_generate_remediation_spec`, `pearl_generate_task_packet`, `pearl_claim_task_packet`, `pearl_complete_task_packet`, `pearl_list_findings` |
+| **Governance** | `pearl_request_approval`, `pearl_decide_approval`, `pearl_create_exception`, `pearl_request_promotion`, `pearl_evaluate_promotion_readiness`, `pearl_get_promotion_readiness`, `pearl_get_promotion_history` |
+| **Compliance & Fairness** | `pearl_create_fairness_case`, `pearl_submit_evidence`, `pearl_assess_compliance`, `pearl_list_guardrails`, `pearl_get_guardrail`, `pearl_get_recommended_guardrails`, `pearl_get_recommended_baseline`, `pearl_apply_recommended_baseline`, `pearl_list_policy_templates`, `pearl_get_policy_template`, `pearl_ingest_security_review` |
+| **Scanning** | `pearl_register_scan_target`, `pearl_list_scan_targets`, `pearl_update_scan_target`, `pearl_run_scan`, `pearl_get_scan_results` |
+| **Workload Registry** | `pearl_register_workload`, `pearl_update_workload`, `pearl_deregister_workload`, `pearl_get_workload` |
+| **Factory Run** | `pearl_push_factory_run_summary`, `pearl_get_factory_run_summary` |
+| **Allowance Profiles** | `pearl_get_allowance_profile`, `pearl_list_allowance_profiles` |
+| **Monitoring & Jobs** | `pearl_ingest_monitoring_signal`, `pearl_get_job_status` |
+| **Reports** | `pearl_generate_report` |
 
 ### Governance-Sensitive Tools
 
-`decideApproval` and `createException` are gated: the underlying API endpoints require the `reviewer` role. If called without reviewer access, the tools return `_human_action_required: true` with a dashboard URL — the agent sees it cannot self-approve and must surface the action to a human.
+`pearl_decide_approval` and `pearl_create_exception` are gated: the underlying endpoints require the `reviewer` role. Agents calling these tools receive a 403 with `_human_action_required: true` and a dashboard URL. The agent cannot self-approve — it must surface the action to a human reviewer.
 
 ---
 
-## Onboarding Flow
+## 7. Agent Team Model
 
-`GET /onboarding/setup` returns a pre-configured Windows batch file (`Claude Code.bat`) that:
+### Project as Team Container
 
-1. Opens a folder browser (PowerShell COM dialog)
-2. Converts the selected Windows path to WSL path format
-3. Writes `.mcp.json` to the project folder if absent (auto-configures PeaRL MCP tools)
-4. Runs `pearl_hook_check.py` to auto-register the project in PeaRL if `.pearl.yaml` exists
-5. Hints the developer to call `createProject` via MCP for new projects
-6. Launches `claude` in the project directory via WSL
+One `ProjectRow` per agent team. Key fields for Dark Factory integration:
 
-Once a project is registered, its config files are downloadable at:
-- `GET /api/v1/projects/{id}/pearl.yaml` — project governance config
-- `GET /api/v1/projects/{id}/mcp.json` — pre-filled `.mcp.json` for that project
+- `agent_members` (JSON) — list of agent identifiers participating in this project
+- `goal_id` — links the project to a WTK intake card goal
+- `current_environment` — tracks which pipeline stage the project is currently in
+- `intake_card_id` — WTK intake card reference
+- `litellm_key_refs` — references to LiteLLM virtual keys issued to this team
+- `memory_policy_refs` — memory boundary policy references
+- `qualification_packet_id` — pre-qualification attestation
 
----
+### Workload Registry
 
-## Data Flow
+Each active agent instance registers a `WorkloadRow` with a SPIRE SVID. This ties the identity to a specific task packet and allowance profile version. The registry is the enforcement anchor for NHI gate rules — `NHI_IDENTITY_REGISTERED` fails if no workload row exists for the agent.
 
-### Promotion Gate Flow
+### Factory Run Summary Materialization
 
-```
-POST /projects/{id}/promotions/evaluate
-  → GateEvaluator checks rules:
-      - Active findings (severity × environment thresholds)
-      - Pending / rejected approvals
-      - Fairness requirements (if ai_enabled)
-      - Evidence attestations (if required by environment)
-      - Compliance framework checks
-  → PromotionEvaluationRow (pass/fail per rule)
-  → If all pass: POST /promotions/request → PromotionHistoryRow
-  → If blocked:  human approval required via /approvals
-                 or exception via /exceptions (reviewer role to decide)
-```
-
-### Agent Task Packet Flow
-
-```
-POST /projects/{id}/task-packets (generate)
-  → CompileContextWorker builds context
-  → GenerateRemediationWorker produces spec
-  → TaskPacketRow created with signed artifact hashes
-
-POST /task-packets/{id}/claim  (agent claims)
-  → agent_id, claimed_at set
-
-Agent executes changes
-
-POST /task-packets/{id}/complete (agent reports)
-  → outcome recorded
-  → resolved FindingRows updated to status="resolved"
-  → ClientAuditEventRow created (governance telemetry)
-```
-
-### Context Receipt Flow
-
-```
-POST /projects/{id}/compile
-  → CompiledPackageRow created (artifact hashes, policy snapshot)
-
-Agent calls submitContextReceipt MCP tool
-  → ContextReceiptRow records: commit_hash, agent_id,
-    tool_calls_made, artifact_hashes_seen, consumed_at
-  → Provides audit trail of what the agent was shown
-```
-
-### Finding Ingestion Flow
-
-```
-POST /projects/{id}/findings/ingest (or ingestFindings MCP tool)
-  → FindingBatchRow + FindingRows created (status="open")
-  → normalize_findings job enqueued
-  → NormalizeFindingsWorker: sets normalized=True, score, severity
-  → SSE event published: "finding_batch_ingested"
-```
+`FactoryRunSummaryRow` is materialized from `ClientCostEntryRow` records using the `session_id` as the grouping key (`frun_id`). Two triggers fire the upsert: workload deregister and task packet complete. The upsert is idempotent — both triggers can fire without creating duplicates. The `FACTORY_RUN_SUMMARY_PRESENT` gate rule checks for at least one summary row before allowing promotion.
 
 ---
 
-## Database Schema
+## 8. Background Workers
 
-### Core Entities
+All workers extend `BaseWorker` and are registered in `src/pearl/workers/registry.py`. Workers perform deterministic computation only — no LLM calls, no embeddings.
 
-```
-OrgRow
-  └─▶ BusinessUnitRow (org_id)
-  └─▶ UserRow (org_id)
-  │    └─▶ ApiKeyRow (user_id) — SHA-256 hash, expiry, last_used_at
-  └─▶ ProjectRow (org_id)
-       └─▶ OrgBaselineRow      — org-wide security defaults
-       └─▶ AppSpecRow          — components, trust boundaries, data, RAI settings
-       └─▶ EnvironmentProfileRow
-       └─▶ OrgEnvConfigRow     — per-env policy overrides
-       └─▶ FindingRow
-       │    └─▶ FindingBatchRow
-       └─▶ ApprovalRequestRow
-       │    └─▶ ApprovalDecisionRow
-       │    └─▶ ApprovalCommentRow
-       └─▶ ExceptionRecordRow
-       └─▶ TaskPacketRow
-       └─▶ RemediationSpecRow
-       └─▶ CompiledPackageRow  — pre-compiled context snapshot + artifact hashes
-       └─▶ ReportRow
-       └─▶ JobRow
-       └─▶ ScanTargetRow
-       └─▶ PromotionHistoryRow
-       └─▶ PolicyVersionRow    — policy change audit trail
-```
+| Job Type | Worker Class | Purpose |
+|---|---|---|
+| `compile_context` | `CompileContextWorker` | Builds compiled context package with artifact hashes and policy snapshot |
+| `scan_source` | `ScanWorker` | Local path scan for security findings |
+| `mass_scan` | `MassScanWorker` | Calls MASS 2.0 external scanner via `MassClient`; stores verdicts as findings |
+| `sonar_scan` | `SonarScanWorker` | Calls SonarQube API; maps quality gate result to `SONARQUBE_QUALITY_GATE` rule |
+| `normalize_findings` | `NormalizeFindingsWorker` | Sets `normalized=True`, assigns score and severity on raw ingested findings |
+| `generate_remediation_spec` | `GenerateRemediationWorker` | Produces deterministic remediation spec from finding data |
+| `report` | `GenerateReportWorker` | Assembles report artifact and uploads to MinIO/S3 |
 
-### Fairness & Compliance
+### Worker Execution
 
 ```
-ProjectRow
-  └─▶ FairnessCaseRow            — risk_tier, fairness_criticality, case_data
-  └─▶ FairnessRequirementsSpecRow — requirements JSON, version
-  └─▶ FairnessExceptionRow        — requirement_id, compensating_controls,
-  │                                  approved_by, expires_at
-  └─▶ EvidencePackageRow          — evidence_type, attestation_status,
-  │                                  evidence_data, expires_at
-  └─▶ FrameworkRequirementRow     — compliance framework items
+Redis List: pearl:jobs:{job_type}
+  │
+  ▼
+Worker process (asyncio)
+  ├── Pop job
+  ├── Update JobRow status → running
+  ├── Call BaseWorker.process(job_id, payload, session) → result
+  │     On success: status → succeeded, result_refs set
+  │     On error:   retry up to max_retries=3, then failed
+  └── Commit to DB
 ```
 
-### Telemetry & Observability
-
-```
-ProjectRow
-  └─▶ ClientAuditEventRow   — pushed from agents: action, decision, tool_name, reason
-  └─▶ ClientCostEntryRow    — pushed from agents: model, cost_usd, duration_ms,
-                               num_turns, tools_called, session_id
-```
-
-### Infrastructure
-
-```
-IntegrationRow     — third-party integration config per org
-NotificationRow    — notification/alert delivery records
-IdempotencyRow     — request deduplication by idempotency key
-```
+Periodic scans are enqueued by the scheduler (`src/pearl/workers/scheduler.py`), which polls scan targets every 60 seconds using a Redis distributed lock to prevent duplicate enqueues.
 
 ---
 
-## Auth Architecture
+## 9. Auth and RBAC
+
+### Auth Flow
 
 ```
 Request
   │
   ▼
-AuthMiddleware
-  ├─ Bearer <token>   → JWT decode (python-jose)
-  │    ├─ HS256 (PEARL_LOCAL=1 / local dev)
-  │    └─ RS256 / OIDC (production, PEARL_JWT_ALGORITHM=RS256)
+AuthMiddleware  [src/pearl/api/middleware/auth.py]
+  ├── Bearer <token>   → JWT decode (python-jose)
+  │     HS256  — PEARL_LOCAL=1 / local dev
+  │     RS256  — production (PEARL_JWT_ALGORITHM=RS256)
   │
-  ├─ X-API-Key: <key> → SHA-256 hash lookup → ApiKeyRow → UserRow
-  │    └─ Checks: is_active, expires_at, last_used_at updated
+  ├── X-API-Key: <key> → SHA-256 hash lookup → ApiKeyRow → UserRow
+  │     Validates: is_active, expires_at; updates last_used_at
   │
-  └─ No auth → anonymous (health, login, jwks, server-config pass through)
-       │
-       ▼
+  └── No credential → anonymous (health, login, jwks pass through)
+        │
+        ▼
   request.state.user = {sub, roles, scopes, email}
-       │
-       ▼
-  Route handler dependencies:
-    Depends(get_current_user)    — any authenticated user
-    Depends(require_role("admin"))  — admin-only
-    Depends(RequireReviewer)        — reviewer role for governance decide endpoints
 ```
 
-### Local Dev Auth Modes
+### Roles
 
-| Flag | Roles Granted | Use Case |
-|---|---|---|
-| `PEARL_LOCAL=1` | `operator` | Development — agents can create/request but not decide |
-| `PEARL_LOCAL=1` + `PEARL_LOCAL_REVIEWER=1` | `operator` + `security_reviewer` | Dashboard reviewer session (set manually by human reviewer only) |
-| Neither | Full JWT/API key auth | Production |
+| Role | Granted Capabilities |
+|---|---|
+| `viewer` | Read-only access to project data |
+| `operator` | Create projects, ingest findings, generate task packets, request approvals and promotions |
+| `admin` | All operator capabilities plus user management, rollback, org config |
+| `reviewer` | Decide approvals and exceptions, mark false positives. Cannot be self-granted by agents |
+| `service_account` | Automated CI/CD integration; scoped to specific project |
 
-### Reviewer Role Gate
+`PEARL_LOCAL=1` grants `operator` only. Reviewer-mode local dev requires `PEARL_LOCAL_REVIEWER=1` set explicitly by a human.
 
-Endpoints that modify governance decisions require the reviewer role:
+### Reviewer-Gated Endpoints
 
 | Endpoint | Gate |
 |---|---|
@@ -298,121 +353,85 @@ Endpoints that modify governance decisions require the reviewer role:
 
 ---
 
-## Worker Architecture
+## 10. Deployment
 
-```
-Redis List: pearl:jobs:{job_type}
-  │
-  ▼
-Worker Process (asyncio)
-  │
-  ├─ Pop job from list
-  ├─ Update JobRow status → "running"
-  ├─ Call BaseWorker.process()
-  │    ├─ On success: status → "succeeded", result_refs set
-  │    └─ On error: retry up to max_retries=3, then "failed"
-  └─ Commit to DB
+### Docker Compose Stack
 
-Worker Registry (src/pearl/workers/registry.py):
-  "compile_context"           → CompileContextWorker
-  "scan_source"               → ScanWorker
-  "normalize_findings"        → NormalizeFindingsWorker
-  "generate_remediation_spec" → GenerateRemediationWorker
-  "report"                    → GenerateReportWorker
-```
+| Service | Image | Ports | Notes |
+|---|---|---|---|
+| `pearl-api` | Local build | `8080:8080` | FastAPI + workers. Connects to postgres, redis, minio |
+| `frontend` | Local build (dev target) | `5177:5173` | React/Vite. `VITE_API_BASE_URL` points to pearl-api |
+| `postgres` | `postgres:16` | `5433:5432` | Primary store. healthcheck: `pg_isready -U pearl` |
+| `redis` | `redis:7` | `6379:6379` | Job queue, SSE pub/sub, scheduler lock |
+| `minio` | `minio/minio` | `9000:9000`, `9001:9001` | Report artifact storage. Console at 9001 |
+| `sonarqube` | `sonarqube:community` | `9090:9000` | Quality gate. Shares postgres (database: sonar) |
+| `sonar-scanner` | `sonarsource/sonar-scanner-cli` | — | Profile `scan` only; run manually: `docker compose run --rm sonar-scanner` |
 
----
+### Key Environment Variables (pearl-api)
 
-## Real-Time Events (SSE)
-
-`GET /stream/events` — Redis pub/sub backend, consumed by the dashboard.
-
-```
-API action publishes event
-  → redis.publish("pearl:events:broadcast", json)      ← all connected clients
-  → redis.publish("pearl:events:user:{user_id}", json) ← targeted user
-
-Browser EventSource (dashboard)
-  ← SSE stream delivers events in real time
-```
-
-Events emitted on: approval created/decided, exception created/decided, gate failure, finding batch ingested, task packet claimed/completed, promotion requested.
-
----
-
-## Autonomous Agent Security Model
-
-PeaRL was red-team tested with an autonomous AI agent (Claude Sonnet 4.6) that demonstrated a 7-level privilege escalation chain targeting self-approval of governance exceptions. The following hard controls are deployed as a result.
-
-See full research: [`docs/security_research/pearl_autonomous_attack_research.md`](./security_research/pearl_autonomous_attack_research.md)
-See operational hardening guide: [`docs/security_research/SECURITY_HARDENING.md`](./security_research/SECURITY_HARDENING.md)
-
-### Hard Controls
-
-| Control | Blocks | Where |
+| Variable | Default | Purpose |
 |---|---|---|
-| `PEARL_LOCAL=1` grants `operator` only — not reviewer | L3 direct API exploit | `src/pearl/config.py` |
-| `RequireReviewer` on all decide endpoints | L3, L4 | `src/pearl/dependencies.py` |
-| `false_positive` status requires reviewer role | L4 evidence poisoning | `src/pearl/api/routes/findings.py` |
-| OpenAPI schema hidden in production (`PEARL_EXPOSE_OPENAPI`) | L2 schema discovery | `src/pearl/main.py` |
-| `disallowedBashCommands` in `.mcp.json` | L3, L7 | `.mcp.json` |
-| `PreToolUse` Bash guard hook (`scripts/pearl_bash_guard.py`) | L6, L7 | Hook script (install in `~/.claude/settings.json`) |
-| 403 structured audit log (`governance_access_denied`) | Detection | `src/pearl/errors/handlers.py` |
-| Behavioral anomaly detection (AGP-01–05) | Detection (post-response) | `src/pearl/security/anomaly_detector.py` |
-| Context receipt detection — AGP-05 on task-complete + promotion | Attestation gap detection | `src/pearl/api/routes/task_packets.py`, `promotions.py` |
+| `PEARL_DATABASE_URL` | `postgresql+asyncpg://pearl:pearl@postgres:5432/pearl` | Primary DB |
+| `PEARL_REDIS_URL` | `redis://redis:6379/0` | Redis |
+| `PEARL_S3_ENDPOINT_URL` | `http://minio:9000` | Artifact storage |
+| `PEARL_JWT_SECRET` | `dev-secret-change-in-production` | JWT signing key |
+| `PEARL_JWT_ALGORITHM` | `HS256` | HS256 local, RS256 prod |
+| `PEARL_MASS_URL` | `http://host.docker.internal:80` | MASS 2.0 base URL |
+| `PEARL_LITELLM_API_URL` | `http://host.docker.internal:4000` | LiteLLM proxy URL |
+| `PEARL_LOCAL_REVIEWER_MODE` | `1` | Enables reviewer role in Docker compose stack |
+| `PEARL_SONAR_URL` | `http://localhost:9090` | SonarQube API base |
 
-### Soft Controls
+### Local Dev (PEARL_LOCAL=1)
 
-| Control | Blocks | Where |
-|---|---|---|
-| CLAUDE.md governance constraints | L5, L6, L7 | `CLAUDE.md` |
-| Stripped bypass documentation from `dependencies.py` (Phase 3) | L5 social engineering | `src/pearl/dependencies.py` |
-| Stripped flag documentation from `.env.example` / `config.py` | L5 social engineering | Source files |
-| Dashboard reviewer-mode warning banner | L5 | `GET /server-config` + frontend |
-| Context drift checker (`scripts/pearl_context_drift_check.py`) | L5 doc drift | Run in CI or as pre-commit hook |
+`PEARL_LOCAL=1` switches to SQLite in-memory, bypasses auth middleware, and auto-creates tables via metadata. No Alembic migrations needed. Use for unit tests only:
 
-### Bash Guard Scope
+```bash
+PEARL_LOCAL=1 pytest tests/ -q
+```
 
-The `pearl_bash_guard.py` hook blocks **only PeaRL-specific governance bypass patterns**:
-- Direct curl calls to `/approvals/*/decide` or `/exceptions/*/decide`
-- Shell commands writing `PEARL_LOCAL_REVIEWER` to any file
+Schema changes must go through Alembic migrations in `src/pearl/db/migrations/versions/`. Do not add `ALTER TABLE` calls to the lifespan.
 
-It does **not** block general development commands (`ps`, `kill`, `docker`, `systemctl`) which are needed for legitimate autonomous prototyping workflows.
+### Production Kubernetes
+
+Kubernetes manifests are in `deploy/k8s/` (deployment, service, ingress, HPA, configmap). Nginx config with TLS and SSE support is in `deploy/nginx/pearl.conf`.
 
 ---
 
-## Observability
+## 11. Observability
 
 | Signal | Implementation |
 |---|---|
-| **Structured logs** | `structlog` — JSON in production, console in local |
-| **Governance access denied** | `WARNING governance_access_denied` on every 403 AuthorizationError (path, user_sub, roles, trace_id) |
-| **Governance anomaly detected** | `WARNING governance_anomaly_detected` emitted post-response by `src/pearl/security/anomaly_detector.py` for AGP-01–05 patterns (exception rate, rapid promotion, bulk false_positive, missing receipt) |
-| **Request tracing** | `X-Trace-ID` header via TraceID middleware → `request.state.trace_id` |
-| **Metrics** | Prometheus via `prometheus-fastapi-instrumentator` at `/metrics` |
-| **Client telemetry** | Agents push audit events and cost entries via `POST /projects/{id}/audit-events` and `/cost-entries` |
+| Structured logs | `structlog` — JSON in production, console in local |
+| Request tracing | `X-Trace-ID` header via TraceID middleware → `request.state.trace_id` → stored on evaluation and task packet rows |
+| Governance access denied | `WARNING governance_access_denied` on every 403 `AuthorizationError` (path, user_sub, roles, trace_id) |
+| Behavioral anomaly detection | `WARNING governance_anomaly_detected` emitted post-response by `src/pearl/security/anomaly_detector.py` for AGP-01–05 patterns |
+| Metrics | Prometheus via `prometheus-fastapi-instrumentator` at `GET /metrics` |
+| Health probes | `GET /health/live` (always 200), `GET /health/ready` (checks DB SELECT 1 + Redis PING; 503 if either fails) |
+| Client telemetry | Agents push audit events via `POST /projects/{id}/audit-events` and cost entries via `POST /projects/{id}/cost-entries` (batch, max 500 each) |
+| Real-time SSE | `GET /stream/events` — Redis pub/sub backend. Events on: approval created/decided, gate failure, finding batch ingested, task packet claimed/completed, promotion requested |
 
 ---
 
-## Key Files Reference
+## 12. Key Files Reference
 
 | File | Purpose |
 |---|---|
 | `src/pearl/main.py` | App factory, lifespan, middleware registration |
 | `src/pearl/config.py` | All `PEARL_*` env var settings (Pydantic BaseSettings) |
-| `src/pearl/api/router.py` | Master router (`/api/v1`) — mounts all 33 route files |
-| `src/pearl/api/middleware/auth.py` | JWT + API key validation, public path list |
+| `src/pearl/api/router.py` | Master router (`/api/v1`) |
+| `src/pearl/api/middleware/auth.py` | JWT + API key validation |
 | `src/pearl/api/middleware/rate_limit.py` | slowapi rate limiting |
 | `src/pearl/dependencies.py` | `get_current_user`, `require_role()`, `RequireReviewer` |
 | `src/pearl/errors/handlers.py` | Exception handlers + 403 audit logging |
+| `src/pearl/models/enums.py` | All string enums (GateRuleType, AutonomyMode, ExecutionPhase, etc.) |
+| `src/pearl/services/promotion/gate_evaluator.py` | Deterministic gate evaluation engine |
 | `src/pearl/workers/registry.py` | Job type → worker class mapping |
-| `src/pearl/workers/scheduler.py` | Periodic scan scheduler (Redis distributed lock) |
+| `src/pearl/workers/scheduler.py` | Periodic scan scheduler (Redis distributed lock, 60s) |
 | `src/pearl/api/routes/stream.py` | SSE real-time events |
-| `src/pearl/api/routes/onboarding.py` | Developer onboarding batch file generation |
-| `src/pearl_dev/unified_mcp.py` | MCP server (39 tools) |
-| `src/pearl/mcp/tools.py` | MCP tool schema definitions |
-| `scripts/pearl_bash_guard.py` | PreToolUse Bash guard hook |
-| `scripts/pearl_hook_check.py` | Auto-registration hook (called by batch file) |
-| `frontend/src/pages/` | 10 React pages: Dashboard, Project, Findings, Approvals, ApprovalDetail, ExceptionReview, Promotion, Reports, Settings, AdminBusinessUnits |
-| `deploy/k8s/` | Kubernetes manifests (deployment, service, ingress, HPA, configmap) |
+| `src/pearl/mcp/tools.py` | MCP tool schema definitions (55 tools) |
+| `src/pearl_dev/unified_mcp.py` | MCP server — handles `/api/v1/mcp` |
+| `src/pearl/security/anomaly_detector.py` | Post-response AGP-01–05 behavioral anomaly detection |
+| `src/pearl/db/migrations/versions/` | Alembic migration files (001–011) |
+| `deploy/k8s/` | Kubernetes manifests |
 | `deploy/nginx/pearl.conf` | Nginx config with TLS + SSE support |
+| `docs/dark-factory-governance.md` | Dark Factory governance pattern catalogue (P-01–P-13) |
