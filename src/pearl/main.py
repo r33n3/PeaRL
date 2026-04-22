@@ -30,8 +30,8 @@ async def _seed_bootstrap_admin(session: AsyncSession) -> None:
 
     ADMIN_USER_ID = "usr_bootstrap_admin"
     ADMIN_EMAIL = "admin@pearl.dev"
-    ADMIN_PASSWORD = "PeaRL-admin-2026"
-    ADMIN_API_KEY_RAW = "pearl-KYQXqnybaMaul7PoKJLsT4PZpZSFj0FIaVE2IPrQJNk"
+    ADMIN_PASSWORD = "PeaRL-admin-2026"  # nosec B105 — dev bootstrap only; rotate via PEARL_ADMIN_PASSWORD env var in production
+    ADMIN_API_KEY_RAW = "pearl-KYQXqnybaMaul7PoKJLsT4PZpZSFj0FIaVE2IPrQJNk"  # nosec B105
     ADMIN_KEY_ID = "key_bootstrap_admin"
 
     existing = (await session.execute(

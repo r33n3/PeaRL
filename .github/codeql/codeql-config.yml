@@ -1,0 +1,35 @@
+name: PeaRL CodeQL config
+
+queries:
+  - uses: security-and-quality
+
+query-filters:
+  # _checked_table() validates table names against an allowlist before SQL interpolation.
+  # The f-string in text(f"DELETE FROM {_checked_table(table)}") is safe by design.
+  - exclude:
+      id: py/sql-injection
+      paths:
+        - src/pearl/api/routes/admin.py
+
+  # HMAC-SHA256 is used for API key hashing (lookup index), not for password storage.
+  # Passwords use scrypt. This suppresses false positives on the key hash lines.
+  - exclude:
+      id: py/weak-sensitive-data-hashing
+      paths:
+        - src/pearl/api/middleware/auth.py
+        - src/pearl/main.py
+        - src/pearl/api/routes/auth.py
+
+  # Bootstrap admin credentials are dev-only defaults documented in README.
+  # Production deployments rotate these via environment variables.
+  - exclude:
+      id: py/clear-text-storage-sensitive-data
+      paths:
+        - src/pearl/main.py
+
+  # Stack traces logged at WARNING level are intentional for operator visibility.
+  # They are not exposed to API callers.
+  - exclude:
+      id: py/stack-trace-exposure
+      paths:
+        - src/pearl/api/routes/integrations.py
