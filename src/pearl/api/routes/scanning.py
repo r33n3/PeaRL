@@ -8,8 +8,6 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
-
-logger = logging.getLogger(__name__)
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
