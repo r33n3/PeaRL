@@ -1,0 +1,21 @@
+# CODEOWNERS — auto-request reviews for sensitive areas
+
+# Default owner for everything
+* @r33n3
+
+# Promotion gates and governance engine — always needs careful review
+src/pearl/services/promotion/ @r33n3
+src/pearl/services/factory_run/ @r33n3
+
+# Auth and security middleware
+src/pearl/api/middleware/ @r33n3
+src/pearl/api/routes/auth.py @r33n3
+
+# Database migrations — schema changes are irreversible
+src/pearl/db/migrations/ @r33n3
+
+# MCP tool surface — changes affect all connected agents
+src/pearl/mcp/ @r33n3
+
+# CI/CD and release workflows
+.github/workflows/ @r33n3
