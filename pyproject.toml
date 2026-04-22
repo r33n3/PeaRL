@@ -24,12 +24,6 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Application Frameworks",
     "Typing :: Typed",
 ]
-
-[project.urls]
-Homepage = "https://github.com/r33n3/PeaRL"
-Repository = "https://github.com/r33n3/PeaRL"
-"Bug Tracker" = "https://github.com/r33n3/PeaRL/issues"
-Changelog = "https://github.com/r33n3/PeaRL/blob/main/CHANGELOG.md"
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
@@ -78,6 +72,12 @@ pearl-dev = "pearl_dev.cli:main"
 pearl-server = "pearl.server_cli:main"
 pearl-mcp = "pearl_dev.unified_mcp:main"
 pearl-agent = "pearl_dev.agent.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/r33n3/PeaRL"
+Repository = "https://github.com/r33n3/PeaRL"
+"Bug Tracker" = "https://github.com/r33n3/PeaRL/issues"
+Changelog = "https://github.com/r33n3/PeaRL/blob/main/CHANGELOG.md"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
