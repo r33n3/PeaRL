@@ -122,6 +122,7 @@ dev → pilot → preprod → prod (each has its own approval level)
 
 - **ALTER TABLE in lifespan** — raw `ALTER TABLE ... ADD COLUMN` blocks in `main.py` lifespan run on every startup. Schema changes must go through Alembic migrations in `src/pearl/db/migrations/versions/`. Do not add ALTER TABLE calls to lifespan; create a numbered migration file instead.
 
+
 ## Governance — Correct Action Sequence
 
 When a gate blocks an action:

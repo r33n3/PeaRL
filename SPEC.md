@@ -443,6 +443,7 @@ Central registry of all agent configs, versions, owners, and quality scores (Dar
 
 ---
 
+
 ### Feature: Server-Authoritative Audit Trail (Security Sprint)
 
 **Status:** Complete
@@ -544,6 +545,7 @@ Four-track cleanup sprint addressing GitHub Code Scanning alerts (×17), httpx c
 - `src/pearl/main.py` — remove ALTER TABLE, add Alembic migration (antipatterns)
 
 ---
+
 
 ### Feature: MASS 2.0 / Snyk SCA Integration
 
