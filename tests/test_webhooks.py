@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -256,9 +257,6 @@ def test_webhook_registry_enforces_subscription_cap():
     # Existing subscriptions must be unchanged
     assert len(registry.list_all()) == 3
 
-
-import httpx
-from unittest.mock import MagicMock, patch
 
 @pytest.mark.asyncio
 async def test_deliver_reuses_single_client_across_retries():
