@@ -368,7 +368,12 @@ async def complete_task_packet(
         )
         db.add(audit_row)
     except Exception:
-        logger.warning("Audit event creation failed for packet %s", packet_id, exc_info=True)
+        logger.error(
+            "Audit event creation failed for packet %s — aborting commit to preserve audit integrity",
+            packet_id,
+            exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail="Audit record creation failed; transaction aborted.")
 
     await db.commit()
 
