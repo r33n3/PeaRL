@@ -80,7 +80,7 @@ def test_envelope_validates_against_schema():
 @pytest.mark.asyncio
 async def test_webhook_retry_uses_backoff():
     """Each retry attempt sleeps before the next attempt."""
-    from pearl.events.webhook_emitter import _deliver, build_envelope
+    from pearl.events.webhook_emitter import _deliver, build_envelope, _webhook_client
     from pearl.events.webhook_config import WebhookSubscription
     from unittest.mock import AsyncMock, patch
 
@@ -92,18 +92,13 @@ async def test_webhook_retry_uses_backoff():
     async def fake_sleep(secs):
         sleep_calls.append(secs)
 
+    mock_resp = AsyncMock()
+    mock_resp.status_code = 503
+    mock_resp.headers = {}
+
     with patch("pearl.events.webhook_emitter.random.random", return_value=0.5):
         with patch("pearl.events.webhook_emitter.asyncio.sleep", side_effect=fake_sleep):
-            mock_resp = AsyncMock()
-            mock_resp.status_code = 503
-            mock_resp.headers = {}
-            with patch("httpx.AsyncClient") as mock_cls:
-                mock_instance = AsyncMock()
-                mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
-                mock_instance.__aexit__ = AsyncMock(return_value=False)
-                mock_instance.post = AsyncMock(return_value=mock_resp)
-                mock_cls.return_value = mock_instance
-
+            with patch.object(_webhook_client, "post", AsyncMock(return_value=mock_resp)):
                 result = await _deliver(envelope, sub)
 
     assert result["error"] is not None
@@ -114,7 +109,7 @@ async def test_webhook_retry_uses_backoff():
 @pytest.mark.asyncio
 async def test_webhook_respects_retry_after_header():
     """429 response with Retry-After header uses that value for sleep."""
-    from pearl.events.webhook_emitter import _deliver, build_envelope
+    from pearl.events.webhook_emitter import _deliver, build_envelope, _webhook_client
     from pearl.events.webhook_config import WebhookSubscription
     from unittest.mock import AsyncMock, patch
 
@@ -126,21 +121,16 @@ async def test_webhook_respects_retry_after_header():
     async def fake_sleep(secs):
         sleep_calls.append(secs)
 
-    with patch("pearl.events.webhook_emitter.asyncio.sleep", side_effect=fake_sleep):
-        mock_resp = AsyncMock()
-        mock_resp.status_code = 429
-        mock_resp.headers = {"Retry-After": "5"}
-        # After 429 sleep, return 200 to stop retrying
-        mock_resp_ok = AsyncMock()
-        mock_resp_ok.status_code = 200
-        mock_resp_ok.headers = {}
-        with patch("httpx.AsyncClient") as mock_cls:
-            mock_instance = AsyncMock()
-            mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
-            mock_instance.__aexit__ = AsyncMock(return_value=False)
-            mock_instance.post = AsyncMock(side_effect=[mock_resp, mock_resp_ok])
-            mock_cls.return_value = mock_instance
+    mock_resp = AsyncMock()
+    mock_resp.status_code = 429
+    mock_resp.headers = {"Retry-After": "5"}
+    # After 429 sleep, return 200 to stop retrying
+    mock_resp_ok = AsyncMock()
+    mock_resp_ok.status_code = 200
+    mock_resp_ok.headers = {}
 
+    with patch("pearl.events.webhook_emitter.asyncio.sleep", side_effect=fake_sleep):
+        with patch.object(_webhook_client, "post", AsyncMock(side_effect=[mock_resp, mock_resp_ok])):
             result = await _deliver(envelope, sub)
 
     assert result["status"] == 200
@@ -151,7 +141,7 @@ async def test_webhook_respects_retry_after_header():
 @pytest.mark.asyncio
 async def test_webhook_retry_after_malformed_uses_backoff():
     """Malformed Retry-After header (e.g. HTTP-date) falls back to exponential backoff."""
-    from pearl.events.webhook_emitter import _deliver, build_envelope
+    from pearl.events.webhook_emitter import _deliver, build_envelope, _webhook_client
     from pearl.events.webhook_config import WebhookSubscription
     from unittest.mock import AsyncMock, patch
 
@@ -163,22 +153,16 @@ async def test_webhook_retry_after_malformed_uses_backoff():
     async def fake_sleep(secs):
         sleep_calls.append(secs)
 
+    mock_429 = AsyncMock()
+    mock_429.status_code = 429
+    mock_429.headers = {"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"}  # HTTP-date format
+
+    mock_200 = AsyncMock()
+    mock_200.status_code = 200
+    mock_200.headers = {}
+
     with patch("pearl.events.webhook_emitter.asyncio.sleep", side_effect=fake_sleep):
-        mock_429 = AsyncMock()
-        mock_429.status_code = 429
-        mock_429.headers = {"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"}  # HTTP-date format
-
-        mock_200 = AsyncMock()
-        mock_200.status_code = 200
-        mock_200.headers = {}
-
-        with patch("httpx.AsyncClient") as mock_cls:
-            mock_instance = AsyncMock()
-            mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
-            mock_instance.__aexit__ = AsyncMock(return_value=False)
-            mock_instance.post = AsyncMock(side_effect=[mock_429, mock_200])
-            mock_cls.return_value = mock_instance
-
+        with patch.object(_webhook_client, "post", AsyncMock(side_effect=[mock_429, mock_200])):
             result = await _deliver(envelope, sub)
 
     # Should not crash, should return 200 on retry
@@ -231,7 +215,7 @@ async def test_webhook_idempotency_stores_key_on_success(db_session):
     """After a successful delivery with db session, idempotency key is stored."""
     import hashlib
     from unittest.mock import AsyncMock, patch
-    from pearl.events.webhook_emitter import _deliver, build_envelope
+    from pearl.events.webhook_emitter import _deliver, build_envelope, _webhook_client
     from pearl.events.webhook_config import WebhookSubscription
     from pearl.db.models.idempotency import IdempotencyKeyRow
 
@@ -246,13 +230,7 @@ async def test_webhook_idempotency_stores_key_on_success(db_session):
     mock_resp.status_code = 200
     mock_resp.headers = {}
 
-    with patch("httpx.AsyncClient") as mock_cls:
-        mock_instance = AsyncMock()
-        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
-        mock_instance.__aexit__ = AsyncMock(return_value=False)
-        mock_instance.post = AsyncMock(return_value=mock_resp)
-        mock_cls.return_value = mock_instance
-
+    with patch.object(_webhook_client, "post", AsyncMock(return_value=mock_resp)):
         result = await _deliver(envelope, sub, db=db_session)
 
     assert result["status"] == 200
@@ -277,3 +255,34 @@ def test_webhook_registry_enforces_subscription_cap():
 
     # Existing subscriptions must be unchanged
     assert len(registry.list_all()) == 3
+
+
+import httpx
+from unittest.mock import MagicMock, patch
+
+@pytest.mark.asyncio
+async def test_deliver_reuses_single_client_across_retries():
+    """_deliver must not instantiate a new AsyncClient per retry attempt."""
+    from pearl.events.webhook_emitter import _deliver, _webhook_client
+    from pearl.events.webhook_config import WebhookSubscription
+    from pearl.events.webhook_emitter import build_envelope
+
+    envelope = build_envelope("test.event", {"x": 1})
+    sub = WebhookSubscription(url="http://example.com/hook", secret="s")
+
+    post_call_count = 0
+
+    async def fake_post(url, **kwargs):
+        nonlocal post_call_count
+        post_call_count += 1
+        mock_resp = MagicMock()
+        mock_resp.status_code = 500  # force retries
+        mock_resp.headers = {}
+        return mock_resp
+
+    with patch.object(_webhook_client, "post", side_effect=fake_post):
+        result = await _deliver(envelope, sub, db=None)
+
+    # 3 retries happened, but only the one shared client was used
+    assert post_call_count == 3
+    assert result["error"] is not None
