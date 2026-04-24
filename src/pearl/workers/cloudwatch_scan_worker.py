@@ -14,7 +14,7 @@ Detection types:
 """
 from __future__ import annotations
 
-import logging
+import structlog
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,7 +34,7 @@ from pearl.repositories.finding_repo import FindingBatchRepository, FindingRepos
 from pearl.services.id_generator import generate_id
 from pearl.workers.base import BaseWorker
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class CloudWatchScanWorker(BaseWorker):

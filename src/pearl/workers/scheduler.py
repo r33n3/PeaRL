@@ -1,12 +1,12 @@
 """Background scheduler for periodic scan target polling."""
 
 import asyncio
-import logging
+import structlog
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Frequency label → timedelta
 _FREQUENCY_MAP = {

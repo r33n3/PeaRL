@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import hmac
 import json
-import logging
+import structlog
 import random
 from datetime import datetime, timezone
 
@@ -15,7 +15,7 @@ from pearl.services.id_generator import generate_id
 
 from .webhook_config import WebhookSubscription, webhook_registry
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 def _sign_payload(body: bytes, secret: str) -> str:

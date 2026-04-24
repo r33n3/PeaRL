@@ -1,6 +1,6 @@
 """Rate limiting middleware using slowapi."""
 
-import logging
+import structlog
 import time
 
 from fastapi import Request, Response
@@ -9,7 +9,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 
 from pearl.config import settings
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # HTTP methods considered "writes"
 _WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import logging
+import structlog
 from datetime import datetime
 
 from pearl.integrations.adapters import AVAILABLE_ADAPTERS, import_adapter
@@ -15,7 +15,7 @@ from pearl.integrations.normalized import (
     NormalizedTicket,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class IntegrationService:

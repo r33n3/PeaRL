@@ -5,7 +5,7 @@ embedding pipelines, document ingestion, and retrieval code.
 Pattern-based analysis matching the existing analyzer conventions.
 """
 
-import logging
+import structlog
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -21,7 +21,7 @@ from .patterns import (
     RAGRiskCategory,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 @dataclass

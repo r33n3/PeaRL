@@ -1,11 +1,11 @@
 """Scanning API routes — trigger scans, get results, ingest security reviews."""
 
-import logging
+import structlog
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from pydantic import BaseModel, Field

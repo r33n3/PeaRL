@@ -1,6 +1,6 @@
 """Approval workflow API routes."""
 
-import logging
+import structlog
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Request
@@ -16,7 +16,7 @@ from pearl.repositories.fairness_repo import AuditEventRepository
 from pearl.services.id_generator import generate_id
 from pearl.api.routes.stream import publish_event
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(tags=["Approvals"])
 

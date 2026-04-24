@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import logging
+import structlog
 
 import httpx
 
@@ -10,7 +10,7 @@ from pearl.integrations.adapters.base import SinkAdapter
 from pearl.integrations.config import IntegrationEndpoint
 from pearl.integrations.normalized import NormalizedNotification, NormalizedSecurityEvent
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class TelegramAdapter(SinkAdapter):

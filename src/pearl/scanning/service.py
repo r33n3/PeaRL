@@ -16,7 +16,7 @@ Usage::
 
 from __future__ import annotations
 
-import logging
+import structlog
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,7 +37,7 @@ from pearl.scanning.policy.guardrails import (
 )
 from pearl.scanning.types import AttackCategory, ComponentType, ScanSeverity
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 def _validate_scan_path(path: Path | str, allowed_root: str = "/") -> Path:

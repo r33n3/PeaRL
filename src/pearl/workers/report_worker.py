@@ -1,7 +1,7 @@
 """Worker for report generation jobs."""
 
 import json
-import logging
+import structlog
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -12,7 +12,7 @@ from pearl.db.models.report import ReportRow
 from pearl.services.id_generator import generate_id
 from pearl.workers.base import BaseWorker
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class GenerateReportWorker(BaseWorker):

@@ -3,14 +3,14 @@
 Identifies and maps the attack surface of AI deployments.
 """
 
-import logging
+import structlog
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Iterator
 
 from pearl.scanning.types import ScanSeverity, ComponentType
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class AttackVectorType(str, Enum):

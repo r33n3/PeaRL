@@ -1,6 +1,6 @@
 """Task packet generation and execution bridge API routes."""
 
-import logging
+import structlog
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -19,7 +19,7 @@ from pearl.repositories.task_packet_repo import TaskPacketRepository
 from pearl.services.id_generator import generate_id
 from pearl.services.task_packet_generator import generate_task_packet
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(tags=["TaskPackets"])
 

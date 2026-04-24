@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import logging
+import structlog
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pearl.config import settings
 from pearl.workers.base import BaseWorker
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Path to the docker-compose.yaml at the repo root
 _COMPOSE_FILE = Path(__file__).resolve().parents[4] / "docker-compose.yaml"

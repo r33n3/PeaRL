@@ -4,7 +4,7 @@ Main analyzer for MCP (Model Context Protocol) servers.
 """
 
 import json
-import logging
+import structlog
 import re
 from dataclasses import dataclass, field
 from enum import Enum
@@ -13,7 +13,7 @@ from typing import Any, Iterator
 
 from pearl.scanning.types import AttackCategory, ComponentType, ScanSeverity
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class MCPRiskCategory(str, Enum):

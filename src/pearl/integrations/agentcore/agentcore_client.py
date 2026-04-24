@@ -8,9 +8,9 @@ requiring live AWS credentials.
 from __future__ import annotations
 
 import json
-import logging
+import structlog
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 _SERVICE = "bedrock-agentcore-control"
 

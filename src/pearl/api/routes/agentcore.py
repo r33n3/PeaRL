@@ -1,6 +1,6 @@
 """AgentCore integration routes — Cedar policy deployment and drift status."""
 
-import logging
+import structlog
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +11,7 @@ from pearl.repositories.cedar_deployment_repo import CedarDeploymentRepository
 from pearl.repositories.agentcore_scan_state_repo import AgentCoreScanStateRepository
 from pearl.workers.queue import enqueue_job
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/agentcore", tags=["AgentCore"])
 

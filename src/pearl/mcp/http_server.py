@@ -1,5 +1,5 @@
 import json
-import logging
+import structlog
 
 import mcp.types as mcp_types
 from mcp.server import Server
@@ -8,7 +8,7 @@ from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from pearl.mcp.server import MCPServer
 from pearl.mcp.tools import TOOL_DEFINITIONS
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 _TOOL_MAP: dict[str, dict] = {t["name"]: t for t in TOOL_DEFINITIONS}
 

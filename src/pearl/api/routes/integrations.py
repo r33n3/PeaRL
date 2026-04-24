@@ -1,9 +1,9 @@
 """Integration endpoint management and sync routes."""
 
-import logging
+import structlog
 from datetime import datetime, timezone
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 from fastapi import APIRouter, Depends
 import pydantic

@@ -3,13 +3,13 @@
 Wraps the existing webhook emitter and also creates notification records.
 """
 
-import logging
+import structlog
 from datetime import datetime, timezone
 
 from pearl.events.webhook_emitter import emit_event
 from pearl.services.id_generator import generate_id
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Event type constants
 APPROVAL_CREATED = "approval.created"

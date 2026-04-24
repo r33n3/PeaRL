@@ -9,10 +9,10 @@ worker pipeline can proceed without live AWS credentials.
 from __future__ import annotations
 
 import asyncio
-import logging
+import structlog
 from datetime import datetime, timezone
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 _SERVICE = "logs"
 _QUERY_POLL_INTERVAL = 2  # seconds between status checks

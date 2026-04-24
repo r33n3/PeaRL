@@ -1,6 +1,6 @@
 """FastAPI exception handlers producing spec-compliant ErrorResponse."""
 
-import logging
+import structlog
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request
@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from pearl.errors.exceptions import AuthorizationError, PeaRLError
 from pearl.models.common import ErrorDetail, ErrorResponse
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 def register_exception_handlers(app: FastAPI) -> None:

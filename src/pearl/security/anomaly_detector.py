@@ -11,14 +11,14 @@ compatible with the existing SECURITY_HARDENING.md §6 alert queries.
 Pattern taxonomy: docs/security_research/anomaly_patterns.md
 """
 
-import logging
+import structlog
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 @dataclass

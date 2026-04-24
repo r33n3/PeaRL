@@ -11,12 +11,12 @@ evaluations and produces PeaRL findings for five detection types:
 """
 from __future__ import annotations
 
-import logging
+import structlog
 import math
 from datetime import datetime, timezone
 from typing import NamedTuple
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # ── Finding severity map per detection code ────────────────────────────────────
 _SEVERITY: dict[str, str] = {
