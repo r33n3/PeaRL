@@ -117,3 +117,52 @@ async def test_emit_event_no_db_uses_in_memory_registry():
             await emit_event("any.event", {}, db=None)
 
     assert "http://in-memory.com/hook" in delivered
+
+
+@pytest.mark.asyncio
+async def test_api_create_webhook_subscription(reviewer_client):
+    """POST /api/v1/webhooks/subscriptions creates a DB-backed subscription."""
+    resp = await reviewer_client.post(
+        "/api/v1/webhooks/subscriptions",
+        json={
+            "url": "https://example.com/receive",
+            "secret": "my-signing-secret",
+            "event_types": ["project.created"],
+        },
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["subscription_id"].startswith("wsub_")
+    assert body["url"] == "https://example.com/receive"
+    assert body["event_types"] == ["project.created"]
+    assert body["active"] is True
+
+
+@pytest.mark.asyncio
+async def test_api_list_webhook_subscriptions(reviewer_client):
+    """GET /api/v1/webhooks/subscriptions returns all active subscriptions."""
+    await reviewer_client.post(
+        "/api/v1/webhooks/subscriptions",
+        json={"url": "https://list-test.com/hook", "secret": "s", "event_types": []},
+    )
+    resp = await reviewer_client.get("/api/v1/webhooks/subscriptions")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert isinstance(body, list)
+    assert any(s["url"] == "https://list-test.com/hook" for s in body)
+
+
+@pytest.mark.asyncio
+async def test_api_deactivate_webhook_subscription(reviewer_client):
+    """DELETE /api/v1/webhooks/subscriptions/{id} deactivates the subscription."""
+    create_resp = await reviewer_client.post(
+        "/api/v1/webhooks/subscriptions",
+        json={"url": "https://delete-me.com/hook", "secret": "s", "event_types": []},
+    )
+    sub_id = create_resp.json()["subscription_id"]
+
+    del_resp = await reviewer_client.delete(f"/api/v1/webhooks/subscriptions/{sub_id}")
+    assert del_resp.status_code == 204
+
+    list_resp = await reviewer_client.get("/api/v1/webhooks/subscriptions")
+    assert all(s["subscription_id"] != sub_id for s in list_resp.json())
