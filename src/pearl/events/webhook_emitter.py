@@ -18,6 +18,18 @@ from .webhook_config import WebhookSubscription, webhook_registry
 logger = logging.getLogger(__name__)
 
 
+class _DBSubscription:
+    """Adapts WebhookSubscriptionRow to the WebhookSubscription interface expected by _deliver."""
+
+    def __init__(self, row) -> None:
+        self.url = row.url
+        # Use secret_hash as the signing secret — consistent across restarts.
+        # The plaintext is not stored; secret_hash is the stable per-subscriber secret.
+        self.secret = row.secret_hash
+        self.event_types = row.event_types or []
+        self.active = row.active
+
+
 def _sign_payload(body: bytes, secret: str) -> str:
     """Compute HMAC-SHA256 signature over the raw JSON body."""
     return hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
@@ -47,19 +59,25 @@ async def emit_event(
 ) -> list[dict]:
     """Emit a webhook event to all matching subscribers.
 
+    When db is provided, queries subscriptions from the database (HA-safe).
+    Falls back to the in-memory registry when db=None (backward compat).
     Returns a list of delivery results (url, status, error).
     """
-    subscribers = webhook_registry.get_subscribers(event_type)
+    if db is not None:
+        from pearl.repositories.webhook_subscription_repo import WebhookSubscriptionRepository
+        db_rows = await WebhookSubscriptionRepository(db).get_subscribers(event_type)
+        subscribers = [_DBSubscription(row) for row in db_rows]
+    else:
+        subscribers = webhook_registry.get_subscribers(event_type)
+
     if not subscribers:
         return []
 
     envelope = build_envelope(event_type, payload, source_system)
     results = []
-
     for sub in subscribers:
         result = await _deliver(envelope, sub, db=db)
         results.append(result)
-
     return results
 
 
