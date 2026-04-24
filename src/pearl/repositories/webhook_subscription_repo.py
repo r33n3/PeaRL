@@ -1,6 +1,5 @@
 """Repository for persistent webhook subscriptions."""
 
-import hashlib
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,11 +14,10 @@ class WebhookSubscriptionRepository:
     async def create(self, url: str, secret: str, event_types: list[str]) -> str:
         """Create a new active subscription. Returns subscription_id."""
         sub_id = generate_id("wsub_")
-        secret_hash = hashlib.sha256(secret.encode()).hexdigest()
         row = WebhookSubscriptionRow(
             subscription_id=sub_id,
             url=url,
-            secret_hash=secret_hash,
+            secret=secret,
             event_types=event_types,
             active=True,
         )

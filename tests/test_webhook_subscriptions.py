@@ -11,7 +11,7 @@ async def test_webhook_subscription_model_importable():
     cols = {c.name for c in WebhookSubscriptionRow.__table__.columns}
     assert "subscription_id" in cols
     assert "url" in cols
-    assert "secret_hash" in cols
+    assert "secret" in cols
     assert "event_types" in cols
     assert "active" in cols
     assert "created_at" in cols

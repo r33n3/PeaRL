@@ -11,7 +11,7 @@ class WebhookSubscriptionRow(Base):
 
     subscription_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     url: Mapped[str] = mapped_column(String(2048), nullable=False)
-    secret_hash: Mapped[str] = mapped_column(String(256), nullable=False)
+    secret: Mapped[str] = mapped_column(String(2048), nullable=False)
     event_types: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[DateTime] = mapped_column(

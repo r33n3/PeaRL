@@ -23,9 +23,7 @@ class _DBSubscription:
 
     def __init__(self, row) -> None:
         self.url = row.url
-        # Use secret_hash as the signing secret — consistent across restarts.
-        # The plaintext is not stored; secret_hash is the stable per-subscriber secret.
-        self.secret = row.secret_hash
+        self.secret = row.secret
         self.event_types = row.event_types or []
         self.active = row.active
 
