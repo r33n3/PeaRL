@@ -515,3 +515,67 @@ async def test_contract_snapshot_flat_arrays_still_work(async_client, db_session
     assert snapshot["agent_roles"] == ["coordinator", "worker"]
     assert snapshot["litellm_agent_ids"] == ["agent-a", "agent-b"]
     assert snapshot.get("agent_contracts") is None
+
+
+@pytest.mark.asyncio
+async def test_contract_compliance_by_project_id(async_client, db_session):
+    """GET /projects/{id}/contract-compliance must find the most recent agent_provision packet."""
+    from pearl.db.models.project import ProjectRow
+    from pearl.db.models.task_packet import TaskPacketRow
+    from pearl.services.id_generator import generate_id
+    from datetime import datetime, timezone
+
+    project = ProjectRow(
+        project_id="proj_compliance_proj_lookup",
+        name="Compliance Proj Lookup",
+        owner_team="factory",
+        business_criticality="low",
+        external_exposure="internal_only",
+        ai_enabled=True,
+        schema_version="1.1",
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )
+    db_session.add(project)
+
+    packet_id = generate_id("tp_")
+    packet = TaskPacketRow(
+        task_packet_id=packet_id,
+        project_id="proj_compliance_proj_lookup",
+        agent_id="agent-coord-001",
+        execution_phase="planning",
+        environment="dev",
+        trace_id=generate_id("trace_"),
+        packet_data={
+            "task_type": "agent_provision",
+            "task_summary": "Contract snapshot",
+            "environment": "dev",
+            "contract_snapshot": {
+                "package_id": "pkg_001",
+                "agent_roles": ["coordinator"],
+                "litellm_agent_ids": [],
+                "key_aliases": [],
+            },
+        },
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )
+    db_session.add(packet)
+    await db_session.commit()
+
+    resp = await async_client.get(
+        "/api/v1/projects/proj_compliance_proj_lookup/contract-compliance",
+        headers={"X-API-Key": "pearl-KYQXqnybaMaul7PoKJLsT4PZpZSFj0FIaVE2IPrQJNk"},
+    )
+    # LiteLLM not configured in test env → 503 or compliance skipped
+    assert resp.status_code in (200, 503)
+
+
+@pytest.mark.asyncio
+async def test_contract_compliance_project_not_found(async_client):
+    """GET /projects/{id}/contract-compliance with no provision packets returns 404."""
+    resp = await async_client.get(
+        "/api/v1/projects/proj_nonexistent_99/contract-compliance",
+        headers={"X-API-Key": "pearl-KYQXqnybaMaul7PoKJLsT4PZpZSFj0FIaVE2IPrQJNk"},
+    )
+    assert resp.status_code == 404

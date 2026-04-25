@@ -983,20 +983,28 @@ TOOL_DEFINITIONS = [
         "name": "pearl_check_agent_contract",
         "description": (
             "Check whether a deployed agent's runtime state complies with its approved contract. "
-            "Performs two checks: (1) Spend compliance — queries LiteLLM virtual key spend and model usage "
+            "Accepts either packet_id (tp_...) or project_id (proj_...) — one is required. "
+            "Performs: (1) Spend compliance — queries LiteLLM virtual key spend and model usage "
             "against the allowance profile budget and model restrictions. "
-            "(2) Drift detection — if a contract snapshot was submitted via pearl_submit_contract_snapshot, "
-            "compares the snapshot (agent IDs, skill hash, MCP allowlist, key aliases) against the current "
-            "live LiteLLM agent state to detect unauthorized edits since provisioning. "
-            "Returns passed=true/false with violations list, plus a drift_check sub-object when a snapshot exists. "
+            "(2) Drift detection — if a contract snapshot with agent_contracts was submitted, "
+            "compares snapshot model_allowlist, mcp_allowlist, and blocked_tools against the "
+            "current live LiteLLM key state. Reports model_drift, permission_drift, key_liveness. "
+            "(3) Key lifecycle compliance — checks each key's expiry and rotation policy. "
+            "Returns passed=true/false with violations list. "
             "Call this before approving promotion to verify the agent stayed within its approved contract."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "packet_id": {"type": "string", "description": "Task packet ID (tp_...) to check contract compliance for."},
+                "packet_id": {
+                    "type": "string",
+                    "description": "Task packet ID (tp_...) — use when you have the packet from pearl_submit_contract_snapshot.",
+                },
+                "project_id": {
+                    "type": "string",
+                    "description": "Project ID (proj_...) — alternative to packet_id. Checks the most recent contract snapshot for this project. Use during promote loops when you have project_id but not packet_id.",
+                },
             },
-            "required": ["packet_id"],
         },
     },
     {

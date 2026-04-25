@@ -96,6 +96,7 @@ class Settings(BaseSettings):
     # against active task packets during promotion gate evaluation.
     litellm_api_url: str = ""     # PEARL_LITELLM_API_URL  e.g. http://localhost:4000
     litellm_api_key: str = ""     # PEARL_LITELLM_API_KEY  (builder key or master key)
+    litellm_admin_key: str = ""     # PEARL_LITELLM_ADMIN_KEY  (PeaRL service account — key registry operations)
 
     # MASS 2.0 integration
     mass_url: str = ""             # MASS 2.0 API base URL

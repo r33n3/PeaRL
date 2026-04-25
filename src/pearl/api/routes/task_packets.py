@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pearl.config import settings
 from pearl.dependencies import get_db, get_current_user, get_trace_id
 from pearl.errors.exceptions import ConflictError, NotFoundError, ValidationError
-from pearl.integrations.litellm import ContractCompliance, LiteLLMClient
+from pearl.integrations.litellm import ContractCompliance, LiteLLMClient, check_key_lifecycle
 from pearl.repositories.allowance_profile_repo import AllowanceProfileRepository
 from pearl.repositories.promotion_repo import PromotionGateRepository
 from pearl.repositories.project_repo import ProjectRepository
@@ -573,6 +573,85 @@ async def _check_auto_elevation(
         )
 
 
+async def _run_contract_compliance(packet: "TaskPacketRow", db: "AsyncSession") -> dict:
+    """Shared compliance logic used by both packet_id and project_id lookups."""
+    run_id: str | None = (packet.packet_data or {}).get("run_id")
+    if not run_id:
+        result = ContractCompliance(
+            passed=True,
+            violations=["No run_id in packet_data — contract check skipped"],
+            key_alias=None,
+            approved_models=[],
+            actual_models_used=[],
+            budget_cap_usd=None,
+            actual_spend_usd=0.0,
+            request_count=0,
+            checked_at=datetime.now(timezone.utc).isoformat(),
+        ).model_dump()
+        result["drift_check"] = None
+        result["key_compliance"] = []
+        return result
+
+    budget_cap: float | None = None
+    allowed_models: list[str] = []
+    if packet.allowance_profile_id:
+        profile_repo = AllowanceProfileRepository(db)
+        profile = await profile_repo.get(packet.allowance_profile_id)
+        if profile:
+            budget_cap = profile.budget_cap_usd
+            allowed_models = list(profile.model_restrictions or [])
+
+    if not settings.litellm_api_url or not settings.litellm_api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="LiteLLM is not configured. Set PEARL_LITELLM_API_URL and PEARL_LITELLM_API_KEY.",
+        )
+
+    key_alias = f"wtk-run-{run_id}"
+    client = LiteLLMClient(
+        base_url=settings.litellm_api_url,
+        api_key=settings.litellm_admin_key or settings.litellm_api_key,
+    )
+    compliance = await client.get_key_compliance(
+        key_alias=key_alias,
+        budget_cap_usd=budget_cap,
+        allowed_models=allowed_models,
+    )
+    result = compliance.model_dump()
+
+    contract_snapshot = (packet.packet_data or {}).get("contract_snapshot")
+    if contract_snapshot:
+        drift_report = await client.check_drift(contract_snapshot)
+        result["drift_check"] = drift_report.model_dump()
+        if drift_report.drifted:
+            result["passed"] = False
+    else:
+        result["drift_check"] = None
+
+    # Key lifecycle compliance from per-agent contract entries (REQ-7)
+    key_compliance: list[dict] = []
+    agent_contracts = (contract_snapshot or {}).get("agent_contracts") or []
+    for ac in agent_contracts:
+        ka = ac.get("key_alias")
+        if not ka:
+            continue
+        lifecycle = check_key_lifecycle(
+            key_alias=ka,
+            key_expiry_iso=ac.get("key_expiry"),
+            key_rotation_days=ac.get("key_rotation_days"),
+            last_rotation_at_iso=None,
+        )
+        key_compliance.append({
+            "agent_id": ac.get("agent_id"),
+            **lifecycle,
+        })
+        if lifecycle["violation"]:
+            result["passed"] = False
+
+    result["key_compliance"] = key_compliance
+    return result
+
+
 @router.get("/task-packets/{packet_id}/contract-compliance", status_code=200)
 async def get_contract_compliance(
     packet_id: str,
@@ -591,50 +670,37 @@ async def get_contract_compliance(
     if packet is None:
         raise NotFoundError("task_packet", packet_id)
 
-    run_id: str | None = (packet.packet_data or {}).get("run_id")
-    if not run_id:
-        result = ContractCompliance(
-            passed=True,
-            violations=["No run_id in packet_data — contract check skipped"],
-            key_alias=None,
-            approved_models=[],
-            actual_models_used=[],
-            budget_cap_usd=None,
-            actual_spend_usd=0.0,
-            request_count=0,
-            checked_at=datetime.now(timezone.utc).isoformat(),
-        ).model_dump()
-        result["drift_check"] = None
-        return result
+    return await _run_contract_compliance(packet, db)
 
-    budget_cap: float | None = None
-    allowed_models: list[str] = []
-    if packet.allowance_profile_id:
-        profile_repo = AllowanceProfileRepository(db)
-        profile = await profile_repo.get(packet.allowance_profile_id)
-        if profile:
-            budget_cap = profile.budget_cap_usd
-            allowed_models = list(profile.model_restrictions or [])
 
-    key_alias = f"wtk-run-{run_id}"
-    client = LiteLLMClient(
-        base_url=settings.litellm_api_url,
-        api_key=settings.litellm_api_key,
+@router.get("/projects/{project_id}/contract-compliance", status_code=200)
+async def get_contract_compliance_by_project(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+    _user: dict = Depends(get_current_user),
+) -> dict:
+    """Check agent contract compliance by project ID.
+
+    Finds the most recent agent_provision task packet for this project.
+    """
+    repo = TaskPacketRepository(db)
+    all_packets = await repo.list_by_field("project_id", project_id)
+    provision_packets = [
+        p for p in all_packets
+        if (p.packet_data or {}).get("task_type") == "agent_provision"
+    ]
+    if not provision_packets:
+        raise NotFoundError("ContractSnapshot", project_id)
+
+    latest = max(
+        provision_packets,
+        key=lambda p: p.created_at or datetime.min.replace(tzinfo=timezone.utc),
     )
-    compliance = await client.get_key_compliance(
-        key_alias=key_alias,
-        budget_cap_usd=budget_cap,
-        allowed_models=allowed_models,
-    )
-    result = compliance.model_dump()
 
-    contract_snapshot = (packet.packet_data or {}).get("contract_snapshot")
-    if contract_snapshot:
-        drift_report = await client.check_drift(contract_snapshot)
-        result["drift_check"] = drift_report.model_dump()
-        if drift_report.drifted:
-            result["passed"] = False
-    else:
-        result["drift_check"] = None
+    if not settings.litellm_api_url or not settings.litellm_api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="LiteLLM is not configured. Set PEARL_LITELLM_API_URL and PEARL_LITELLM_API_KEY.",
+        )
 
-    return result
+    return await _run_contract_compliance(latest, db)
