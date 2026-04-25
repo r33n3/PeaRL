@@ -437,6 +437,9 @@ async def create_project(
         ai_enabled=project.ai_enabled,
         schema_version=project.schema_version,
         bu_id=project.bu_id,
+        wtk_package_id=project.wtk_package_id,
+        factory_run_id=project.factory_run_id,
+        build_system=project.build_system,
     )
 
     env_repo = EnvironmentProfileRepository(db)
@@ -489,6 +492,9 @@ async def get_project(
         "litellm_key_refs": row.litellm_key_refs,
         "memory_policy_refs": row.memory_policy_refs,
         "qualification_packet_id": row.qualification_packet_id,
+        "wtk_package_id": row.wtk_package_id,
+        "factory_run_id": row.factory_run_id,
+        "build_system": row.build_system,
     }
 
 
@@ -513,21 +519,33 @@ async def update_project(
         external_exposure=project.external_exposure,
         ai_enabled=project.ai_enabled,
     )
+    if project.wtk_package_id is not None:
+        row.wtk_package_id = project.wtk_package_id
+    if project.factory_run_id is not None:
+        row.factory_run_id = project.factory_run_id
+    if project.build_system is not None:
+        row.build_system = project.build_system
     row.updated_at = now
     await db.commit()
 
-    return Project(
-        schema_version=row.schema_version,
-        project_id=row.project_id,
-        name=row.name,
-        description=row.description,
-        owner_team=row.owner_team,
-        business_criticality=row.business_criticality,
-        external_exposure=row.external_exposure,
-        ai_enabled=row.ai_enabled,
-        created_at=row.created_at,
-        updated_at=now,
-    ).model_dump(mode="json", exclude_none=True)
+    return {
+        **Project(
+            schema_version=row.schema_version,
+            project_id=row.project_id,
+            name=row.name,
+            description=row.description,
+            owner_team=row.owner_team,
+            business_criticality=row.business_criticality,
+            external_exposure=row.external_exposure,
+            ai_enabled=row.ai_enabled,
+            bu_id=row.bu_id,
+            created_at=row.created_at,
+            updated_at=now,
+            wtk_package_id=row.wtk_package_id,
+            factory_run_id=row.factory_run_id,
+            build_system=row.build_system,
+        ).model_dump(mode="json", exclude_none=True),
+    }
 
 
 @router.patch("/projects/{project_id}/bu")

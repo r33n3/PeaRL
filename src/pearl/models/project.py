@@ -24,3 +24,7 @@ class Project(BaseModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
     traceability: TraceabilityRef | None = None
+    # WTK factory lineage — optional, passed through on create/update/get
+    wtk_package_id: str | None = Field(None, max_length=256)
+    factory_run_id: str | None = Field(None, max_length=256)
+    build_system: str | None = Field(None, max_length=128)
