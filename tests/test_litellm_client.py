@@ -155,3 +155,100 @@ def test_key_lifecycle_fresh_key_no_violation():
     )
     assert result["violation"] is False
     assert result["rotation_overdue"] is False
+
+
+@pytest.mark.asyncio
+async def test_check_drift_detects_model_drift():
+    """check_drift must flag when a live key allows models not in the approved contract."""
+    client = _make_client()
+    snapshot = {
+        "litellm_agent_ids": [],
+        "skill_content_hash": None,
+        "mcp_allowlist": [],
+        "agent_contracts": [
+            {
+                "agent_id": "agent-001",
+                "key_alias": "vk-coord",
+                "model_allowlist": ["claude-sonnet-4-6"],
+            }
+        ],
+    }
+    live_key = KeyDetails(
+        key_alias="vk-coord",
+        models=["claude-sonnet-4-6", "gpt-4o"],
+        blocked=False,
+        mcp_access_groups=[],
+    )
+
+    with patch.object(client, "get_key_details", new=AsyncMock(return_value=live_key)):
+        report = await client.check_drift(snapshot)
+
+    assert report.drifted is True
+    assert any("gpt-4o" in v for v in report.violations)
+    assert len(report.model_drift) == 1
+    assert report.model_drift[0]["violation"] is True
+    assert "gpt-4o" in report.model_drift[0]["unauthorized_models"]
+
+
+@pytest.mark.asyncio
+async def test_check_drift_detects_blocked_key():
+    """check_drift must flag a blocked key as a liveness violation."""
+    client = _make_client()
+    snapshot = {
+        "litellm_agent_ids": [],
+        "skill_content_hash": None,
+        "mcp_allowlist": [],
+        "agent_contracts": [
+            {"agent_id": "agent-001", "key_alias": "vk-blocked", "model_allowlist": []}
+        ],
+    }
+    live_key = KeyDetails(key_alias="vk-blocked", models=[], blocked=True)
+
+    with patch.object(client, "get_key_details", new=AsyncMock(return_value=live_key)):
+        report = await client.check_drift(snapshot)
+
+    assert report.drifted is True
+    assert report.key_liveness is not None
+    assert report.key_liveness["blocked"] is True
+
+
+@pytest.mark.asyncio
+async def test_check_drift_detects_mcp_permission_drift():
+    """check_drift flags MCP access groups on live key not in snapshot mcp_allowlist."""
+    client = _make_client()
+    snapshot = {
+        "litellm_agent_ids": [],
+        "skill_content_hash": None,
+        "mcp_allowlist": ["PeaRL-prod"],
+        "agent_contracts": [
+            {"agent_id": "agent-001", "key_alias": "vk-mcp", "model_allowlist": []}
+        ],
+    }
+    live_key = KeyDetails(
+        key_alias="vk-mcp",
+        models=[],
+        mcp_access_groups=["PeaRL-prod", "github-tools"],
+        blocked=False,
+    )
+
+    with patch.object(client, "get_key_details", new=AsyncMock(return_value=live_key)):
+        report = await client.check_drift(snapshot)
+
+    assert report.drifted is True
+    assert any("github-tools" in v for v in report.violations)
+
+
+@pytest.mark.asyncio
+async def test_check_drift_no_agent_contracts_fallback_to_agent_id_check():
+    """Without agent_contracts, check_drift still checks agent IDs exist (old behavior)."""
+    client = _make_client()
+    snapshot = {
+        "litellm_agent_ids": ["agent-legacy-001"],
+        "skill_content_hash": None,
+    }
+
+    with patch.object(client, "get_agent", new=AsyncMock(return_value={"id": "agent-legacy-001"})):
+        report = await client.check_drift(snapshot)
+
+    assert report.drifted is False
+    assert report.agents_checked == 1
