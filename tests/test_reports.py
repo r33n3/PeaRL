@@ -410,3 +410,47 @@ def test_new_report_types_in_enum():
     assert ReportType.GATE_FULFILLMENT == "gate_fulfillment"
     assert ReportType.ELEVATION_AUDIT == "elevation_audit"
     assert ReportType.FINDINGS_REMEDIATION == "findings_remediation"
+
+
+# ---------------------------------------------------------------------------
+# Enrichment error accumulation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_release_readiness_enrichment_failure_populates_errors(client):
+    """When a report enrichment block fails, response must include enrichment_errors list."""
+    from unittest.mock import patch, AsyncMock
+
+    # Create a project with all required fields
+    resp = await client.post(
+        "/api/v1/projects",
+        json={
+            "schema_version": "1.1",
+            "project_id": "proj_enrich_err_test",
+            "name": "Enrichment Error Test",
+            "owner_team": "platform",
+            "business_criticality": "low",
+            "external_exposure": "internal_only",
+            "ai_enabled": False,
+        },
+    )
+    assert resp.status_code == 201
+    project_id = resp.json()["project_id"]
+
+    # Patch FindingRepository to raise so the findings enrichment block fails
+    with patch(
+        "pearl.repositories.finding_repo.FindingRepository.list_by_field",
+        AsyncMock(side_effect=RuntimeError("injected findings failure")),
+    ):
+        resp = await client.post(
+            f"/api/v1/projects/{project_id}/reports/generate",
+            json={"schema_version": "1.1", "report_type": "release_readiness", "format": "json"},
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    content = body.get("content", body)
+    assert "enrichment_errors" in content, "enrichment_errors key must be present when a section fails"
+    assert len(content["enrichment_errors"]) >= 1
+    assert any("findings" in e for e in content["enrichment_errors"])

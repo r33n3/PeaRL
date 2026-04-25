@@ -376,3 +376,32 @@ async def test_patch_phase_not_found(client):
         json={"phase": "coding"},
     )
     assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Tests — audit write failure governance
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_complete_packet_audit_failure_returns_500(client, db_session):
+    """If audit record creation fails, complete endpoint must return 500."""
+    from unittest.mock import patch
+
+    # Create project first (FK constraint)
+    proj_id = generate_id("proj_")
+    await _create_project(client, proj_id)
+
+    # Create packet directly in DB
+    packet_id = await _create_task_packet(db_session, proj_id)
+
+    with patch(
+        "pearl.db.models.governance_telemetry.ClientAuditEventRow.__init__",
+        side_effect=RuntimeError("injected audit failure"),
+    ):
+        resp = await client.post(
+            f"/api/v1/task-packets/{packet_id}/complete",
+            json={"status": "completed", "fix_summary": "done", "commit_ref": "abc123"},
+            headers={"X-API-Key": "pearl-KYQXqnybaMaul7PoKJLsT4PZpZSFj0FIaVE2IPrQJNk"},
+        )
+
+    assert resp.status_code == 500, f"Expected 500, got {resp.status_code}: {resp.text}"

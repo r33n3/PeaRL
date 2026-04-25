@@ -1,8 +1,11 @@
 """Promotion gate evaluation and history routes."""
 
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
+
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -121,8 +124,9 @@ async def evaluate_promotion_readiness(
                 "outstanding": aiuc_ctx.aiuc_outstanding,
                 "hints": aiuc_ctx.aiuc_hints,
             }
-    except Exception:
-        pass  # non-fatal — omit aiuc_compliance from response on error
+    except Exception as _aiuc_exc:
+        logger.warning("AIUC enrichment failed for project %s", project_id, exc_info=True)
+        result["aiuc_compliance"] = {"error": "enrichment_failed", "detail": str(_aiuc_exc)}
     # Publish real-time event so connected clients update without polling
     if request:
         redis = getattr(request.app.state, "redis", None)

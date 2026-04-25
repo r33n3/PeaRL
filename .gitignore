@@ -101,3 +101,4 @@ pearl_local.db
 NUL
 tests/security/attack_chain/results/
 .superpowers/
+.worktrees/

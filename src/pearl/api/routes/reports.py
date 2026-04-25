@@ -1,5 +1,6 @@
 """Report generation API route."""
 
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
@@ -10,6 +11,8 @@ from pearl.models.report import ReportRequest, ReportResponse
 from pearl.repositories.approval_repo import ApprovalRequestRepository
 from pearl.repositories.report_repo import ReportRepository
 from pearl.services.id_generator import generate_id
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Reports"])
 
@@ -222,6 +225,7 @@ async def _generate_release_readiness(
         },
         "blockers": blockers,
     }
+    result.setdefault("enrichment_errors", [])
 
     # Supplementary: findings counts by severity
     risk_factors: list[str] = []
@@ -243,7 +247,9 @@ async def _generate_release_readiness(
                 risk_factors.append(f"{critical} critical-severity finding(s)")
             if high > 0:
                 risk_factors.append(f"{high} high-severity finding(s)")
-    except Exception:
+    except Exception as _exc:
+        logger.warning("Report findings enrichment failed for project %s: %s", project_id, _exc, exc_info=True)
+        result["enrichment_errors"].append(f"findings: {_exc}")
         findings_by_severity = {}
 
     # Supplementary: promotion readiness
@@ -266,8 +272,9 @@ async def _generate_release_readiness(
             result["promotion_readiness"] = promotion
             if latest.status != "passed":
                 risk_factors.append(f"Promotion gate: {latest.status} ({latest.progress_pct}% passing)")
-    except Exception:
-        pass
+    except Exception as _exc:
+        logger.warning("Report promotion enrichment failed for project %s: %s", project_id, _exc, exc_info=True)
+        result["enrichment_errors"].append(f"promotion_readiness: {_exc}")
 
     # Supplementary: fairness status (for AI-enabled projects)
     fairness = None
@@ -296,8 +303,9 @@ async def _generate_release_readiness(
                 }
             if fairness:
                 result["fairness"] = fairness
-    except Exception:
-        pass
+    except Exception as _exc:
+        logger.warning("Report fairness enrichment failed for project %s: %s", project_id, _exc, exc_info=True)
+        result["enrichment_errors"].append(f"fairness: {_exc}")
 
     if risk_factors:
         result["risk_factors"] = risk_factors
