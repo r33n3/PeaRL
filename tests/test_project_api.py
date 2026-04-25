@@ -136,3 +136,37 @@ async def test_trace_id_propagation(client):
         headers={"X-Trace-Id": "trc_custom_12345678"},
     )
     assert response.headers["X-Trace-Id"] == "trc_custom_12345678"
+
+
+@pytest.mark.asyncio
+async def test_create_project_with_wtk_lineage(client):
+    """Factory lineage fields must be stored and returned by get_project."""
+    resp = await client.post(
+        "/api/v1/projects",
+        json={
+            "schema_version": "1.1",
+            "project_id": "proj_wtk_builder_frun01",
+            "name": "WTK Builder",
+            "owner_team": "factory",
+            "business_criticality": "moderate",
+            "external_exposure": "internal_only",
+            "ai_enabled": True,
+            "wtk_package_id": "pkg_builder_frun01",
+            "factory_run_id": "frun_58m",
+            "build_system": "wtk-factory/1.0",
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["wtk_package_id"] == "pkg_builder_frun01"
+    assert body["factory_run_id"] == "frun_58m"
+    assert body["build_system"] == "wtk-factory/1.0"
+
+    get_resp = await client.get(
+        "/api/v1/projects/proj_wtk_builder_frun01",
+    )
+    assert get_resp.status_code == 200
+    data = get_resp.json()
+    assert data["wtk_package_id"] == "pkg_builder_frun01"
+    assert data["factory_run_id"] == "frun_58m"
+    assert data["build_system"] == "wtk-factory/1.0"

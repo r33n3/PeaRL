@@ -34,3 +34,7 @@ class ProjectRow(Base, TimestampMixin):
     litellm_key_refs: Mapped[list | None] = mapped_column(JSON, nullable=True)
     memory_policy_refs: Mapped[list | None] = mapped_column(JSON, nullable=True)
     qualification_packet_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    # ── WTK factory lineage ────────────────────────────────────────────────
+    wtk_package_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    factory_run_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    build_system: Mapped[str | None] = mapped_column(String(128), nullable=True)
