@@ -802,16 +802,19 @@ TOOL_DEFINITIONS = [
                 "model_allowlist": {
                     "type": "array",
                     "items": {"type": "string"},
+                    "maxItems": 100,
                     "description": "Models this agent is authorized to call (e.g. claude-sonnet-4-6)",
                 },
                 "tool_allowlist": {
                     "type": "array",
                     "items": {"type": "string"},
+                    "maxItems": 100,
                     "description": "MCP tool names this agent may call",
                 },
                 "tool_denylist": {
                     "type": "array",
                     "items": {"type": "string"},
+                    "maxItems": 100,
                     "description": "MCP tool names explicitly forbidden for this agent",
                 },
                 "budget_usd": {
