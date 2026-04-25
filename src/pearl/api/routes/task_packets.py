@@ -132,7 +132,7 @@ async def create_contract_snapshot(
     agent_contracts = body.agent_contracts
     if agent_contracts:
         derived_roles = [
-            ac.get("role", ac.get("pearl_role", ""))
+            ac.get("role") or ac.get("pearl_role") or ""
             for ac in agent_contracts
             if ac.get("role") or ac.get("pearl_role")
         ]
