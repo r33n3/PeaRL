@@ -405,3 +405,113 @@ async def test_complete_packet_audit_failure_returns_500(client, db_session):
         )
 
     assert resp.status_code == 500, f"Expected 500, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.asyncio
+async def test_contract_snapshot_with_agent_contracts(async_client, db_session):
+    """agent_contracts array must be stored and derive flat arrays automatically."""
+    from pearl.db.models.project import ProjectRow
+    from datetime import datetime, timezone
+
+    project = ProjectRow(
+        project_id="proj_snap_contracts",
+        name="Snapshot Contracts Test",
+        owner_team="factory",
+        business_criticality="low",
+        external_exposure="internal_only",
+        ai_enabled=True,
+        schema_version="1.1",
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )
+    db_session.add(project)
+    await db_session.commit()
+
+    resp = await async_client.post(
+        "/api/v1/projects/proj_snap_contracts/contract-snapshots",
+        json={
+            "package_id": "pkg_builder_001",
+            "environment": "dev",
+            "agent_contracts": [
+                {
+                    "role": "orchestrator",
+                    "pearl_role": "coordinator",
+                    "agent_id": "agent-coord-001",
+                    "key_alias": "vk-coord-frun58m",
+                    "model_allowlist": ["claude-sonnet-4-6"],
+                    "tool_allowlist": ["PeaRL-pearl_create_project"],
+                    "budget_usd": 2.0,
+                    "mission": "Orchestrate the build",
+                    "key_expiry": "2026-07-01T00:00:00Z",
+                    "key_rotation_days": 30,
+                },
+                {
+                    "role": "threat-analyst",
+                    "pearl_role": "worker",
+                    "agent_id": "agent-worker-001",
+                    "key_alias": "vk-worker-frun58m",
+                    "model_allowlist": ["claude-haiku-4-5-20251001"],
+                    "budget_usd": 0.50,
+                },
+            ],
+        },
+        headers={"X-API-Key": "pearl-KYQXqnybaMaul7PoKJLsT4PZpZSFj0FIaVE2IPrQJNk"},
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    snapshot = body["contract_snapshot"]
+
+    # Flat arrays derived from agent_contracts
+    assert "agent-coord-001" in snapshot["litellm_agent_ids"]
+    assert "agent-worker-001" in snapshot["litellm_agent_ids"]
+    assert "orchestrator" in snapshot["agent_roles"]
+    assert "threat-analyst" in snapshot["agent_roles"]
+    assert "vk-coord-frun58m" in snapshot["key_aliases"]
+    assert "vk-worker-frun58m" in snapshot["key_aliases"]
+
+    # agent_contracts preserved in snapshot
+    assert "agent_contracts" in snapshot
+    assert len(snapshot["agent_contracts"]) == 2
+    coord = next(ac for ac in snapshot["agent_contracts"] if ac["role"] == "orchestrator")
+    assert coord["model_allowlist"] == ["claude-sonnet-4-6"]
+    assert coord["key_expiry"] == "2026-07-01T00:00:00Z"
+    assert coord["key_rotation_days"] == 30
+
+
+@pytest.mark.asyncio
+async def test_contract_snapshot_flat_arrays_still_work(async_client, db_session):
+    """Old-style flat-array snapshot must still be accepted (backward compat)."""
+    from pearl.db.models.project import ProjectRow
+    from datetime import datetime, timezone
+
+    project = ProjectRow(
+        project_id="proj_snap_legacy",
+        name="Legacy Snapshot Test",
+        owner_team="factory",
+        business_criticality="low",
+        external_exposure="internal_only",
+        ai_enabled=True,
+        schema_version="1.1",
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )
+    db_session.add(project)
+    await db_session.commit()
+
+    resp = await async_client.post(
+        "/api/v1/projects/proj_snap_legacy/contract-snapshots",
+        json={
+            "package_id": "pkg_legacy_001",
+            "environment": "dev",
+            "agent_roles": ["coordinator", "worker"],
+            "litellm_agent_ids": ["agent-a", "agent-b"],
+            "key_aliases": ["vk-a", "vk-b"],
+            "budget_usd": 5.0,
+        },
+        headers={"X-API-Key": "pearl-KYQXqnybaMaul7PoKJLsT4PZpZSFj0FIaVE2IPrQJNk"},
+    )
+    assert resp.status_code == 201, resp.text
+    snapshot = resp.json()["contract_snapshot"]
+    assert snapshot["agent_roles"] == ["coordinator", "worker"]
+    assert snapshot["litellm_agent_ids"] == ["agent-a", "agent-b"]
+    assert snapshot.get("agent_contracts") is None

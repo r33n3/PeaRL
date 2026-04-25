@@ -136,3 +136,133 @@ async def test_trace_id_propagation(client):
         headers={"X-Trace-Id": "trc_custom_12345678"},
     )
     assert response.headers["X-Trace-Id"] == "trc_custom_12345678"
+
+
+@pytest.mark.asyncio
+async def test_create_project_with_wtk_lineage(client):
+    """Factory lineage fields must be stored and returned by get_project."""
+    resp = await client.post(
+        "/api/v1/projects",
+        json={
+            "schema_version": "1.1",
+            "project_id": "proj_wtk_builder_frun01",
+            "name": "WTK Builder",
+            "owner_team": "factory",
+            "business_criticality": "moderate",
+            "external_exposure": "internal_only",
+            "ai_enabled": True,
+            "wtk_package_id": "pkg_builder_frun01",
+            "factory_run_id": "frun_58m",
+            "build_system": "wtk-factory/1.0",
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["wtk_package_id"] == "pkg_builder_frun01"
+    assert body["factory_run_id"] == "frun_58m"
+    assert body["build_system"] == "wtk-factory/1.0"
+
+    get_resp = await client.get(
+        "/api/v1/projects/proj_wtk_builder_frun01",
+    )
+    assert get_resp.status_code == 200
+    data = get_resp.json()
+    assert data["wtk_package_id"] == "pkg_builder_frun01"
+    assert data["factory_run_id"] == "frun_58m"
+    assert data["build_system"] == "wtk-factory/1.0"
+
+
+@pytest.mark.asyncio
+async def test_register_agent_with_contract_fields(async_client):
+    """register_agent_for_stage must store per-agent contract dict, not a plain string."""
+    await async_client.post(
+        "/api/v1/projects",
+        json={
+            "schema_version": "1.1",
+            "project_id": "proj_reg_contract_test",
+            "name": "Reg Contract Test",
+            "owner_team": "factory",
+            "business_criticality": "low",
+            "external_exposure": "internal_only",
+            "ai_enabled": True,
+        },
+        headers={"X-API-Key": "pearl-KYQXqnybaMaul7PoKJLsT4PZpZSFj0FIaVE2IPrQJNk"},
+    )
+
+    reg_resp = await async_client.post(
+        "/api/v1/projects/proj_reg_contract_test/register-agent-stage",
+        json={
+            "agent_id": "wtk-orchestrator-001",
+            "role": "coordinator",
+            "environment": "dev",
+            "role_label": "orchestrator",
+            "model_allowlist": ["claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
+            "tool_allowlist": ["PeaRL-pearl_create_project"],
+            "tool_denylist": ["PeaRL-pearl_approve_promotion"],
+            "budget_usd": 2.50,
+            "mission": "Orchestrate the WTK factory build pipeline",
+            "key_alias": "vk-orchestrator-frun58m",
+            "key_expiry": "2026-07-01T00:00:00Z",
+            "key_rotation_days": 30,
+        },
+        headers={"X-API-Key": "pearl-KYQXqnybaMaul7PoKJLsT4PZpZSFj0FIaVE2IPrQJNk"},
+    )
+    assert reg_resp.status_code == 200, reg_resp.text
+
+    get_resp = await async_client.get(
+        "/api/v1/projects/proj_reg_contract_test",
+        headers={"X-API-Key": "pearl-KYQXqnybaMaul7PoKJLsT4PZpZSFj0FIaVE2IPrQJNk"},
+    )
+    data = get_resp.json()
+    coordinator = data["agent_members"]["coordinator"]
+    assert isinstance(coordinator, dict), "coordinator must be a dict, not a string"
+    assert coordinator["agent_id"] == "wtk-orchestrator-001"
+    assert coordinator["role_label"] == "orchestrator"
+    assert coordinator["model_allowlist"] == ["claude-sonnet-4-6", "claude-haiku-4-5-20251001"]
+    assert coordinator["tool_denylist"] == ["PeaRL-pearl_approve_promotion"]
+    assert coordinator["budget_usd"] == 2.50
+    assert coordinator["key_alias"] == "vk-orchestrator-frun58m"
+    assert coordinator["key_expiry"] == "2026-07-01T00:00:00Z"
+    assert coordinator["key_rotation_days"] == 30
+    assert "registered_at" in coordinator
+
+
+@pytest.mark.asyncio
+async def test_register_worker_appends_to_list(async_client):
+    """Registering two workers must store both as dicts in the workers list."""
+    await async_client.post(
+        "/api/v1/projects",
+        json={
+            "schema_version": "1.1",
+            "project_id": "proj_workers_test",
+            "name": "Workers Test",
+            "owner_team": "factory",
+            "business_criticality": "low",
+            "external_exposure": "internal_only",
+            "ai_enabled": True,
+        },
+        headers={"X-API-Key": "pearl-KYQXqnybaMaul7PoKJLsT4PZpZSFj0FIaVE2IPrQJNk"},
+    )
+    for worker_id in ["worker-001", "worker-002"]:
+        await async_client.post(
+            "/api/v1/projects/proj_workers_test/register-agent-stage",
+            json={
+                "agent_id": worker_id,
+                "role": "worker",
+                "environment": "dev",
+                "role_label": "code-writer",
+                "model_allowlist": ["claude-haiku-4-5-20251001"],
+                "budget_usd": 0.50,
+            },
+            headers={"X-API-Key": "pearl-KYQXqnybaMaul7PoKJLsT4PZpZSFj0FIaVE2IPrQJNk"},
+        )
+
+    get_resp = await async_client.get(
+        "/api/v1/projects/proj_workers_test",
+        headers={"X-API-Key": "pearl-KYQXqnybaMaul7PoKJLsT4PZpZSFj0FIaVE2IPrQJNk"},
+    )
+    workers = get_resp.json()["agent_members"]["workers"]
+    assert len(workers) == 2
+    assert all(isinstance(w, dict) for w in workers)
+    agent_ids = {w["agent_id"] for w in workers}
+    assert agent_ids == {"worker-001", "worker-002"}

@@ -59,13 +59,25 @@ TOOL_DEFINITIONS = [
                 "business_criticality": {"type": "string", "enum": ["low", "moderate", "high", "mission_critical"]},
                 "external_exposure": {"type": "string", "enum": ["internal_only", "partner", "customer_facing", "public"]},
                 "ai_enabled": {"type": "boolean", "description": "Whether this project uses AI/LLM capabilities"},
+                "wtk_package_id": {
+                    "type": "string",
+                    "description": "WTK package ID that produced this project (e.g. pkg_goal_tj9_frun_58m)",
+                },
+                "factory_run_id": {
+                    "type": "string",
+                    "description": "WTK factory run ID linking this project to the run log (e.g. frun_58m)",
+                },
+                "build_system": {
+                    "type": "string",
+                    "description": "Build system identifier (e.g. wtk-factory/1.0)",
+                },
             },
             "required": ["schema_version", "project_id", "name", "owner_team", "business_criticality", "external_exposure", "ai_enabled"],
         },
     },
     {
         "name": "pearl_get_project",
-        "description": "Get project details by ID.",
+        "description": "Get project details by ID. Includes agent_members (per-agent contracts) and WTK factory lineage fields (wtk_package_id, factory_run_id, build_system) when set.",
         "inputSchema": {
             "type": "object",
             "properties": {"project_id": {"type": "string"}},
@@ -85,6 +97,18 @@ TOOL_DEFINITIONS = [
                 "business_criticality": {"type": "string", "enum": ["low", "moderate", "high", "mission_critical"]},
                 "external_exposure": {"type": "string", "enum": ["internal_only", "partner", "customer_facing", "public"]},
                 "ai_enabled": {"type": "boolean"},
+                "wtk_package_id": {
+                    "type": "string",
+                    "description": "WTK package ID that produced this project (e.g. pkg_goal_tj9_frun_58m)",
+                },
+                "factory_run_id": {
+                    "type": "string",
+                    "description": "WTK factory run ID linking this project to the run log (e.g. frun_58m)",
+                },
+                "build_system": {
+                    "type": "string",
+                    "description": "Build system identifier (e.g. wtk-factory/1.0)",
+                },
             },
             "required": ["project_id"],
         },
@@ -771,6 +795,48 @@ TOOL_DEFINITIONS = [
                 "agent_id": {"type": "string", "description": "Unique identifier for this agent instance (e.g. 'saga-coordinator-v2')"},
                 "role": {"type": "string", "enum": ["coordinator", "worker", "evaluator"], "description": "Role of this agent in the team"},
                 "autonomy_mode": {"type": "string", "enum": ["assistive", "supervised", "autonomous"], "description": "Autonomy mode to set on the environment profile (optional — leave unset to keep existing)"},
+                "role_label": {
+                    "type": "string",
+                    "description": "WTK role name (e.g. orchestrator, threat-analyst, reporter) — preserves factory role identity alongside PeaRL governance role",
+                },
+                "model_allowlist": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "maxItems": 100,
+                    "description": "Models this agent is authorized to call (e.g. claude-sonnet-4-6)",
+                },
+                "tool_allowlist": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "maxItems": 100,
+                    "description": "MCP tool names this agent may call",
+                },
+                "tool_denylist": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "maxItems": 100,
+                    "description": "MCP tool names explicitly forbidden for this agent",
+                },
+                "budget_usd": {
+                    "type": "number",
+                    "description": "Per-agent budget cap in USD (not the team total)",
+                },
+                "mission": {
+                    "type": "string",
+                    "description": "One-sentence mission statement for this agent",
+                },
+                "key_alias": {
+                    "type": "string",
+                    "description": "LiteLLM virtual key alias bound to this agent identity",
+                },
+                "key_expiry": {
+                    "type": "string",
+                    "description": "ISO 8601 timestamp when this key expires (e.g. 2026-07-01T00:00:00Z)",
+                },
+                "key_rotation_days": {
+                    "type": "integer",
+                    "description": "Required key rotation interval in days",
+                },
             },
             "required": ["project_id", "environment", "agent_id", "role"],
         },
@@ -895,6 +961,19 @@ TOOL_DEFINITIONS = [
                 "budget_usd": {
                     "type": "number",
                     "description": "Approved per-run budget cap in USD",
+                },
+                "agent_contracts": {
+                    "type": "array",
+                    "items": {"type": "object"},
+                    "maxItems": 100,
+                    "description": (
+                        "Structured per-agent contracts. Each entry: role (WTK name), pearl_role "
+                        "(coordinator|worker|evaluator), agent_id, key_alias, model_allowlist, "
+                        "tool_allowlist, tool_denylist, budget_usd, mission, stop_conditions, "
+                        "key_expiry (ISO 8601), key_rotation_days, key_scopes. "
+                        "When provided, flat arrays (agent_roles, litellm_agent_ids, key_aliases) "
+                        "are derived automatically."
+                    ),
                 },
             },
             "required": ["project_id", "package_id", "environment"],

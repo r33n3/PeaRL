@@ -200,14 +200,16 @@ class MCPServer:
         return await self._request("POST", "/projects/bootstrap", args)
 
     async def _create_project(self, args: dict) -> dict:
-        return await self._request("POST", "/projects", args)
+        payload = {k: v for k, v in args.items() if v is not None}
+        return await self._request("POST", "/projects", payload)
 
     async def _get_project(self, args: dict) -> dict:
         return await self._request("GET", f"/projects/{args['project_id']}")
 
     async def _update_project(self, args: dict) -> dict:
         pid = args.pop("project_id")
-        return await self._request("PUT", f"/projects/{pid}", args)
+        payload = {k: v for k, v in args.items() if v is not None}
+        return await self._request("PUT", f"/projects/{pid}", payload)
 
     async def _upsert_org_baseline(self, args: dict) -> dict:
         pid = args["project_id"]
@@ -572,6 +574,7 @@ class MCPServer:
             "skill_content_hash": args.get("skill_content_hash"),
             "mcp_allowlist": args.get("mcp_allowlist", []),
             "budget_usd": args.get("budget_usd"),
+            "agent_contracts": args.get("agent_contracts"),
         }
         body = {k: v for k, v in body.items() if v is not None}
         return await self._request("POST", f"/projects/{pid}/contract-snapshots", body)
@@ -599,8 +602,23 @@ class MCPServer:
 
     async def _register_agent_for_stage(self, args: dict) -> dict:
         pid = args["project_id"]
-        body = {k: v for k, v in args.items() if k != "project_id"}
-        return await self._request("POST", f"/projects/{pid}/register-agent-stage", body)
+        payload = {
+            "environment": args["environment"],
+            "agent_id": args["agent_id"],
+            "role": args["role"],
+            "autonomy_mode": args.get("autonomy_mode"),
+            "role_label": args.get("role_label"),
+            "model_allowlist": args.get("model_allowlist"),
+            "tool_allowlist": args.get("tool_allowlist"),
+            "tool_denylist": args.get("tool_denylist"),
+            "budget_usd": args.get("budget_usd"),
+            "mission": args.get("mission"),
+            "key_alias": args.get("key_alias"),
+            "key_expiry": args.get("key_expiry"),
+            "key_rotation_days": args.get("key_rotation_days"),
+        }
+        payload = {k: v for k, v in payload.items() if v is not None}
+        return await self._request("POST", f"/projects/{pid}/register-agent-stage", payload)
 
     async def _get_aiuc_compliance(self, args: dict) -> dict:
         project_id = args.get("project_id")
