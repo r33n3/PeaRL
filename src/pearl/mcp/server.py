@@ -5,14 +5,14 @@ HTTP requests against the PeaRL REST API.
 """
 
 import json
-import logging
+import structlog
 from typing import Any
 
 import httpx
 
 from .tools import TOOL_DEFINITIONS
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class MCPServer:

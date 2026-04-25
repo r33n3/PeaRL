@@ -3,7 +3,7 @@
 Analyzes AI context files for security risks and policy violations.
 """
 
-import logging
+import structlog
 import re
 from dataclasses import dataclass, field
 from enum import Enum
@@ -17,7 +17,7 @@ from pearl.scanning.analyzers.context.patterns import (
     RISK_PATTERNS,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class ContextFileType(str, Enum):

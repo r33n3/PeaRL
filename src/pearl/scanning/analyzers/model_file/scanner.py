@@ -4,7 +4,7 @@ Main scanner that orchestrates analysis of model files for security issues.
 """
 
 import hashlib
-import logging
+import structlog
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -12,7 +12,7 @@ from typing import Any, Iterator
 
 from pearl.scanning.types import ScanSeverity
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class ModelFormat(str, Enum):

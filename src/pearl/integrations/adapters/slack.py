@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import logging
+import structlog
 
 import httpx
 
@@ -13,7 +13,7 @@ from pearl.integrations.normalized import (
     NormalizedSecurityEvent,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 _SEVERITY_EMOJI: dict[str, str] = {
     "critical": "\U0001f534",  # 🔴

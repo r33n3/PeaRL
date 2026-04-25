@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-import logging
+import structlog
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends, Request
@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 
 from pearl.dependencies import get_current_user
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(tags=["Stream"])
 

@@ -1,7 +1,7 @@
 """Worker that triggers MASS 2.0 scans and ingests findings into PeaRL."""
 from __future__ import annotations
 
-import logging
+import structlog
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +11,7 @@ from pearl.repositories.scan_target_repo import ScanTargetRepository
 from pearl.scanning.mass_bridge import MassClient, mass_finding_to_pearl
 from pearl.workers.base import BaseWorker
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class MassScanWorker(BaseWorker):

@@ -2,7 +2,7 @@
 
 import hashlib
 import hmac
-import logging
+import structlog
 
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
@@ -10,7 +10,7 @@ from starlette.responses import Response
 
 from pearl.config import settings
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Paths that do not require authentication
 _PUBLIC_PATHS = {

@@ -1,6 +1,6 @@
 """Worker for scan_source jobs."""
 
-import logging
+import structlog
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pearl.repositories.scan_target_repo import ScanTargetRepository
 from pearl.workers.base import BaseWorker
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class ScanWorker(BaseWorker):

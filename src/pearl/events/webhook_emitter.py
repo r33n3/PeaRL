@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import hmac
 import json
-import logging
+import structlog
 import random
 from datetime import datetime, timezone
 
@@ -15,7 +15,7 @@ from pearl.services.id_generator import generate_id
 
 from .webhook_config import WebhookSubscription, webhook_registry
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Module-level shared client — one connection pool for all webhook deliveries.
 # Timeout: 10 s connect + read. Created at import time; never closed (process lifetime).

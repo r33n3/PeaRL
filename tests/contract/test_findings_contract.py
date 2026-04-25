@@ -151,6 +151,16 @@ async def test_quarantine_logs_warning_on_db_failure(client, caplog):
     assert any(
         "quarantine" in r.message.lower() for r in warning_records
     ), f"Expected quarantine WARNING log, got: {[r.message for r in warning_records]}"
+    def _has_finding_id(rec) -> bool:
+        # stdlib logging path: extra= kwargs become top-level LogRecord attrs
+        if getattr(rec, "finding_id", None) == "find_qtest002":
+            return True
+        # structlog path: structured fields land in msg['extra'] dict
+        msg = getattr(rec, "msg", None)
+        if isinstance(msg, dict):
+            return msg.get("extra", {}).get("finding_id") == "find_qtest002"
+        return False
+
     assert any(
-        getattr(r, "finding_id", None) == "find_qtest002" for r in warning_records
+        _has_finding_id(r) for r in warning_records
     ), f"Expected finding_id='find_qtest002' in log record attributes, got records: {[vars(r) for r in warning_records]}"

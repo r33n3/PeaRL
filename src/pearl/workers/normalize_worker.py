@@ -1,6 +1,6 @@
 """Worker for normalize_findings jobs."""
 
-import logging
+import structlog
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pearl.db.models.finding import FindingRow
 from pearl.workers.base import BaseWorker
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Severity → base score mapping for normalization
 _SEVERITY_SCORES = {

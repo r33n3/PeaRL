@@ -6,13 +6,13 @@ behaviour matched its approved allowance profile contract.
 
 from __future__ import annotations
 
-import logging
+import structlog
 from datetime import datetime, timezone
 
 import httpx
 from pydantic import BaseModel
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class ContractCompliance(BaseModel):

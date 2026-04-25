@@ -1,6 +1,6 @@
 """Worker for generate_remediation_spec jobs."""
 
-import logging
+import structlog
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -11,7 +11,7 @@ from pearl.db.models.remediation_spec import RemediationSpecRow
 from pearl.services.id_generator import generate_id
 from pearl.workers.base import BaseWorker
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class GenerateRemediationWorker(BaseWorker):

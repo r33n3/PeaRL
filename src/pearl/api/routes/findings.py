@@ -1,11 +1,11 @@
 """Findings ingestion and query API routes."""
 
-import logging
+import structlog
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 

@@ -18,7 +18,7 @@ Payload fields:
 from __future__ import annotations
 
 import inspect
-import logging
+import structlog
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,7 +31,7 @@ from pearl.repositories.org_baseline_repo import OrgBaselineRepository
 from pearl.services.id_generator import generate_id
 from pearl.workers.base import BaseWorker
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class CedarExportWorker(BaseWorker):

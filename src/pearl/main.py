@@ -1,7 +1,7 @@
 """FastAPI application factory and lifespan management."""
 
 import asyncio
-import logging
+import structlog
 import os
 from contextlib import asynccontextmanager
 
@@ -16,7 +16,7 @@ from pearl.logging_config import configure_logging
 _json_logs = os.environ.get("PEARL_LOCAL", "0") != "1"
 configure_logging(log_level=settings.log_level, json_output=_json_logs)
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 async def _seed_bootstrap_admin(session: AsyncSession) -> None:

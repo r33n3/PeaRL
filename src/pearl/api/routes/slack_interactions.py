@@ -3,7 +3,7 @@
 import hashlib
 import hmac
 import json
-import logging
+import structlog
 import time
 from urllib.parse import parse_qs
 
@@ -17,7 +17,7 @@ from pearl.repositories.approval_comment_repo import ApprovalCommentRepository
 from pearl.events.governance_events import emit_governance_event, APPROVAL_DECIDED, APPROVAL_NEEDS_INFO
 from pearl.services.id_generator import generate_id
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(tags=["Slack"])
 

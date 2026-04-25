@@ -487,7 +487,5 @@ async def _upload_pdf_artifact(
             )
             return url
     except Exception as e:
-        import logging
-
-        logging.getLogger(__name__).warning("MinIO PDF upload failed: %s", e)
+        logger.warning("MinIO PDF upload failed: %s", e)
         return None

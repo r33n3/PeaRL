@@ -1,6 +1,6 @@
 """Base worker interface for async job processing."""
 
-import logging
+import structlog
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 
@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from pearl.repositories.job_repo import JobRepository
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class BaseWorker(ABC):
