@@ -601,6 +601,12 @@ async def _run_contract_compliance(packet: "TaskPacketRow", db: "AsyncSession") 
             budget_cap = profile.budget_cap_usd
             allowed_models = list(profile.model_restrictions or [])
 
+    if not settings.litellm_api_url or not settings.litellm_api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="LiteLLM is not configured. Set PEARL_LITELLM_API_URL and PEARL_LITELLM_API_KEY.",
+        )
+
     key_alias = f"wtk-run-{run_id}"
     client = LiteLLMClient(
         base_url=settings.litellm_api_url,
