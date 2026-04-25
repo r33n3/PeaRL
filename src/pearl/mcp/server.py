@@ -200,12 +200,7 @@ class MCPServer:
         return await self._request("POST", "/projects/bootstrap", args)
 
     async def _create_project(self, args: dict) -> dict:
-        payload = dict(args)
-        # Include WTK factory lineage fields if provided
-        for field in ("wtk_package_id", "factory_run_id", "build_system"):
-            if args.get(field) is not None:
-                payload[field] = args[field]
-        payload = {k: v for k, v in payload.items() if v is not None}
+        payload = {k: v for k, v in args.items() if v is not None}
         return await self._request("POST", "/projects", payload)
 
     async def _get_project(self, args: dict) -> dict:
