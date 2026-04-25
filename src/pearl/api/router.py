@@ -41,6 +41,7 @@ from pearl.api.routes import (
     task_packets,
     timeline,
     workloads,
+    webhooks,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -83,3 +84,4 @@ api_router.include_router(admin_routes.router)
 api_router.include_router(agentcore.router)
 api_router.include_router(allowance_profiles.router)
 api_router.include_router(workloads.router)
+api_router.include_router(webhooks.router)

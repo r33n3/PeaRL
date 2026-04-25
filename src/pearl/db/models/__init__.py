@@ -54,6 +54,7 @@ from pearl.db.models.allowance_profile import AllowanceProfileRow
 from pearl.db.models.workload import WorkloadRow
 from pearl.db.models.scanner_policy import ScannerPolicyRow  # noqa: F401
 from pearl.db.models.factory_run_summary import FactoryRunSummaryRow
+from pearl.db.models.webhook_subscription import WebhookSubscriptionRow  # noqa: F401
 
 __all__ = [
     "ProjectRow",
@@ -105,4 +106,5 @@ __all__ = [
     "WorkloadRow",
     "ScannerPolicyRow",
     "FactoryRunSummaryRow",
+    "WebhookSubscriptionRow",
 ]
