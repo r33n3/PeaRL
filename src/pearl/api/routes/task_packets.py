@@ -66,6 +66,9 @@ class ContractSnapshotRequest(BaseModel):
     mcp_allowlist: list[str] = []
     budget_usd: float | None = None
     environment: str = "dev"
+    # Structured per-agent contracts (REQ-3 / REQ-6).
+    # When provided, flat arrays above are derived from this list.
+    agent_contracts: list[dict] | None = None
 
 
 @router.post("/projects/{project_id}/task-packets", status_code=201)
@@ -124,15 +127,36 @@ async def create_contract_snapshot(
         raise NotFoundError("Project", project_id)
 
     packet_id = generate_id("tp_")
+
+    # Derive flat arrays from agent_contracts if provided (REQ-3)
+    agent_contracts = body.agent_contracts
+    if agent_contracts:
+        derived_roles = [
+            ac.get("role", ac.get("pearl_role", ""))
+            for ac in agent_contracts
+            if ac.get("role") or ac.get("pearl_role")
+        ]
+        derived_agent_ids = [ac["agent_id"] for ac in agent_contracts if ac.get("agent_id")]
+        derived_key_aliases = [ac["key_alias"] for ac in agent_contracts if ac.get("key_alias")]
+        agent_roles = derived_roles if derived_roles else body.agent_roles
+        litellm_agent_ids = derived_agent_ids if derived_agent_ids else body.litellm_agent_ids
+        key_aliases = derived_key_aliases if derived_key_aliases else body.key_aliases
+    else:
+        agent_roles = body.agent_roles
+        litellm_agent_ids = body.litellm_agent_ids
+        key_aliases = body.key_aliases
+
     snapshot = {
         "package_id": body.package_id,
-        "agent_roles": body.agent_roles,
-        "litellm_agent_ids": body.litellm_agent_ids,
-        "key_aliases": body.key_aliases,
+        "agent_roles": agent_roles,
+        "litellm_agent_ids": litellm_agent_ids,
+        "key_aliases": key_aliases,
         "skill_content_hash": body.skill_content_hash,
         "mcp_allowlist": body.mcp_allowlist,
         "budget_usd": body.budget_usd,
     }
+    if agent_contracts:
+        snapshot["agent_contracts"] = agent_contracts
     packet_data = {
         "task_packet_id": packet_id,
         "task_type": "agent_provision",
