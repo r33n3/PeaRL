@@ -22,13 +22,16 @@ services:
       PEARL_LOCAL_REVIEWER_MODE: "1"
       PEARL_MASS_URL: "http://host.docker.internal:80"
       PEARL_MASS_API_KEY: ""
-      PEARL_LITELLM_API_URL: "http://host.docker.internal:4000"
+      PEARL_LITELLM_API_URL: "http://litellm-litellm-1:4000"
       PEARL_LITELLM_API_KEY: "sk-litellm-local-testing"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks:
+      - default
+      - litellm
     volumes:
       - ./src:/app/src
       - ./PeaRL_spec:/app/PeaRL_spec
@@ -130,3 +133,10 @@ volumes:
   sonarqube_data:
   sonarqube_extensions:
   sonarqube_logs:
+
+networks:
+  default:
+    name: pearl_default
+  litellm:
+    external: true
+    name: litellm_default

@@ -24,8 +24,8 @@ coverage.xml
 
 # Docs and specs
 docs/
-PeaRL_spec/
 *.md
+!README.md
 LICENSE
 
 # Dev tooling
