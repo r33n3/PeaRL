@@ -34,6 +34,27 @@ class DriftReport(BaseModel):
     checked_at: str = ""
 
 
+class KeyDetails(BaseModel):
+    """Parsed representation of a LiteLLM virtual key's full state."""
+    key_alias: str | None = None
+    team_id: str | None = None
+    organization_id: str | None = None
+    models: list[str] = []
+    max_budget: float | None = None
+    spend: float = 0.0
+    soft_budget_cooldown: bool = False
+    mcp_access_groups: list[str] = []
+    blocked_tools: list[str] = []
+    vector_stores: list[str] = []
+    expires: str | None = None
+    blocked: bool = False
+    last_active: str | None = None
+    rotation_count: int = 0
+    last_rotation_at: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
 class LiteLLMClient:
     """Async client for LiteLLM contract compliance queries."""
 
@@ -105,17 +126,22 @@ class LiteLLMClient:
             checked_at=checked_at,
         )
 
-    async def _fetch_compliance_data(self, key_alias: str) -> tuple[dict, list[dict]]:
+    async def _fetch_key_info(self, key_alias: str) -> dict:
+        """Raw /key/info fetch. Raises on HTTP errors."""
         headers = {"authorization": f"Bearer {self._api_key}"}
         async with httpx.AsyncClient(timeout=10.0) as http:
-            info_resp = await http.get(
+            resp = await http.get(
                 f"{self._base_url}/key/info",
                 params={"key_alias": key_alias},
                 headers=headers,
             )
-            info_resp.raise_for_status()
-            key_info: dict = info_resp.json()
+            resp.raise_for_status()
+            return resp.json()
 
+    async def _fetch_compliance_data(self, key_alias: str) -> tuple[dict, list[dict]]:
+        key_info = await self._fetch_key_info(key_alias)
+        headers = {"authorization": f"Bearer {self._api_key}"}
+        async with httpx.AsyncClient(timeout=10.0) as http:
             logs_resp = await http.get(
                 f"{self._base_url}/spend/logs",
                 params={"key_alias": key_alias},
@@ -125,8 +151,35 @@ class LiteLLMClient:
             spend_logs: list[dict] = logs_resp.json()
             if not isinstance(spend_logs, list):
                 spend_logs = []
-
         return key_info, spend_logs
+
+    async def get_key_details(self, key_alias: str) -> "KeyDetails | None":
+        """Fetch full virtual key metadata. Returns None on 404 or connectivity error."""
+        try:
+            raw = await self._fetch_key_info(key_alias)
+        except (httpx.ConnectError, httpx.HTTPStatusError):
+            return None
+
+        obj_perm: dict = raw.get("object_permission") or {}
+        return KeyDetails(
+            key_alias=raw.get("key_alias"),
+            team_id=raw.get("team_id"),
+            organization_id=raw.get("organization_id"),
+            models=list(raw.get("models") or []),
+            max_budget=raw.get("max_budget"),
+            spend=float(raw.get("spend") or 0.0),
+            soft_budget_cooldown=bool(raw.get("soft_budget_cooldown")),
+            mcp_access_groups=list(obj_perm.get("mcp_access_groups") or []),
+            blocked_tools=list(obj_perm.get("blocked_tools") or []),
+            vector_stores=list(obj_perm.get("vector_stores") or []),
+            expires=raw.get("expires"),
+            blocked=bool(raw.get("blocked")),
+            last_active=raw.get("last_active"),
+            rotation_count=int(raw.get("rotation_count") or 0),
+            last_rotation_at=raw.get("last_rotation_at"),
+            created_at=raw.get("created_at"),
+            updated_at=raw.get("updated_at"),
+        )
 
     async def get_agent(self, agent_id: str) -> dict | None:
         """Fetch a single agent from LiteLLM. Returns None if 404."""
