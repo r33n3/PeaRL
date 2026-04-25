@@ -581,9 +581,12 @@ class MCPServer:
 
     async def _check_agent_contract(self, args: dict) -> dict:
         packet_id = args.get("packet_id")
-        if not packet_id:
-            return {"error": "packet_id is required"}
-        return await self._request("GET", f"/task-packets/{packet_id}/contract-compliance")
+        project_id = args.get("project_id")
+        if packet_id:
+            return await self._request("GET", f"/task-packets/{packet_id}/contract-compliance")
+        elif project_id:
+            return await self._request("GET", f"/projects/{project_id}/contract-compliance")
+        return {"error": "packet_id or project_id is required"}
 
     async def _check_litellm_compliance(self, args: dict) -> dict:
         pid = args.get("project_id")

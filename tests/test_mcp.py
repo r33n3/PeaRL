@@ -187,9 +187,10 @@ def test_check_agent_contract_tool_registered():
 
 
 def test_check_agent_contract_tool_has_required_schema():
-    """pearl_check_agent_contract schema declares packet_id as required."""
+    """pearl_check_agent_contract schema declares both packet_id and project_id."""
     from pearl.mcp.tools import TOOL_DEFINITIONS
     tool = next(t for t in TOOL_DEFINITIONS if t["name"] == "pearl_check_agent_contract")
     schema = tool["inputSchema"]
     assert "packet_id" in schema["properties"]
-    assert "packet_id" in schema.get("required", [])
+    assert "project_id" in schema["properties"]
+    # Neither is required — either packet_id or project_id works
