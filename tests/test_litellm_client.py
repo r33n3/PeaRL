@@ -86,3 +86,72 @@ async def test_get_key_details_returns_none_on_connect_error():
         details = await client.get_key_details("any-alias")
 
     assert details is None
+
+
+# Tests for check_key_lifecycle()
+
+from pearl.integrations.litellm import check_key_lifecycle
+
+
+def test_key_lifecycle_no_expiry():
+    """key_expiry=None means indefinite — no violation."""
+    result = check_key_lifecycle(
+        key_alias="vk-test",
+        key_expiry_iso=None,
+        key_rotation_days=None,
+        now=datetime(2026, 4, 25, tzinfo=timezone.utc),
+    )
+    assert result["violation"] is False
+    assert result["days_until_expiry"] is None
+    assert result["rotation_overdue"] is False
+
+
+def test_key_lifecycle_expired():
+    """A key whose expiry is in the past must be flagged as a violation."""
+    result = check_key_lifecycle(
+        key_alias="vk-test",
+        key_expiry_iso="2026-04-01T00:00:00Z",
+        key_rotation_days=None,
+        now=datetime(2026, 4, 25, tzinfo=timezone.utc),
+    )
+    assert result["violation"] is True
+    assert result["days_until_expiry"] < 0
+
+
+def test_key_lifecycle_expiry_within_warning_window():
+    """A key expiring in 10 days (< 14-day warning threshold) must be a violation."""
+    expiry = datetime(2026, 5, 5, tzinfo=timezone.utc)
+    result = check_key_lifecycle(
+        key_alias="vk-test",
+        key_expiry_iso=expiry.isoformat(),
+        key_rotation_days=None,
+        now=datetime(2026, 4, 25, tzinfo=timezone.utc),
+    )
+    assert result["violation"] is True
+    assert 0 < result["days_until_expiry"] <= 14
+
+
+def test_key_lifecycle_rotation_overdue():
+    """Key not rotated within key_rotation_days of its creation must be flagged."""
+    result = check_key_lifecycle(
+        key_alias="vk-test",
+        key_expiry_iso="2027-01-01T00:00:00Z",
+        key_rotation_days=30,
+        now=datetime(2026, 4, 25, tzinfo=timezone.utc),
+        last_rotation_at_iso="2026-03-11T00:00:00Z",
+    )
+    assert result["rotation_overdue"] is True
+    assert result["violation"] is True
+
+
+def test_key_lifecycle_fresh_key_no_violation():
+    """Key expiring in 30+ days with recent rotation — no violation."""
+    result = check_key_lifecycle(
+        key_alias="vk-test",
+        key_expiry_iso="2026-07-01T00:00:00Z",
+        key_rotation_days=30,
+        now=datetime(2026, 4, 25, tzinfo=timezone.utc),
+        last_rotation_at_iso="2026-04-10T00:00:00Z",
+    )
+    assert result["violation"] is False
+    assert result["rotation_overdue"] is False

@@ -55,6 +55,69 @@ class KeyDetails(BaseModel):
     updated_at: str | None = None
 
 
+_EXPIRY_WARNING_DAYS = 14
+
+
+def check_key_lifecycle(
+    key_alias: str,
+    key_expiry_iso: str | None,
+    key_rotation_days: int | None,
+    now: "datetime | None" = None,
+    last_rotation_at_iso: str | None = None,
+) -> dict:
+    """Compute key lifecycle compliance from stored policy values. No HTTP calls.
+
+    Returns: key_alias, expires_at, days_until_expiry, rotation_overdue,
+             days_since_last_rotation, violation, violation_reasons
+    """
+    if now is None:
+        now = datetime.now(timezone.utc)
+
+    result: dict = {
+        "key_alias": key_alias,
+        "expires_at": key_expiry_iso,
+        "days_until_expiry": None,
+        "rotation_overdue": False,
+        "days_since_last_rotation": None,
+        "violation": False,
+        "violation_reasons": [],
+    }
+
+    if key_expiry_iso:
+        try:
+            expiry = datetime.fromisoformat(key_expiry_iso.replace("Z", "+00:00"))
+            delta = (expiry - now).total_seconds() / 86400
+            result["days_until_expiry"] = round(delta, 1)
+            if delta < _EXPIRY_WARNING_DAYS:
+                result["violation"] = True
+                if delta < 0:
+                    result["violation_reasons"].append(
+                        f"Key expired {abs(delta):.1f} days ago"
+                    )
+                else:
+                    result["violation_reasons"].append(
+                        f"Key expires in {delta:.1f} days (threshold: {_EXPIRY_WARNING_DAYS})"
+                    )
+        except ValueError:
+            result["violation_reasons"].append(f"Cannot parse key_expiry: {key_expiry_iso!r}")
+
+    if key_rotation_days and last_rotation_at_iso:
+        try:
+            last_rotation = datetime.fromisoformat(last_rotation_at_iso.replace("Z", "+00:00"))
+            days_since = (now - last_rotation).total_seconds() / 86400
+            result["days_since_last_rotation"] = round(days_since, 1)
+            if days_since > key_rotation_days:
+                result["rotation_overdue"] = True
+                result["violation"] = True
+                result["violation_reasons"].append(
+                    f"Key not rotated in {days_since:.0f} days (required: every {key_rotation_days})"
+                )
+        except ValueError:
+            pass
+
+    return result
+
+
 class LiteLLMClient:
     """Async client for LiteLLM contract compliance queries."""
 
