@@ -975,19 +975,52 @@ async def register_agent_for_stage(
     if not agent_id or not role or not environment:
         raise ValidationError("agent_id, role, and environment are required")
 
+    # Build per-agent contract dict (REQ-2 / REQ-6)
+    agent_entry = {
+        "agent_id": agent_id,
+        "role": role,
+        "role_label": body.get("role_label"),
+        "environment": environment,
+        "model_allowlist": body.get("model_allowlist") or [],
+        "tool_allowlist": body.get("tool_allowlist") or [],
+        "tool_denylist": body.get("tool_denylist") or [],
+        "budget_usd": body.get("budget_usd"),
+        "mission": body.get("mission"),
+        "key_alias": body.get("key_alias"),
+        "key_expiry": body.get("key_expiry"),
+        "key_rotation_days": body.get("key_rotation_days"),
+        "registered_at": datetime.now(timezone.utc).isoformat(),
+    }
+    # Remove None values to keep the dict clean
+    agent_entry = {k: v for k, v in agent_entry.items() if v is not None}
+
     # Update agent_members on the project
     members = dict(project.agent_members or {})
     if role == "coordinator":
-        members["coordinator"] = agent_id
+        members["coordinator"] = agent_entry
     elif role == "worker":
         workers = list(members.get("workers") or [])
-        if agent_id not in workers:
-            workers.append(agent_id)
+        existing_idx = next(
+            (i for i, w in enumerate(workers)
+             if (isinstance(w, dict) and w.get("agent_id") == agent_id) or w == agent_id),
+            None,
+        )
+        if existing_idx is not None:
+            workers[existing_idx] = agent_entry
+        else:
+            workers.append(agent_entry)
         members["workers"] = workers
     elif role == "evaluator":
         evaluators = list(members.get("evaluators") or [])
-        if agent_id not in evaluators:
-            evaluators.append(agent_id)
+        existing_idx = next(
+            (i for i, e in enumerate(evaluators)
+             if (isinstance(e, dict) and e.get("agent_id") == agent_id) or e == agent_id),
+            None,
+        )
+        if existing_idx is not None:
+            evaluators[existing_idx] = agent_entry
+        else:
+            evaluators.append(agent_entry)
         members["evaluators"] = evaluators
 
     await proj_repo.update(project, agent_members=members)

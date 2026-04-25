@@ -57,6 +57,21 @@ async def client(app):
 
 
 @pytest.fixture
+async def async_client(app):
+    """Async HTTP test client with local_mode patched for auth bypass."""
+    from pearl.config import settings
+
+    original = settings.local_mode
+    settings.local_mode = True
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            yield ac
+    finally:
+        settings.local_mode = original
+
+
+@pytest.fixture
 async def reviewer_client(app):
     """Async HTTP test client with reviewer role (PEARL_LOCAL_REVIEWER=1).
 
