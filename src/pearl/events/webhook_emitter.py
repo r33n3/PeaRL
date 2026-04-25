@@ -17,6 +17,10 @@ from .webhook_config import WebhookSubscription, webhook_registry
 
 logger = logging.getLogger(__name__)
 
+# Module-level shared client — one connection pool for all webhook deliveries.
+# Timeout: 10 s connect + read. Created at import time; never closed (process lifetime).
+_webhook_client = httpx.AsyncClient(timeout=httpx.Timeout(10.0))
+
 
 def _sign_payload(body: bytes, secret: str) -> str:
     """Compute HMAC-SHA256 signature over the raw JSON body."""
@@ -103,36 +107,35 @@ async def _deliver(envelope: WebhookEnvelope, sub: WebhookSubscription, db=None)
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(sub.url, content=signed_body, headers=headers)
-                if resp.status_code < 300:
-                    if db is not None:
-                        now = datetime.now(timezone.utc)
-                        db.add(IdempotencyKeyRow(
-                            key_hash=idem_key,
-                            endpoint=sub.url,
-                            response_status=resp.status_code,
-                            response_body={},
-                            created_at=now,
-                            expires_at=now + timedelta(hours=24),
-                        ))
-                        try:
-                            await db.flush()
-                        except Exception as flush_exc:
-                            logger.debug("Idempotency key flush failed (non-fatal): %s", flush_exc)
-                    return {"url": sub.url, "status": resp.status_code, "error": None}
-                if resp.status_code == 429 and attempt < max_retries - 1:
-                    retry_after = resp.headers.get("Retry-After")
+            resp = await _webhook_client.post(sub.url, content=signed_body, headers=headers)
+            if resp.status_code < 300:
+                if db is not None:
+                    now = datetime.now(timezone.utc)
+                    db.add(IdempotencyKeyRow(
+                        key_hash=idem_key,
+                        endpoint=sub.url,
+                        response_status=resp.status_code,
+                        response_body={},
+                        created_at=now,
+                        expires_at=now + timedelta(hours=24),
+                    ))
                     try:
-                        delay = float(retry_after) if retry_after else 2 ** attempt
-                    except (ValueError, TypeError):
-                        delay = 2 ** attempt
-                    await asyncio.sleep(delay + random.random())
-                    continue
-                if resp.status_code >= 500 and attempt < max_retries - 1:
-                    await asyncio.sleep(2 ** attempt + random.random())
-                    continue
-                return {"url": sub.url, "status": resp.status_code, "error": f"HTTP {resp.status_code}"}
+                        await db.flush()
+                    except Exception as flush_exc:
+                        logger.debug("Idempotency key flush failed (non-fatal): %s", flush_exc)
+                return {"url": sub.url, "status": resp.status_code, "error": None}
+            if resp.status_code == 429 and attempt < max_retries - 1:
+                retry_after = resp.headers.get("Retry-After")
+                try:
+                    delay = float(retry_after) if retry_after else 2 ** attempt
+                except (ValueError, TypeError):
+                    delay = 2 ** attempt
+                await asyncio.sleep(delay + random.random())
+                continue
+            if resp.status_code >= 500 and attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt + random.random())
+                continue
+            return {"url": sub.url, "status": resp.status_code, "error": f"HTTP {resp.status_code}"}
         except Exception as exc:
             if attempt < max_retries - 1:
                 await asyncio.sleep(2 ** attempt + random.random())
