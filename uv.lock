@@ -1626,7 +1626,7 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "python-multipart", specifier = ">=0.0.26" },
-    { name = "redis", extras = ["hiredis"], specifier = ">=5.2.0" },
+    { name = "redis", extras = ["hiredis"], specifier = ">=7.4.0" },
     { name = "requests", specifier = ">=2.32.3" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
     { name = "schemathesis", marker = "extra == 'dev'", specifier = ">=3.38.0" },
