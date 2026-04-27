@@ -64,7 +64,7 @@ dev = [
     "httpx>=0.28.0",
     "ruff>=0.8.0",
     "openapi-spec-validator>=0.7.0",
-    "schemathesis>=3.38.0",
+    "schemathesis>=4.16.1",
 ]
 
 [project.scripts]
